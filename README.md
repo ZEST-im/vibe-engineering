@@ -3,7 +3,17 @@
 Dev progress kanban board for [Claude Code](https://claude.ai/claude-code).
 Track tasks, code changes, and work reports — all from your terminal.
 
-![VibeKanban Screenshot](docs/screenshot.png)
+### Kanban View (Dark)
+![Kanban Dark](docs/screenshot-kanban-dark.png)
+
+### Kanban View (Light)
+![Kanban Light](docs/screenshot-kanban-light.png)
+
+### List View
+![List View](docs/screenshot-list.png)
+
+### Detail Panel
+![Detail Panel](docs/screenshot-detail.png)
 
 ## Features
 
