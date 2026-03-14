@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VibeKanban</title>
+<style>
+/* ── Theme ── */
+:root {
+  --bg: #0d1117; --surface: #161b22; --surface2: #1c2129;
+  --border: #30363d; --border-light: #3d444d;
+  --text: #e6edf3; --text-dim: #8b949e; --text-faint: #656d76;
+  --accent: #58a6ff; --accent-dim: rgba(88,166,255,0.15);
+  --red: #f85149; --orange: #d29922; --green: #3fb950; --purple: #a371f7;
+  --backlog: #8b949e; --todo: #d29922; --in_progress: #58a6ff; --review: #a371f7; --done: #3fb950;
+}
+:root.light {
+  --bg: #ffffff; --surface: #f6f8fa; --surface2: #eef1f5;
+  --border: #d0d7de; --border-light: #e1e4e8;
+  --text: #1f2328; --text-dim: #656d76; --text-faint: #8b949e;
+  --accent: #0969da; --accent-dim: rgba(9,105,218,0.1);
+  --red: #cf222e; --orange: #bf8700; --green: #1a7f37; --purple: #8250df;
+  --backlog: #8b949e; --todo: #bf8700; --in_progress: #0969da; --review: #8250df; --done: #1a7f37;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  background: var(--bg); color: var(--text);
+  height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+}
+
+/* ── Header ── */
+header {
+  padding: 8px 16px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+  background: var(--surface); gap: 8px;
+}
+.h-left { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.logo { font-size:14px; font-weight:800; color:var(--text-dim); letter-spacing:-0.5px; white-space:nowrap; }
+.project-tabs { display:flex; gap:3px; }
+.ptab {
+  padding:4px 12px; border-radius:6px; font-size:11px; font-weight:600;
+  cursor:pointer; border:1px solid transparent; background:transparent; color:var(--text-dim); transition:all .12s;
+}
+.ptab:hover { background:var(--surface2); color:var(--text); }
+.ptab.active { background:var(--accent-dim); color:var(--accent); border-color:rgba(88,166,255,.2); }
+.view-tabs { display:flex; gap:1px; background:var(--border); border-radius:6px; padding:1px; margin-left:6px; }
+.vtab {
+  padding:4px 10px; border-radius:5px; font-size:10px; font-weight:600;
+  cursor:pointer; color:var(--text-dim); background:transparent; border:none; transition:all .12s;
+}
+.vtab.active { background:var(--surface); color:var(--text); }
+.h-right { display:flex; align-items:center; gap:12px; flex-shrink:0; }
+.stats { display:flex; gap:14px; font-size:11px; color:var(--text-dim); }
+.stats b { color:var(--text); font-size:12px; margin-right:1px; }
+.stats .s-ip b { color:var(--in_progress); }
+.stats .s-dn b { color:var(--done); }
+.icon-btn {
+  background:none; border:1px solid var(--border); border-radius:6px;
+  color:var(--text-dim); cursor:pointer; padding:4px 8px; font-size:13px; transition:all .12s;
+}
+.icon-btn:hover { color:var(--text); border-color:var(--accent); }
+
+/* ── Main ── */
+.main { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+
+/* ── Kanban Board ── */
+.kanban { display:flex; gap:10px; padding:10px 12px; flex:1; overflow-x:auto; overflow-y:hidden; }
+.kanban.hide { display:none; }
+.column {
+  min-width:280px; flex:1; display:flex; flex-direction:column;
+  background:var(--surface); border-radius:10px; border:1px solid var(--border); overflow:hidden;
+}
+.col-head {
+  padding:8px 12px; display:flex; align-items:center; justify-content:space-between;
+  border-bottom:1px solid var(--border); flex-shrink:0;
+}
+.col-label { display:flex; align-items:center; gap:6px; font-size:12px; font-weight:600; }
+.dot { width:8px; height:8px; border-radius:50%; }
+.col-cnt { background:var(--border); padding:1px 6px; border-radius:8px; font-size:10px; color:var(--text-dim); }
+.col-body {
+  flex:1; overflow-y:auto; padding:6px; display:flex; flex-direction:column; gap:5px;
+}
+.col-body::-webkit-scrollbar { width:3px; }
+.col-body::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+.add-btn {
+  margin:5px 6px; padding:5px; border:1px dashed var(--border); border-radius:6px;
+  background:none; color:var(--text-dim); cursor:pointer; font-size:11px; text-align:center; flex-shrink:0;
+}
+.add-btn:hover { border-color:var(--accent); color:var(--accent); }
+
+/* ── Cards (bigger, show description) ── */
+.card {
+  background:var(--bg); border:1px solid var(--border); border-radius:8px;
+  padding:10px 12px; cursor:pointer; transition:all .12s; position:relative;
+}
+.card:hover { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent); }
+.card.dragging { opacity:.3; }
+.card-top { display:flex; justify-content:space-between; align-items:flex-start; gap:4px; }
+.card-title { font-size:13px; font-weight:600; line-height:1.4; flex:1; }
+.card-desc { font-size:11px; color:var(--text-dim); line-height:1.4; margin-top:4px; }
+.card-meta { display:flex; align-items:center; gap:4px; flex-wrap:wrap; margin-top:6px; }
+.card-acts {
+  display:none; gap:2px; flex-shrink:0;
+}
+.card:hover .card-acts { display:flex; }
+.card-act {
+  background:none; border:none; color:var(--text-faint); cursor:pointer;
+  font-size:13px; padding:1px 4px; border-radius:3px; line-height:1;
+}
+.card-act:hover { background:var(--border); color:var(--text); }
+.card-act.del:hover { color:var(--red); }
+.tag {
+  font-size:9px; padding:1px 5px; border-radius:3px; font-weight:600;
+  background:var(--border); color:var(--text-dim);
+}
+.tag.high { background:var(--red); color:#fff; }
+.tag.medium { background:var(--orange); color:#fff; }
+.tag.low { background:var(--green); color:#fff; }
+.dday { font-size:9px; font-weight:700; padding:1px 6px; border-radius:3px; margin-left:auto; }
+.dday.overdue { background:var(--red); color:#fff; }
+.dday.soon { background:var(--orange); color:#fff; }
+.dday.ok { background:var(--border); color:var(--accent); }
+.lines-bar { display:inline-flex; align-items:center; gap:1px; height:6px; border-radius:2px; overflow:hidden; background:var(--border); vertical-align:middle; }
+.lines-bar .a { background:var(--green); height:100%; }
+.lines-bar .r { background:var(--red); height:100%; }
+.lines-lbl { font-size:8px; color:var(--text-faint); margin-left:2px; }
+
+/* Drop zone */
+.drop-zone { min-height:30px; border:2px dashed transparent; border-radius:6px; transition:all .15s; }
+.drop-zone.over { border-color:var(--accent); background:var(--accent-dim); }
+
+/* ── List View ── */
+.list-wrap { flex:1; overflow:auto; display:none; }
+.list-wrap.active { display:block; }
+.list-table { width:100%; border-collapse:collapse; font-size:11px; }
+.list-table th {
+  position:sticky; top:0; background:var(--surface); border-bottom:2px solid var(--border);
+  padding:6px 8px; text-align:left; font-size:10px; color:var(--text-dim);
+  text-transform:uppercase; letter-spacing:.3px; z-index:1;
+}
+.list-table td {
+  padding:5px 8px; border-bottom:1px solid var(--border);
+  max-width:300px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.list-table td.desc-cell {
+  white-space:pre-wrap; word-break:break-word; max-width:400px; overflow:visible;
+}
+.list-table tr:hover { background:var(--surface2); }
+.list-table td[contenteditable]:focus { outline:1px solid var(--accent); background:var(--bg); border-radius:2px; white-space:normal; }
+.list-table select {
+  background:var(--bg); color:var(--text); border:1px solid var(--border);
+  border-radius:3px; font-size:10px; padding:2px 4px;
+}
+.list-del { background:none; border:none; color:var(--text-faint); cursor:pointer; font-size:14px; }
+.list-del:hover { color:var(--red); }
+.done-row { opacity:.6; }
+.done-row .card-title-cell { text-decoration:line-through; }
+
+/* ── Resizer ── */
+.resizer {
+  height:4px; cursor:row-resize; background:var(--border); flex-shrink:0;
+  display:flex; align-items:center; justify-content:center;
+}
+.resizer::after { content:''; width:30px; height:2px; background:var(--text-faint); border-radius:1px; }
+.resizer.hide { display:none; }
+
+/* ── Done Zone (kanban mode only) ── */
+.done-zone {
+  height:220px; min-height:60px; max-height:65vh;
+  background:var(--surface); border-top:1px solid var(--border);
+  display:flex; flex-direction:column; overflow:hidden;
+}
+.done-zone.hide { display:none; }
+.done-head {
+  padding:6px 14px; display:flex; align-items:center; justify-content:space-between;
+  border-bottom:1px solid var(--border); flex-shrink:0;
+}
+.done-head h3 { font-size:12px; font-weight:600; display:flex; align-items:center; gap:6px; }
+.done-head .cnt { color:var(--done); }
+.done-tabs { display:flex; gap:1px; background:var(--border); border-radius:5px; padding:1px; }
+.dtab {
+  padding:3px 8px; border-radius:4px; font-size:9px; font-weight:600;
+  cursor:pointer; color:var(--text-dim); background:transparent; border:none; transition:all .1s;
+}
+.dtab.active { background:var(--surface2); color:var(--text); }
+.done-body { flex:1; overflow-y:auto; padding:8px 14px; }
+.done-body::-webkit-scrollbar { width:3px; }
+.done-body::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+.done-group { margin-bottom:12px; }
+.done-gh {
+  font-size:10px; font-weight:600; color:var(--text-dim);
+  margin-bottom:4px; padding-bottom:3px; border-bottom:1px solid var(--border);
+}
+.done-gh span { color:var(--text-faint); font-weight:400; }
+.done-list { display:flex; flex-wrap:wrap; gap:5px; }
+.done-card {
+  background:var(--bg); border:1px solid var(--border); border-radius:8px;
+  padding:10px 12px; cursor:pointer; transition:all .12s;
+  min-width:240px; max-width:380px; flex:1;
+}
+.done-card:hover { border-color:var(--done); box-shadow:0 0 0 1px var(--done); }
+.done-card .card-top { display:flex; align-items:flex-start; gap:4px; }
+.done-card .card-title { font-size:13px; font-weight:600; line-height:1.4; flex:1; }
+.done-card .done-ck { color:var(--done); font-size:13px; flex-shrink:0; margin-right:4px; }
+.done-card .card-desc { font-size:11px; color:var(--text-dim); line-height:1.4; margin-top:4px; }
+.done-card .card-meta { display:flex; align-items:center; gap:4px; flex-wrap:wrap; margin-top:6px; }
+
+/* ── Detail Panel ── */
+.detail-bg { display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:200; }
+.detail-bg.open { display:flex; justify-content:flex-end; }
+.detail {
+  width:520px; max-width:92vw; background:var(--surface); height:100%;
+  overflow-y:auto; border-left:1px solid var(--border); animation:slideIn .18s ease-out;
+}
+@keyframes slideIn { from{transform:translateX(100%)} to{transform:translateX(0)} }
+.det-head { padding:16px 20px; border-bottom:1px solid var(--border); display:flex; align-items:flex-start; justify-content:space-between; }
+.det-head h2 { font-size:16px; font-weight:600; line-height:1.3; flex:1; }
+.det-close { background:none; border:none; color:var(--text-dim); cursor:pointer; font-size:18px; padding:2px 6px; border-radius:4px; }
+.det-close:hover { background:var(--border); color:var(--text); }
+.det-body { padding:16px 20px; }
+.det-field { margin-bottom:14px; }
+.det-label { font-size:9px; color:var(--text-dim); text-transform:uppercase; letter-spacing:.5px; margin-bottom:3px; }
+.det-val { font-size:13px; line-height:1.5; }
+.det-val pre {
+  background:var(--bg); border:1px solid var(--border); border-radius:6px;
+  padding:10px; font-size:11px; white-space:pre-wrap; word-break:break-word;
+  font-family:'SF Mono','Fira Code',monospace; line-height:1.4;
+}
+.det-tags { display:flex; gap:4px; flex-wrap:wrap; }
+.det-acts { padding:12px 20px; border-top:1px solid var(--border); display:flex; gap:6px; }
+
+/* ── Modal ── */
+.modal-bg { display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:300; align-items:center; justify-content:center; }
+.modal-bg.open { display:flex; }
+.modal {
+  background:var(--surface); border:1px solid var(--border); border-radius:12px;
+  padding:20px; width:460px; max-width:90vw; max-height:88vh; overflow-y:auto;
+}
+.modal h2 { font-size:14px; margin-bottom:12px; }
+.modal label { display:block; font-size:9px; color:var(--text-dim); margin:8px 0 2px; text-transform:uppercase; letter-spacing:.3px; }
+.modal input, .modal textarea, .modal select {
+  width:100%; padding:6px 8px; background:var(--bg); border:1px solid var(--border);
+  border-radius:5px; color:var(--text); font-size:12px; font-family:inherit;
+}
+.modal textarea { resize:vertical; min-height:60px; font-family:'SF Mono','Fira Code',monospace; font-size:11px; }
+.modal .row { display:flex; gap:8px; }
+.modal .row > div { flex:1; }
+.modal-acts { display:flex; justify-content:flex-end; gap:6px; margin-top:14px; }
+.btn { padding:5px 12px; border-radius:5px; border:1px solid var(--border); background:var(--surface); color:var(--text); cursor:pointer; font-size:12px; }
+.btn:hover { border-color:var(--accent); }
+.btn-pri { background:var(--accent); color:#fff; border-color:var(--accent); }
+.btn-del { color:var(--red); }
+.btn-del:hover { background:var(--red); color:#fff; border-color:var(--red); }
+
+/* ── Save indicator ── */
+.save-toast {
+  position:fixed; bottom:16px; right:16px; background:var(--done); color:#fff;
+  padding:6px 14px; border-radius:6px; font-size:11px; font-weight:600;
+  opacity:0; transition:opacity .2s; z-index:400; pointer-events:none;
+}
+.save-toast.show { opacity:1; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="h-left">
+    <span class="logo">VibeKanban</span>
+    <div class="project-tabs" id="ptabs"></div>
+    <div class="view-tabs">
+      <button class="vtab active" data-v="kanban" onclick="setView('kanban')">Kanban</button>
+      <button class="vtab" data-v="list" onclick="setView('list')">List</button>
+    </div>
+  </div>
+  <div class="h-right">
+    <div class="stats">
+      <span class="s-ip"><b id="sIP">0</b> 진행</span>
+      <span><b id="sWait">0</b> 대기</span>
+      <span class="s-dn"><b id="sDone">0</b> 완료</span>
+      <span><b id="sAll">0</b> 전체</span>
+    </div>
+    <button class="icon-btn" onclick="toggleTheme()" title="Dark/Light">◐</button>
+  </div>
+</header>
+
+<div class="main">
+  <!-- Kanban View -->
+  <div class="kanban" id="kanban"></div>
+
+  <!-- List View -->
+  <div class="list-wrap" id="listWrap">
+    <table class="list-table">
+      <thead><tr>
+        <th>Status</th><th>Pri</th><th>Title</th><th>Description</th>
+        <th>Category</th><th>Phase</th><th>Target</th><th>Lines</th><th></th>
+      </tr></thead>
+      <tbody id="listBody"></tbody>
+    </table>
+  </div>
+
+  <!-- Resizer -->
+  <div class="resizer" id="resizer"></div>
+
+  <!-- Done Zone (kanban mode) -->
+  <div class="done-zone" id="doneZone">
+    <div class="done-head">
+      <h3><span style="color:var(--done)">&#x2713;</span> Done <span class="cnt" id="doneCnt">0</span></h3>
+      <div class="done-tabs">
+        <button class="dtab active" data-g="date" onclick="setDoneTab('date')">날짜별</button>
+        <button class="dtab" data-g="category" onclick="setDoneTab('category')">카테고리별</button>
+        <button class="dtab" data-g="phase" onclick="setDoneTab('phase')">Phase별</button>
+      </div>
+    </div>
+    <div class="done-body" id="doneBody"></div>
+  </div>
+</div>
+
+<!-- Detail -->
+<div class="detail-bg" id="detBg" onclick="if(event.target===this)closeDet()">
+  <div class="detail" id="detPanel"></div>
+</div>
+
+<!-- Modal -->
+<div class="modal-bg" id="modalBg" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <h2 id="mTitle">작업 추가</h2>
+    <input type="hidden" id="mId">
+    <label>제목</label><input id="mName">
+    <label>설명</label><input id="mDesc">
+    <label>상세 내용</label><textarea id="mDetails" rows="4"></textarea>
+    <div class="row">
+      <div><label>상태</label><select id="mStatus">
+        <option value="backlog">Backlog</option><option value="todo">To Do</option>
+        <option value="in_progress">In Progress</option><option value="review">Review</option>
+        <option value="done">Done</option>
+      </select></div>
+      <div><label>우선순위</label><select id="mPri">
+        <option value="low">Low</option><option value="medium" selected>Medium</option><option value="high">High</option>
+      </select></div>
+    </div>
+    <div class="row">
+      <div><label>카테고리</label><input id="mCat"></div>
+      <div><label>Phase</label><input id="mPhase"></div>
+    </div>
+    <div class="row">
+      <div><label>목표일</label><input id="mTarget" placeholder="2026-03-15"></div>
+      <div><label>시작일</label><input id="mStart" placeholder="자동"></div>
+      <div><label>완료일</label><input id="mEnd" placeholder="자동"></div>
+    </div>
+    <div class="row">
+      <div><label>추가 줄수</label><input type="number" id="mLA" value="0" min="0"></div>
+      <div><label>삭제 줄수</label><input type="number" id="mLR" value="0" min="0"></div>
+    </div>
+    <div class="modal-acts">
+      <button class="btn btn-del" id="mDel" style="display:none;margin-right:auto" onclick="delTask()">삭제</button>
+      <button class="btn" onclick="closeModal()">취소</button>
+      <button class="btn btn-pri" onclick="saveModal()">저장</button>
+    </div>
+  </div>
+</div>
+
+<div class="save-toast" id="toast">Saved</div>
+
+<script>
+// ── State ──
+let projects=[], curProj=null, tasks=[];
+let view='kanban', doneTab='date';
+const COLS=[
+  {id:'backlog',label:'Backlog',color:'var(--backlog)'},
+  {id:'todo',label:'To Do',color:'var(--todo)'},
+  {id:'in_progress',label:'In Progress',color:'var(--in_progress)'},
+  {id:'review',label:'Review',color:'var(--review)'},
+];
+const SL={backlog:'Backlog',todo:'To Do',in_progress:'In Progress',review:'Review',done:'Done'};
+
+// ── API ──
+async function api(m,p,b){
+  const o={method:m,headers:{'Content-Type':'application/json'}};
+  if(b)o.body=JSON.stringify(b);
+  return (await fetch(p,o)).json();
+}
+function apiP(p){ return '/api/'+curProj+p; }
+
+// ── Init ──
+async function init(){
+  projects=await api('GET','/api/projects');
+  renderPTabs();
+  const h=location.hash.slice(1);
+  curProj=(projects.find(p=>p.key===h)||projects[0]||{}).key;
+  if(curProj){location.hash=curProj; await load();}
+}
+async function load(){
+  if(!curProj)return;
+  tasks=await api('GET',apiP('/tasks'));
+  renderPTabs(); render();
+}
+function switchProj(k){ curProj=k; location.hash=k; renderPTabs(); load(); }
+function renderPTabs(){
+  document.getElementById('ptabs').innerHTML=projects.map(p=>
+    '<button class="ptab'+(p.key===curProj?' active':'')+'" onclick="switchProj(this.dataset.k)" data-k="'+esc(p.key)+'">'+esc(p.name)+'</button>'
+  ).join('');
+}
+
+// ── View ──
+function setView(v){
+  view=v;
+  document.querySelectorAll('.vtab').forEach(t=>t.classList.toggle('active',t.dataset.v===v));
+  render();
+}
+function setDoneTab(t){
+  doneTab=t;
+  document.querySelectorAll('.dtab').forEach(b=>b.classList.toggle('active',b.dataset.g===t));
+  renderDone(tasks.filter(t=>t.status==='done'));
+}
+
+// ── Theme ──
+function toggleTheme(){
+  document.documentElement.classList.toggle('light');
+  localStorage.setItem('vk-theme',document.documentElement.classList.contains('light')?'light':'dark');
+}
+if(localStorage.getItem('vk-theme')==='light')document.documentElement.classList.add('light');
+
+// ── Render ──
+function render(){
+  const active=tasks.filter(t=>t.status!=='done');
+  const done=tasks.filter(t=>t.status==='done');
+  // Stats
+  document.getElementById('sIP').textContent=tasks.filter(t=>t.status==='in_progress').length;
+  document.getElementById('sWait').textContent=tasks.filter(t=>t.status==='backlog'||t.status==='todo').length;
+  document.getElementById('sDone').textContent=done.length;
+  document.getElementById('sAll').textContent=tasks.length;
+  document.getElementById('doneCnt').textContent=done.length;
+
+  const kb=document.getElementById('kanban');
+  const lw=document.getElementById('listWrap');
+  const rz=document.getElementById('resizer');
+  const dz=document.getElementById('doneZone');
+
+  if(view==='kanban'){
+    kb.classList.remove('hide'); lw.classList.remove('active');
+    rz.classList.remove('hide'); dz.classList.remove('hide');
+    renderKanban(active);
+    renderDone(done);
+  } else {
+    kb.classList.add('hide'); lw.classList.add('active');
+    rz.classList.add('hide'); dz.classList.add('hide');
+    renderList(); // all tasks including done
+  }
+}
+
+// ── Kanban ──
+function renderKanban(active){
+  const kb=document.getElementById('kanban');
+  kb.innerHTML=COLS.map(col=>{
+    const items=active.filter(t=>t.status===col.id);
+    return '<div class="column"><div class="col-head"><div class="col-label"><div class="dot" style="background:'+col.color+'"></div>'+col.label+'</div><span class="col-cnt">'+items.length+'</span></div>'
+      +'<div class="col-body drop-zone" data-st="'+col.id+'">'+items.map(cardHtml).join('')+'</div>'
+      +'<button class="add-btn" onclick="openAdd(\''+col.id+'\')">+ 추가</button></div>';
+  }).join('');
+  bindDrag();
+}
+
+function cardHtml(t){
+  let meta='';
+  if(t.priority)meta+='<span class="tag '+t.priority+'">'+t.priority[0].toUpperCase()+'</span>';
+  if(t.category)meta+='<span class="tag">'+esc(t.category)+'</span>';
+  if(t.phase)meta+='<span class="tag">'+esc(t.phase)+'</span>';
+  if((t.status==='todo'||t.status==='in_progress')&&t.target_date){
+    const dd=dday(t.target_date);
+    if(dd!==null){
+      const cls=dd<0?'overdue':dd<=3?'soon':'ok';
+      const lb=dd<0?'D+'+(-dd):dd===0?'D-Day':'D-'+dd;
+      meta+='<span class="dday '+cls+'">'+lb+'</span>';
+    }
+  }
+  const la=t.lines_added||0,lr=t.lines_removed||0;
+  if(la||lr)meta+=linesHtml(la,lr);
+  return '<div class="card" data-id="'+t.id+'" onclick="openDet('+t.id+')" draggable="true">'
+    +'<div class="card-top"><div class="card-title">'+esc(t.title)+'</div>'
+    +'<div class="card-acts">'
+    +'<button class="card-act" onclick="event.stopPropagation();openEdit('+t.id+')" title="수정">&#9998;</button>'
+    +'<button class="card-act del" onclick="event.stopPropagation();confirmDel('+t.id+')" title="삭제">&times;</button>'
+    +'</div></div>'
+    +(t.description?'<div class="card-desc">'+esc(t.description)+'</div>':'')
+    +'<div class="card-meta">'+meta+'</div></div>';
+}
+
+// ── Done Zone ──
+function renderDone(done){
+  if(!done)done=tasks.filter(t=>t.status==='done');
+  const el=document.getElementById('doneBody');
+  if(!done.length){el.innerHTML='<div style="color:var(--text-dim);padding:12px;font-size:11px">완료된 작업이 없습니다</div>';return;}
+  const groups={};
+  done.forEach(t=>{
+    let key;
+    if(doneTab==='date') key=shortDate(t.completed_at||t.updated_at||t.created_at);
+    else if(doneTab==='category') key=t.category||'기타';
+    else key=t.phase||'No Phase';
+    (groups[key]=groups[key]||[]).push(t);
+  });
+  const keys=doneTab==='date'?Object.keys(groups).sort().reverse():Object.keys(groups).sort();
+  el.innerHTML=keys.map(k=>
+    '<div class="done-group"><div class="done-gh">'+esc(k)+' <span>'+groups[k].length+'건</span></div>'
+    +'<div class="done-list">'+groups[k].map(doneCardHtml).join('')+'</div></div>'
+  ).join('');
+}
+
+function doneCardHtml(t){
+  const el=elapsed(t.started_at,t.completed_at||t.updated_at);
+  const la=t.lines_added||0,lr=t.lines_removed||0;
+  let meta='';
+  if(t.category)meta+='<span class="tag">'+esc(t.category)+'</span>';
+  if(t.phase)meta+='<span class="tag">'+esc(t.phase)+'</span>';
+  if(el)meta+='<span class="tag" style="color:var(--purple)">'+el+'</span>';
+  if(la||lr)meta+=linesHtml(la,lr);
+  const cd=shortDate(t.completed_at||t.updated_at);
+  if(cd)meta+='<span class="tag" style="opacity:.7">'+cd+'</span>';
+  return '<div class="done-card" onclick="openDet('+t.id+')">'
+    +'<div class="card-top"><span class="done-ck">&#x2713;</span><div class="card-title">'+esc(t.title)+'</div></div>'
+    +(t.description?'<div class="card-desc">'+esc(t.description)+'</div>':'')
+    +'<div class="card-meta">'+meta+'</div></div>';
+}
+
+// ── List View (ALL tasks) ──
+function renderList(){
+  const body=document.getElementById('listBody');
+  // Sort: in_progress first, then todo, review, backlog, done last
+  const order={in_progress:0,todo:1,review:2,backlog:3,done:4};
+  const sorted=[...tasks].sort((a,b)=>(order[a.status]||9)-(order[b.status]||9));
+  body.innerHTML=sorted.map(t=>{
+    const la=t.lines_added||0,lr=t.lines_removed||0;
+    const isDone=t.status==='done';
+    return '<tr class="'+(isDone?'done-row':'')+'" data-id="'+t.id+'">'
+      +'<td><select onchange="inlineUpd('+t.id+',\'status\',this.value)">'
+      +['backlog','todo','in_progress','review','done'].map(s=>'<option value="'+s+'"'+(t.status===s?' selected':'')+'>'+SL[s]+'</option>').join('')
+      +'</select></td>'
+      +'<td><select onchange="inlineUpd('+t.id+',\'priority\',this.value)">'
+      +['low','medium','high'].map(p=>'<option value="'+p+'"'+(t.priority===p?' selected':'')+'>'+p+'</option>').join('')
+      +'</select></td>'
+      +'<td class="card-title-cell" contenteditable="true" onblur="inlineBlur('+t.id+',\'title\',this)">'+esc(t.title)+'</td>'
+      +'<td class="desc-cell" contenteditable="true" onblur="inlineBlur('+t.id+',\'description\',this)">'+esc(t.description||'')+'</td>'
+      +'<td contenteditable="true" onblur="inlineBlur('+t.id+',\'category\',this)">'+esc(t.category||'')+'</td>'
+      +'<td contenteditable="true" onblur="inlineBlur('+t.id+',\'phase\',this)">'+esc(t.phase||'')+'</td>'
+      +'<td contenteditable="true" onblur="inlineBlur('+t.id+',\'target_date\',this)">'+esc(t.target_date||'')+'</td>'
+      +'<td>'+((la||lr)?linesHtml(la,lr):'')+'</td>'
+      +'<td><button class="list-del" onclick="confirmDel('+t.id+')">&times;</button></td>'
+      +'</tr>';
+  }).join('');
+  body.querySelectorAll('td[contenteditable]').forEach(td=>{
+    td.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();td.blur();}});
+  });
+}
+
+function inlineUpd(id,f,v){ api('PUT',apiP('/tasks/'+id),{[f]:v}).then(()=>{toast();load();}); }
+function inlineBlur(id,f,el){
+  const orig=tasks.find(t=>t.id===id);
+  const val=el.textContent.trim();
+  if(orig&&orig[f]!==val) api('PUT',apiP('/tasks/'+id),{[f]:val}).then(()=>{toast();load();});
+}
+
+// ── Detail Panel ──
+function openDet(id){
+  const t=tasks.find(x=>x.id===id);if(!t)return;
+  const el=elapsed(t.started_at,t.completed_at||t.updated_at);
+  const la=t.lines_added||0,lr=t.lines_removed||0;
+  document.getElementById('detPanel').innerHTML=
+    '<div class="det-head"><h2>'+esc(t.title)+'</h2><button class="det-close" onclick="closeDet()">&times;</button></div>'
+    +'<div class="det-body">'
+    +'<div class="det-field"><div class="det-tags">'
+    +'<span class="tag" style="background:var(--'+t.status+');color:#fff">'+SL[t.status]+'</span>'
+    +'<span class="tag '+t.priority+'">'+t.priority+'</span>'
+    +(t.category?'<span class="tag">'+esc(t.category)+'</span>':'')
+    +(t.phase?'<span class="tag">'+esc(t.phase)+'</span>':'')
+    +'</div></div>'
+    +(t.description?'<div class="det-field"><div class="det-label">설명</div><div class="det-val">'+esc(t.description)+'</div></div>':'')
+    +(t.details?'<div class="det-field"><div class="det-label">상세 내용</div><div class="det-val"><pre>'+esc(t.details)+'</pre></div></div>':'')
+    +'<div class="det-field"><div class="det-label">일정</div><div class="det-val" style="font-size:12px">'
+    +(t.target_date?'<div>목표: <b>'+t.target_date+'</b></div>':'')
+    +(t.started_at?'<div>시작: '+t.started_at+'</div>':'')
+    +(t.completed_at?'<div>완료: '+t.completed_at+'</div>':'')
+    +(el?'<div>소요: <b style="color:var(--purple)">'+el+'</b></div>':'')
+    +'</div></div>'
+    +((la||lr)?'<div class="det-field"><div class="det-label">코드 변경량</div><div class="det-val">'
+    +'<span style="color:var(--green);font-weight:600">+'+la+'</span>'
+    +'<span style="color:var(--red);font-weight:600;margin-left:8px">-'+lr+'</span> '
+    +linesHtml(la,lr)+'</div></div>':'')
+    +'<div class="det-field" style="font-size:9px;color:var(--text-faint)">생성: '+esc(t.created_at||'')+' | 수정: '+esc(t.updated_at||'')+'</div>'
+    +'</div>'
+    +'<div class="det-acts"><button class="btn" onclick="closeDet();openEdit('+t.id+')">수정</button>'
+    +'<button class="btn btn-del" onclick="confirmDel('+t.id+')">삭제</button></div>';
+  document.getElementById('detBg').classList.add('open');
+}
+function closeDet(){ document.getElementById('detBg').classList.remove('open'); }
+
+// ── Modal ──
+function openAdd(st){
+  document.getElementById('mTitle').textContent='작업 추가';
+  document.getElementById('mId').value='';
+  ['mName','mDesc','mDetails','mCat','mPhase','mTarget','mStart','mEnd'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('mStatus').value=st||'todo';
+  document.getElementById('mPri').value='medium';
+  document.getElementById('mLA').value=0;
+  document.getElementById('mLR').value=0;
+  document.getElementById('mDel').style.display='none';
+  document.getElementById('modalBg').classList.add('open');
+  setTimeout(()=>document.getElementById('mName').focus(),80);
+}
+function openEdit(id){
+  const t=tasks.find(x=>x.id===id);if(!t)return;
+  document.getElementById('mTitle').textContent='작업 수정';
+  document.getElementById('mId').value=t.id;
+  document.getElementById('mName').value=t.title;
+  document.getElementById('mDesc').value=t.description||'';
+  document.getElementById('mDetails').value=t.details||'';
+  document.getElementById('mStatus').value=t.status;
+  document.getElementById('mPri').value=t.priority||'medium';
+  document.getElementById('mCat').value=t.category||'';
+  document.getElementById('mPhase').value=t.phase||'';
+  document.getElementById('mTarget').value=t.target_date||'';
+  document.getElementById('mStart').value=t.started_at||'';
+  document.getElementById('mEnd').value=t.completed_at||'';
+  document.getElementById('mLA').value=t.lines_added||0;
+  document.getElementById('mLR').value=t.lines_removed||0;
+  document.getElementById('mDel').style.display='block';
+  document.getElementById('modalBg').classList.add('open');
+}
+function closeModal(){ document.getElementById('modalBg').classList.remove('open'); }
+
+async function saveModal(){
+  const id=document.getElementById('mId').value;
+  const d={
+    title:document.getElementById('mName').value.trim(),
+    description:document.getElementById('mDesc').value.trim(),
+    details:document.getElementById('mDetails').value.trim(),
+    status:document.getElementById('mStatus').value,
+    priority:document.getElementById('mPri').value,
+    category:document.getElementById('mCat').value.trim(),
+    phase:document.getElementById('mPhase').value.trim(),
+    target_date:document.getElementById('mTarget').value.trim(),
+    started_at:document.getElementById('mStart').value.trim(),
+    completed_at:document.getElementById('mEnd').value.trim(),
+    lines_added:parseInt(document.getElementById('mLA').value)||0,
+    lines_removed:parseInt(document.getElementById('mLR').value)||0,
+  };
+  if(!d.title)return alert('제목을 입력하세요');
+  await api(id?'PUT':'POST', id?apiP('/tasks/'+id):apiP('/tasks'), d);
+  closeModal(); toast(); load();
+}
+async function delTask(){
+  const id=document.getElementById('mId').value;
+  if(!id||!confirm('삭제할까요?'))return;
+  await api('DELETE',apiP('/tasks/'+id));
+  closeModal(); closeDet(); load();
+}
+async function confirmDel(id){
+  if(!confirm('삭제할까요?'))return;
+  await api('DELETE',apiP('/tasks/'+id));
+  closeDet(); load();
+}
+
+// ── Drag & Drop ──
+function bindDrag(){
+  document.querySelectorAll('.card[draggable]').forEach(c=>{
+    c.addEventListener('dragstart',e=>{e.dataTransfer.setData('text/plain',c.dataset.id);c.classList.add('dragging');});
+    c.addEventListener('dragend',()=>c.classList.remove('dragging'));
+  });
+  document.querySelectorAll('.drop-zone').forEach(z=>{
+    z.addEventListener('dragover',e=>{e.preventDefault();z.classList.add('over');});
+    z.addEventListener('dragleave',()=>z.classList.remove('over'));
+    z.addEventListener('drop',async e=>{
+      e.preventDefault();z.classList.remove('over');
+      const id=e.dataTransfer.getData('text/plain');
+      if(id)await api('PUT',apiP('/tasks/'+id),{status:z.dataset.st});
+      load();
+    });
+  });
+  // Done zone drop
+  const dz=document.getElementById('doneZone');
+  dz.addEventListener('dragover',e=>{e.preventDefault();dz.style.borderTopColor='var(--done)';});
+  dz.addEventListener('dragleave',()=>{dz.style.borderTopColor='';});
+  dz.addEventListener('drop',async e=>{
+    e.preventDefault();dz.style.borderTopColor='';
+    const id=e.dataTransfer.getData('text/plain');
+    if(id){await api('PUT',apiP('/tasks/'+id),{status:'done'});load();}
+  });
+}
+
+// ── Resizer ──
+const rz=document.getElementById('resizer'), dz=document.getElementById('doneZone');
+rz.addEventListener('mousedown',e=>{
+  const sy=e.clientY,sh=dz.offsetHeight;
+  const mv=e=>{dz.style.height=Math.max(60,Math.min(window.innerHeight*.7,sh-(e.clientY-sy)))+'px';};
+  const up=()=>{document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);};
+  document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up);
+});
+
+// ── Helpers ──
+function esc(s){if(!s)return '';const d=document.createElement('div');d.textContent=String(s);return d.innerHTML;}
+function shortDate(s){if(!s)return '';const m=String(s).match(/(\d{4})-(\d{2})-(\d{2})/);return m?m[1].slice(2)+m[2]+m[3]:s;}
+function dday(s){const m=String(s).match(/(\d{4})-(\d{2})-(\d{2})/);if(!m)return null;const d=new Date(+m[1],+m[2]-1,+m[3]),n=new Date();n.setHours(0,0,0,0);return Math.ceil((d-n)/864e5);}
+function elapsed(s,e){
+  if(!s||!e)return '';
+  const a=String(s).match(/(\d{4})-(\d{2})-(\d{2})/),b=String(e).match(/(\d{4})-(\d{2})-(\d{2})/);
+  if(!a||!b)return '';
+  const d=Math.round((new Date(+b[1],+b[2]-1,+b[3])-new Date(+a[1],+a[2]-1,+a[3]))/864e5);
+  return d<0?'':d===0?'당일':d+'일';
+}
+function linesHtml(a,r){
+  if(!a&&!r)return '';
+  const t=a+r,sc=Math.min(1,150/t),aw=Math.max(1,Math.round(a*sc)),rw=Math.max(1,Math.round(r*sc));
+  return '<span class="lines-bar" style="width:'+(aw+rw)+'px"><span class="a" style="width:'+aw+'px"></span><span class="r" style="width:'+rw+'px"></span></span><span class="lines-lbl">+'+a+' -'+r+'</span>';
+}
+function toast(){
+  const t=document.getElementById('toast');t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),1200);
+}
+
+// ── Keys ──
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){closeDet();closeModal();}
+  if(e.key==='n'&&e.target===document.body&&!document.querySelector('.modal-bg.open,.detail-bg.open')){e.preventDefault();openAdd('todo');}
+});
+
+// ── Go ──
+init();
+setInterval(load,5000);
+</script>
+</body>
+</html>

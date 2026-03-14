@@ -1,0 +1,14 @@
+{
+  "name": "vibekanban",
+  "version": "1.0.0",
+  "description": "Dev progress kanban board for Claude Code. Track tasks, code changes, and work reports — all from your terminal.",
+  "author": {
+    "name": "Hogun Jung",
+    "email": "info@zest.im",
+    "url": "https://github.com/hoarchi"
+  },
+  "repository": "https://github.com/hoarchi/vibekanban",
+  "license": "MIT",
+  "keywords": ["kanban", "progress", "devlog", "tracking", "productivity"],
+  "skills": "./skills/"
+}
