@@ -21,9 +21,11 @@ Track tasks, code changes, and work reports — all from your terminal.
 - **Auto-tracking** — `started_at` / `completed_at` set automatically on status change
 - **Code change stats** — `lines_added`, `lines_removed` from `git diff`
 - **Work reports** — Per-task details (changed files, decisions, follow-ups)
+- **Code review** — Per-task review items with resolved/unresolved tracking and badge indicators
 - **Kanban + List views** — Drag & drop kanban or spreadsheet-style inline editing
 - **Done grouping** — By date, category, or phase
 - **Dark / Light mode** — Toggle with localStorage persistence
+- **Auto-start** — macOS LaunchAgent keeps the server running across reboots
 - **Progress sync** — Import from existing PROGRESS.md / devlog files
 - **Zero dependencies** — Pure Python + vanilla JS. No npm, no build step.
 
@@ -35,11 +37,13 @@ Track tasks, code changes, and work reports — all from your terminal.
 claude plugin install @hoarchi/vibekanban
 ```
 
-Then run the setup to copy server files:
+Then run the setup to copy server files and install auto-start:
 
 ```bash
 /vibekanban setup
 ```
+
+This copies server files to `~/.claude/kanban/` and installs a macOS LaunchAgent that auto-starts the server on login.
 
 Or manually:
 
@@ -58,11 +62,22 @@ cp vibekanban/scripts/server.py ~/.claude/kanban/
 cp vibekanban/scripts/kanban.html ~/.claude/kanban/
 mkdir -p ~/.claude/skills
 cp -r vibekanban/skills/vibekanban ~/.claude/skills/
+
+# Install auto-start (macOS)
+python3 vibekanban/scripts/setup.py
+```
+
+To uninstall auto-start:
+
+```bash
+python3 vibekanban/scripts/setup.py uninstall
 ```
 
 ## Quick Start
 
 ### 1. Start the server
+
+If you ran `setup.py`, the server is already running via launchd. Otherwise:
 
 ```bash
 python3 ~/.claude/kanban/server.py serve 4242 &
@@ -109,6 +124,8 @@ Claude Code ──(curl)──→ localhost:4242 ──(sqlite)──→ vibekan
 - **UI**: `~/.claude/kanban/kanban.html` — Single-file vanilla JS frontend
 - **DB**: `{project}/vibekanban/kanban.db` — SQLite per project
 - **Registry**: `~/.claude/kanban/projects.json` — Maps project keys to DB paths
+- **LaunchAgent**: `~/Library/LaunchAgents/com.vibekanban.server.plist` — Auto-start on login
+- **Log**: `~/.claude/kanban/server.log` — Server output log
 
 ## Web UI
 
@@ -130,8 +147,16 @@ Completed tasks grouped by:
 ### Detail Panel
 Click any card to open the right slide-in panel with:
 - Full description and work report
+- Code review items with interactive resolved/unresolved toggles
 - Schedule (target, started, completed, elapsed time)
 - Code change stats (+/- bar graph)
+
+### Code Review
+Tasks can have code review items stored as structured data:
+- Review findings are shown in the detail panel with **resolved/unresolved** radio buttons
+- Cards display a review badge: green `Review ✓` when all resolved, orange `N unresolved` otherwise
+- Claude automatically adds review items during `qq` (daily wrap-up) or task completion
+- Review covers security (OWASP), code quality, and architecture concerns
 
 ## API Reference
 
@@ -163,6 +188,7 @@ Click any card to open the right slide-in panel with:
 | lines_added | int | Lines of code added |
 | lines_removed | int | Lines of code removed |
 | position | int | Sort order within column |
+| review | string | JSON array of review items: `[{"text":"...","resolved":false}]` |
 
 ## Requirements
 
