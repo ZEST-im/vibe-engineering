@@ -19,11 +19,20 @@ One server (localhost:4242) serves multiple projects with tab-based switching.
 
 ## Setup (First Time)
 
-After installing the plugin, run the setup script to copy server files:
+After installing the plugin, run the setup script to copy server files and install auto-start:
 
 ```bash
-# Copy server files to ~/.claude/kanban/
+# Copy server files + install launchd auto-start
 python3 ${CLAUDE_PLUGIN_ROOT}/scripts/setup.py
+```
+
+This will:
+1. Copy `server.py` and `kanban.html` to `~/.claude/kanban/`
+2. Install a macOS LaunchAgent (`com.vibekanban.server`) that auto-starts the server on login
+
+To uninstall auto-start:
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/setup.py uninstall
 ```
 
 Or manually:
@@ -141,7 +150,35 @@ VibeKanban replaces PROGRESS.md. All dev progress goes into the kanban.
 ### On qq (daily wrap-up)
 1. Print kanban summary (today's done, in-progress, tomorrow's tasks)
 2. Update in-progress task details with interim report
-3. Do NOT update PROGRESS.md (kanban replaces it)
+3. **Code review**: Run security + quality review on all changes since last commit
+   - Review items stored in task's `review` field as JSON array
+   - Format: `[{"text": "리뷰 내용", "resolved": false}, ...]`
+   - Web UI shows each item with 해결/미해결 radio buttons
+4. Do NOT update PROGRESS.md (kanban replaces it)
+
+### Code Review on Task Completion
+When moving a task to `done` or during `qq`, perform a code review:
+1. Run `git diff` to see all changes for the task
+2. Check for:
+   - Security issues (OWASP top 10, secrets, injection)
+   - Code quality (unused imports, dead code, error handling)
+   - Architecture concerns (coupling, abstraction, naming)
+3. Store review findings in `review` field as JSON:
+   ```json
+   [
+     {"text": "SQL injection risk in search_handler: use parameterized query", "resolved": false},
+     {"text": "Missing error handling for API timeout in fetch_data()", "resolved": false},
+     {"text": "Good: proper input validation on user registration", "resolved": true}
+   ]
+   ```
+4. Update task via API:
+   ```bash
+   curl -X PUT http://localhost:4242/api/{project}/tasks/{id} \
+     -H 'Content-Type: application/json' \
+     -d '{"review": "[{\"text\":\"...\",\"resolved\":false}]"}'
+   ```
+5. Review badge appears on kanban cards (green ✓ = all resolved, orange = N unresolved)
+6. Detail panel shows full review with interactive 해결/미해결 toggles
 
 ### Key Rules
 - PROGRESS.md is "external-sharing snapshot" only. Daily records go to kanban only.

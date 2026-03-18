@@ -68,6 +68,7 @@ def init_db(db_path):
         "lines_added": "INTEGER DEFAULT 0",
         "lines_removed": "INTEGER DEFAULT 0",
         "phase": "TEXT DEFAULT ''",
+        "review": "TEXT DEFAULT ''",
     }
     for col, typedef in migrations.items():
         if col not in existing:
@@ -196,14 +197,14 @@ class Handler(BaseHTTPRequestHandler):
             if rest == ["tasks"]:
                 d = self._body()
                 c = get_conn(db_path)
-                cols = "title,description,details,status,priority,category,target_date,started_at,completed_at,lines_added,lines_removed,position,phase"
+                cols = "title,description,details,status,priority,category,target_date,started_at,completed_at,lines_added,lines_removed,position,phase,review"
                 cur = c.execute(
-                    f"INSERT INTO tasks ({cols}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    f"INSERT INTO tasks ({cols}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (d.get("title",""), d.get("description",""), d.get("details",""),
                      d.get("status","backlog"), d.get("priority","medium"), d.get("category",""),
                      d.get("target_date",""), d.get("started_at",""), d.get("completed_at",""),
                      d.get("lines_added",0), d.get("lines_removed",0), d.get("position",0),
-                     d.get("phase","")))
+                     d.get("phase",""), d.get("review","")))
                 c.commit()
                 t = dict(c.execute("SELECT * FROM tasks WHERE id=?", (cur.lastrowid,)).fetchone())
                 c.close()
@@ -214,14 +215,14 @@ class Handler(BaseHTTPRequestHandler):
                 c = get_conn(db_path)
                 ids = []
                 for item in d.get("tasks", []):
-                    cols = "title,description,details,status,priority,category,target_date,started_at,completed_at,lines_added,lines_removed,position,phase"
+                    cols = "title,description,details,status,priority,category,target_date,started_at,completed_at,lines_added,lines_removed,position,phase,review"
                     cur = c.execute(
-                        f"INSERT INTO tasks ({cols}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        f"INSERT INTO tasks ({cols}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         (item.get("title",""), item.get("description",""), item.get("details",""),
                          item.get("status","backlog"), item.get("priority","medium"), item.get("category",""),
                          item.get("target_date",""), item.get("started_at",""), item.get("completed_at",""),
                          item.get("lines_added",0), item.get("lines_removed",0), item.get("position",0),
-                         item.get("phase","")))
+                         item.get("phase",""), item.get("review","")))
                     ids.append(cur.lastrowid)
                 c.commit()
                 c.close()
@@ -244,7 +245,7 @@ class Handler(BaseHTTPRequestHandler):
                 d = self._body()
                 c = get_conn(db_path)
                 allowed = ("title","description","details","status","priority","category",
-                           "target_date","started_at","completed_at","lines_added","lines_removed","position","phase")
+                           "target_date","started_at","completed_at","lines_added","lines_removed","position","phase","review")
                 sets, vals = [], []
                 for k in allowed:
                     if k in d:
