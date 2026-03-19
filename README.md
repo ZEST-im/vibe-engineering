@@ -57,20 +57,17 @@ cp ~/.claude/plugins/cache/vibekanban/scripts/kanban.html ~/.claude/kanban/
 
 ```bash
 git clone https://github.com/hoarchi/vibekanban.git
-mkdir -p ~/.claude/kanban
-cp vibekanban/scripts/server.py ~/.claude/kanban/
-cp vibekanban/scripts/kanban.html ~/.claude/kanban/
-mkdir -p ~/.claude/skills
-cp -r vibekanban/skills/vibekanban ~/.claude/skills/
-
-# Install auto-start (macOS)
-python3 vibekanban/scripts/setup.py
+cd vibekanban
+python3 scripts/setup.py
 ```
+
+This copies server files to `~/.claude/kanban/` and installs a macOS LaunchAgent for auto-start.
 
 To uninstall auto-start:
 
 ```bash
-python3 vibekanban/scripts/setup.py uninstall
+cd vibekanban
+python3 scripts/setup.py uninstall
 ```
 
 ## Quick Start
