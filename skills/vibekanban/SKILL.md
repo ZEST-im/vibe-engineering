@@ -66,6 +66,10 @@ cp ${CLAUDE_PLUGIN_ROOT}/scripts/kanban.html ~/.claude/kanban/kanban.html
 | `/vibekanban list [status]` | List tasks |
 | `/vibekanban sync` | Sync tasks from PROGRESS.md / devlog |
 | `/vibekanban report` | Today's completed work summary |
+| `/vibekanban phase` | Show current phase status + task summary per phase |
+| `/vibekanban phase init` | Create PHASES.md + docs/CURRENT_PHASE.md templates |
+| `/vibekanban phase done` | Complete current phase (update PHASES.md, verify all tasks done) |
+| `/vibekanban phase next <name>` | Transition to next phase (runs checklist first) |
 
 ## Server
 
@@ -184,6 +188,81 @@ When moving a task to `done` or during `qq`, perform a code review:
 - PROGRESS.md is "external-sharing snapshot" only. Daily records go to kanban only.
 - Every task MUST have a `category` (backend, frontend, infra, data, docs, qa, etc.)
 - Write `details` for completed tasks thoroughly — viewable in web UI
+
+## Phase Management
+
+VibeKanban includes a built-in phase management system for structured project progression.
+
+### Phase Naming Convention
+
+```
+PHASE_{PURPOSE}{NN}
+```
+
+| Prefix | Focus | Transition Condition |
+|--------|-------|---------------------|
+| `SEED` | Initial structure, boilerplate, DB schema | Basic structure + data loading done |
+| `MVP`  | Core features only — prove it works | Demoable to users |
+| `PMF`  | User feedback-driven iteration | Real user feedback collection started |
+| `SCALE`| Performance, architecture cleanup, AI features | Traffic/data bottleneck detected |
+| `GTM`  | Launch, marketing integration | Product stabilized |
+
+Example: `PHASE_MVP01`, `PHASE_PMF02`
+
+### Required Files (per project)
+
+**`PHASES.md`** — Master plan (all phases + completion history)
+```
+## PHASE_MVP01 ✅ DONE (2026-03-01)
+> One-line summary
+
+- Completed item 1
+- Completed item 2
+- N tests
+
+## PHASE_MVP02 🚧 IN PROGRESS
+> One-line summary
+
+- [x] Completed item
+- [ ] Pending item
+
+## PHASE_PMF01 ⏳ PENDING
+> One-line summary
+```
+
+**`docs/CURRENT_PHASE.md`** — Current session scope (keep short)
+```
+## Now: PHASE_MVP02
+## Scope: [features/files]
+## Done when: [checklist]
+## Do NOT touch: [out-of-scope list]
+```
+
+### Phase Rules (Claude MUST follow)
+
+1. **Read `PHASES.md` and `docs/CURRENT_PHASE.md` at session start.**
+2. **Never advance to the next Phase without explicit user instruction.**
+3. **Update `PHASES.md` on Phase completion** (date, achievements, test count).
+4. **Strictly respect `docs/CURRENT_PHASE.md`'s `Do NOT touch` list.**
+5. **Phase completion criteria**: All items in `Done when` checklist must be checked. Partial = 🚧.
+
+### Phase Transition Checklist
+
+| Item | Verify |
+|------|--------|
+| Tests | All tests for current Phase features pass |
+| Docs | `PHASES.md` updated with completion details + test count |
+| Tech debt | Any debt carried forward is noted in PENDING Phase |
+| VibeKanban | All tasks for the Phase are `done` |
+
+### Coding Style per Phase
+
+| Phase | Test Coverage | Refactoring | Logging |
+|-------|--------------|-------------|---------|
+| SEED  | None OK      | No          | No      |
+| MVP   | Critical paths only | No   | Minimal |
+| PMF   | Feature-level | Light      | Feature flags + metrics |
+| SCALE | Full         | Yes         | Full    |
 
 ## Web UI Features
 
