@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-VibeKanban Server v3 — Multi-project Kanban Board
+VibeKanban Server v4 — Multi-project Kanban Board (Multi-user Safe)
 하나의 서버(localhost:4242)에서 여러 프로젝트 칸반을 탭으로 전환
 """
 
@@ -9,6 +9,7 @@ import json
 import os
 import sys
 import signal
+from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
@@ -69,6 +70,8 @@ def init_db(db_path):
         "lines_removed": "INTEGER DEFAULT 0",
         "phase": "TEXT DEFAULT ''",
         "review": "TEXT DEFAULT ''",
+        "created_by": "TEXT DEFAULT ''",
+        "assigned_to": "TEXT DEFAULT ''",
     }
     for col, typedef in migrations.items():
         if col not in existing:
@@ -79,7 +82,9 @@ def init_db(db_path):
     conn.close()
 
 def get_conn(db_path):
-    c = sqlite3.connect(db_path)
+    c = sqlite3.connect(db_path, timeout=10)
+    c.execute("PRAGMA journal_mode=WAL")
+    c.execute("PRAGMA busy_timeout=5000")
     c.row_factory = sqlite3.Row
     return c
 
@@ -159,6 +164,19 @@ class Handler(BaseHTTPRequestHandler):
                 c.close()
                 return self._json([dict(r) for r in rows])
 
+            if rest == ["export"]:
+                if not os.path.exists(db_path):
+                    return self._json({"tasks": [], "exported_at": "", "project": pkey})
+                c = get_conn(db_path)
+                rows = c.execute("SELECT * FROM tasks ORDER BY id").fetchall()
+                c.close()
+                return self._json({
+                    "version": 1,
+                    "project": pkey,
+                    "exported_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+                    "tasks": [dict(r) for r in rows]
+                })
+
             if rest == ["stats"]:
                 if not os.path.exists(db_path):
                     return self._json({"total": 0})
@@ -197,32 +215,67 @@ class Handler(BaseHTTPRequestHandler):
             if rest == ["tasks"]:
                 d = self._body()
                 c = get_conn(db_path)
-                cols = "title,description,details,status,priority,category,target_date,started_at,completed_at,lines_added,lines_removed,position,phase,review"
+                cols = "title,description,details,status,priority,category,target_date,started_at,completed_at,lines_added,lines_removed,position,phase,review,created_by,assigned_to"
                 cur = c.execute(
-                    f"INSERT INTO tasks ({cols}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    f"INSERT INTO tasks ({cols}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (d.get("title",""), d.get("description",""), d.get("details",""),
                      d.get("status","backlog"), d.get("priority","medium"), d.get("category",""),
                      d.get("target_date",""), d.get("started_at",""), d.get("completed_at",""),
                      d.get("lines_added",0), d.get("lines_removed",0), d.get("position",0),
-                     d.get("phase",""), d.get("review","")))
+                     d.get("phase",""), d.get("review",""),
+                     d.get("created_by",""), d.get("assigned_to","")))
                 c.commit()
                 t = dict(c.execute("SELECT * FROM tasks WHERE id=?", (cur.lastrowid,)).fetchone())
                 c.close()
                 return self._json(t, 201)
+
+            if rest == ["import"]:
+                d = self._body()
+                tasks = d.get("tasks", [])
+                mode = d.get("mode", "merge")  # merge | replace
+                c = get_conn(db_path)
+                if mode == "replace":
+                    c.execute("DELETE FROM tasks")
+                imported, skipped, updated = 0, 0, 0
+                for t in tasks:
+                    orig_id = t.get("id")
+                    if mode == "merge" and orig_id:
+                        existing = c.execute("SELECT id, updated_at FROM tasks WHERE id=?", (orig_id,)).fetchone()
+                        if existing:
+                            # keep the newer version
+                            if t.get("updated_at", "") > (existing["updated_at"] or ""):
+                                cols = "title,description,details,status,priority,category,target_date,started_at,completed_at,lines_added,lines_removed,position,phase,review,created_by,assigned_to,updated_at"
+                                sets = ", ".join(f"{col}=?" for col in cols.split(","))
+                                vals = [t.get(col, "") for col in cols.split(",")]
+                                vals.append(orig_id)
+                                c.execute(f"UPDATE tasks SET {sets} WHERE id=?", vals)
+                                updated += 1
+                            else:
+                                skipped += 1
+                            continue
+                    cols = "title,description,details,status,priority,category,target_date,started_at,completed_at,lines_added,lines_removed,position,phase,review,created_by,assigned_to"
+                    c.execute(
+                        f"INSERT INTO tasks ({cols}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        tuple(t.get(col, "" if col not in ("lines_added","lines_removed","position") else 0) for col in cols.split(",")))
+                    imported += 1
+                c.commit()
+                c.close()
+                return self._json({"imported": imported, "updated": updated, "skipped": skipped, "mode": mode}, 200)
 
             if rest == ["tasks", "bulk"]:
                 d = self._body()
                 c = get_conn(db_path)
                 ids = []
                 for item in d.get("tasks", []):
-                    cols = "title,description,details,status,priority,category,target_date,started_at,completed_at,lines_added,lines_removed,position,phase,review"
+                    cols = "title,description,details,status,priority,category,target_date,started_at,completed_at,lines_added,lines_removed,position,phase,review,created_by,assigned_to"
                     cur = c.execute(
-                        f"INSERT INTO tasks ({cols}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        f"INSERT INTO tasks ({cols}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         (item.get("title",""), item.get("description",""), item.get("details",""),
                          item.get("status","backlog"), item.get("priority","medium"), item.get("category",""),
                          item.get("target_date",""), item.get("started_at",""), item.get("completed_at",""),
                          item.get("lines_added",0), item.get("lines_removed",0), item.get("position",0),
-                         item.get("phase",""), item.get("review","")))
+                         item.get("phase",""), item.get("review",""),
+                         item.get("created_by",""), item.get("assigned_to","")))
                     ids.append(cur.lastrowid)
                 c.commit()
                 c.close()
@@ -245,7 +298,8 @@ class Handler(BaseHTTPRequestHandler):
                 d = self._body()
                 c = get_conn(db_path)
                 allowed = ("title","description","details","status","priority","category",
-                           "target_date","started_at","completed_at","lines_added","lines_removed","position","phase","review")
+                           "target_date","started_at","completed_at","lines_added","lines_removed","position","phase","review",
+                           "created_by","assigned_to")
                 sets, vals = [], []
                 for k in allowed:
                     if k in d:

@@ -66,6 +66,9 @@ cp ${CLAUDE_PLUGIN_ROOT}/scripts/kanban.html ~/.claude/kanban/kanban.html
 | `/vibekanban list [status]` | List tasks |
 | `/vibekanban sync` | Sync tasks from PROGRESS.md / devlog |
 | `/vibekanban report` | Today's completed work summary |
+| `/vibekanban export` | Export tasks to JSON file (`vibekanban/kanban-export.json`) — git-safe sharing |
+| `/vibekanban import` | Import tasks from JSON file (merge mode: keeps newer version) |
+| `/vibekanban import replace` | Import tasks from JSON file (replace mode: overwrite all) |
 | `/vibekanban phase` | Show current phase status + task summary per phase |
 | `/vibekanban phase init` | Create PHASES.md + docs/CURRENT_PHASE.md templates |
 | `/vibekanban phase done` | Complete current phase (update PHASES.md, verify all tasks done) |
@@ -295,9 +298,67 @@ Example: `PHASE_MVP01`, `PHASE_PMF02`
 - **Auto-refresh**: 5 seconds
 - **Phase field**: Group completed tasks by Phase (e.g., Phase 1, Phase 2)
 
+## Multi-User Rules
+
+VibeKanban supports multiple users working on the same project via JSON export/import.
+
+### DB File — Never Git Commit
+
+- `kanban.db`, `kanban.db-wal`, `kanban.db-shm` are **binary files** — git cannot merge them
+- Always add to `.gitignore` (the project `.gitignore` already includes `*.db` patterns)
+- Share via JSON export only
+
+### Sharing Workflow
+
+```
+1. Before push:  /vibekanban export   → vibekanban/kanban-export.json (git-tracked)
+2. After pull:   /vibekanban import   → merge JSON into local DB (keeps newer by updated_at)
+3. Conflict:     JSON is text-based   → standard git merge tools work per-task
+```
+
+### User Identification
+
+- Tasks have `created_by` and `assigned_to` fields
+- Claude auto-sets `created_by` from `git config user.name` on task creation
+- `in_progress` limit (1 task) applies **per user**, not globally
+- When starting a task, set `assigned_to` to current user
+
+### Export/Import API
+
+```bash
+# Export all tasks to JSON
+curl http://localhost:4242/api/{project}/export > vibekanban/kanban-export.json
+
+# Import with merge (keeps newer version by updated_at)
+curl -X POST http://localhost:4242/api/{project}/import \
+  -H 'Content-Type: application/json' \
+  -d @vibekanban/kanban-export.json
+
+# Import with replace (overwrite all tasks)
+curl -X POST http://localhost:4242/api/{project}/import \
+  -H 'Content-Type: application/json' \
+  -d '{"mode":"replace","tasks":[...]}'
+```
+
+### Merge Strategy
+
+| Mode | Behavior |
+|------|----------|
+| `merge` (default) | New tasks inserted. Existing tasks (same id): keep whichever has newer `updated_at` |
+| `replace` | Delete all existing tasks, insert imported tasks |
+
+### Claude Auto-Recording Rules (Multi-User)
+
+1. On task creation → set `created_by` to `git config user.name`
+2. On `/vibekanban start` → set `assigned_to` to current user
+3. On `in_progress` enforcement → only move **own** tasks back to `todo`, not others'
+4. Before `git push` → run `/vibekanban export` automatically
+5. After `git pull` → run `/vibekanban import` if `kanban-export.json` changed
+
 ## Notes
 
 - Single server serves all projects (port 4242)
 - `~/.claude/kanban/projects.json` stores project list
-- Each project's `vibekanban/` directory can be included in git
+- Each project's `vibekanban/` directory can be included in git (except `*.db` files)
 - Server is localhost only (127.0.0.1)
+- SQLite uses WAL mode + busy_timeout for concurrent session safety

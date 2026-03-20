@@ -117,6 +117,7 @@ header {
 .tag.high { background:var(--red); color:#fff; }
 .tag.medium { background:var(--orange); color:#fff; }
 .tag.low { background:var(--green); color:#fff; }
+.tag.user { background:var(--accent-dim); color:var(--accent); border:1px solid rgba(88,166,255,.2); }
 .dday { font-size:9px; font-weight:700; padding:1px 6px; border-radius:3px; margin-left:auto; }
 .dday.overdue { background:var(--red); color:#fff; }
 .dday.soon { background:var(--orange); color:#fff; }
@@ -328,7 +329,7 @@ header {
     <table class="list-table">
       <thead><tr>
         <th>Status</th><th>Pri</th><th>Title</th><th>Description</th>
-        <th>Category</th><th>Phase</th><th>Target</th><th>Lines</th><th></th>
+        <th>Category</th><th>Phase</th><th>Assignee</th><th>Target</th><th>Lines</th><th></th>
       </tr></thead>
       <tbody id="listBody"></tbody>
     </table>
@@ -377,6 +378,7 @@ header {
     <div class="row">
       <div><label>카테고리</label><input id="mCat"></div>
       <div><label>Phase</label><input id="mPhase"></div>
+      <div><label>담당자</label><input id="mAssign" placeholder="git user.name"></div>
     </div>
     <div class="row">
       <div><label>목표일</label><input id="mTarget" placeholder="2026-03-15"></div>
@@ -501,6 +503,7 @@ function cardHtml(t){
   if(t.priority)meta+='<span class="tag '+t.priority+'">'+t.priority[0].toUpperCase()+'</span>';
   if(t.category)meta+='<span class="tag">'+esc(t.category)+'</span>';
   if(t.phase)meta+='<span class="tag">'+esc(t.phase)+'</span>';
+  if(t.assigned_to)meta+='<span class="tag user">@'+esc(t.assigned_to)+'</span>';
   if((t.status==='todo'||t.status==='in_progress')&&t.target_date){
     const dd=dday(t.target_date);
     if(dd!==null){
@@ -548,6 +551,7 @@ function doneCardHtml(t){
   let meta='';
   if(t.category)meta+='<span class="tag">'+esc(t.category)+'</span>';
   if(t.phase)meta+='<span class="tag">'+esc(t.phase)+'</span>';
+  if(t.assigned_to)meta+='<span class="tag user">@'+esc(t.assigned_to)+'</span>';
   if(el)meta+='<span class="tag" style="color:var(--purple)">'+el+'</span>';
   if(la||lr)meta+=linesHtml(la,lr);
   meta+=reviewBadgeHtml(t);
@@ -579,6 +583,7 @@ function renderList(){
       +'<td class="desc-cell" contenteditable="true" onblur="inlineBlur('+t.id+',\'description\',this)">'+esc(t.description||'')+'</td>'
       +'<td contenteditable="true" onblur="inlineBlur('+t.id+',\'category\',this)">'+esc(t.category||'')+'</td>'
       +'<td contenteditable="true" onblur="inlineBlur('+t.id+',\'phase\',this)">'+esc(t.phase||'')+'</td>'
+      +'<td contenteditable="true" onblur="inlineBlur('+t.id+',\'assigned_to\',this)">'+esc(t.assigned_to||'')+'</td>'
       +'<td contenteditable="true" onblur="inlineBlur('+t.id+',\'target_date\',this)">'+esc(t.target_date||'')+'</td>'
       +'<td>'+((la||lr)?linesHtml(la,lr):'')+'</td>'
       +'<td><button class="list-del" onclick="confirmDel('+t.id+')">&times;</button></td>'
@@ -623,6 +628,10 @@ function openDet(id){
     +'<span style="color:var(--green);font-weight:600">+'+la+'</span>'
     +'<span style="color:var(--red);font-weight:600;margin-left:8px">-'+lr+'</span> '
     +linesHtml(la,lr)+'</div></div>':'')
+    +((t.created_by||t.assigned_to)?'<div class="det-field"><div class="det-label">담당</div><div class="det-val" style="font-size:12px">'
+    +(t.created_by?'<div>생성자: <b>'+esc(t.created_by)+'</b></div>':'')
+    +(t.assigned_to?'<div>담당자: <b>'+esc(t.assigned_to)+'</b></div>':'')
+    +'</div></div>':'')
     +'<div class="det-field" style="font-size:9px;color:var(--text-faint)">생성: '+esc(t.created_at||'')+' | 수정: '+esc(t.updated_at||'')+'</div>'
     +'</div>'
     +'<div class="det-acts"><button class="btn" onclick="closeDet();openEdit('+t.id+')">수정</button>'
@@ -635,7 +644,7 @@ function closeDet(){ document.getElementById('detBg').classList.remove('open'); 
 function openAdd(st){
   document.getElementById('mTitle').textContent='작업 추가';
   document.getElementById('mId').value='';
-  ['mName','mDesc','mDetails','mCat','mPhase','mTarget','mStart','mEnd'].forEach(id=>document.getElementById(id).value='');
+  ['mName','mDesc','mDetails','mCat','mPhase','mAssign','mTarget','mStart','mEnd'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('mStatus').value=st||'todo';
   document.getElementById('mPri').value='medium';
   document.getElementById('mLA').value=0;
@@ -655,6 +664,7 @@ function openEdit(id){
   document.getElementById('mPri').value=t.priority||'medium';
   document.getElementById('mCat').value=t.category||'';
   document.getElementById('mPhase').value=t.phase||'';
+  document.getElementById('mAssign').value=t.assigned_to||'';
   document.getElementById('mTarget').value=t.target_date||'';
   document.getElementById('mStart').value=t.started_at||'';
   document.getElementById('mEnd').value=t.completed_at||'';
@@ -675,6 +685,7 @@ async function saveModal(){
     priority:document.getElementById('mPri').value,
     category:document.getElementById('mCat').value.trim(),
     phase:document.getElementById('mPhase').value.trim(),
+    assigned_to:document.getElementById('mAssign').value.trim(),
     target_date:document.getElementById('mTarget').value.trim(),
     started_at:document.getElementById('mStart').value.trim(),
     completed_at:document.getElementById('mEnd').value.trim(),
