@@ -2,6 +2,7 @@
 
 Dev progress kanban board for [Claude Code](https://claude.ai/claude-code).
 Track tasks, code changes, and work reports — all from your terminal.
+**Multi-user ready**: share your kanban via git, just like code.
 
 ### Kanban View (Dark)
 ![Kanban Dark](docs/screenshot-kanban-dark.png)
@@ -17,8 +18,9 @@ Track tasks, code changes, and work reports — all from your terminal.
 
 ## Features
 
+- **Multi-user** — JSON storage means `git pull/push` just works. Multiple developers share one kanban via git — no binary conflicts, no export/import ceremony.
 - **Multi-project** — One server, multiple projects via tabs
-- **Git-friendly** — JSON storage, not SQLite. Diffs, merges, code review all work naturally.
+- **Git-friendly** — Text-based JSON files. Diffs, merges, code review all work naturally.
 - **Auto-tracking** — `started_at` / `completed_at` set automatically on status change
 - **Code change stats** — `lines_added`, `lines_removed` from `git diff`
 - **Work reports** — Per-task details (changed files, decisions, follow-ups)
