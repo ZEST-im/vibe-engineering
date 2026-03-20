@@ -154,20 +154,29 @@ VibeKanban replaces PROGRESS.md. All dev progress goes into the kanban.
 ### On qq (daily wrap-up)
 1. Print kanban summary (today's done, in-progress, tomorrow's tasks)
 2. Update in-progress task details with interim report
-3. **Code review**: Run security + quality review on all changes since last commit
-   - Review items stored in task's `review` field as JSON array
-   - Format: `[{"text": "리뷰 내용", "resolved": false}, ...]`
-   - Web UI shows each item with 해결/미해결 radio buttons
+3. **Code review**: Run review on all uncommitted + unpushed changes (see "Code Review" section)
 4. Do NOT update PROGRESS.md (kanban replaces it)
 
-### Code Review on Task Completion
-When moving a task to `done` or during `qq`, perform a code review:
-1. Run `git diff` to see all changes for the task
+### Code Review (on Push / PR)
+
+Code review is triggered on **`git push`** or **`gh pr create`** — NOT on every commit.
+A Claude Code hook enforces this automatically, but Claude should also follow these rules.
+
+#### When to review
+| Trigger | Scope |
+|---------|-------|
+| `git push` | All commits being pushed (`git diff @{push}..HEAD` or `git diff origin/<branch>..HEAD`) |
+| `gh pr create` | All changes in the PR branch vs base branch |
+| `qq` (daily wrap-up) | All uncommitted + unpushed changes |
+
+#### How to review
+1. Run `git diff` for the appropriate scope (see above)
 2. Check for:
    - Security issues (OWASP top 10, secrets, injection)
    - Code quality (unused imports, dead code, error handling)
    - Architecture concerns (coupling, abstraction, naming)
-3. Store review findings in `review` field as JSON:
+3. Find the current `in_progress` task (or most recent `done` task) from kanban
+4. Store review findings in that task's `review` field as JSON:
    ```json
    [
      {"text": "SQL injection risk in search_handler: use parameterized query", "resolved": false},
@@ -175,14 +184,18 @@ When moving a task to `done` or during `qq`, perform a code review:
      {"text": "Good: proper input validation on user registration", "resolved": true}
    ]
    ```
-4. Update task via API:
+5. Update task via API:
    ```bash
    curl -X PUT http://localhost:4242/api/{project}/tasks/{id} \
      -H 'Content-Type: application/json' \
      -d '{"review": "[{\"text\":\"...\",\"resolved\":false}]"}'
    ```
-5. Review badge appears on kanban cards (green ✓ = all resolved, orange = N unresolved)
-6. Detail panel shows full review with interactive 해결/미해결 toggles
+6. Print review summary to the user (🔴 CRITICAL / 🟡 HIGH / 🟠 MEDIUM)
+7. If 🔴 CRITICAL found → warn user before push completes
+
+#### Web UI
+- Review badge on kanban cards (green ✓ = all resolved, orange = N unresolved)
+- Detail panel shows full review with interactive 해결/미해결 toggles
 
 ### Key Rules
 - PROGRESS.md is "external-sharing snapshot" only. Daily records go to kanban only.

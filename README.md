@@ -21,7 +21,7 @@ Track tasks, code changes, and work reports — all from your terminal.
 - **Auto-tracking** — `started_at` / `completed_at` set automatically on status change
 - **Code change stats** — `lines_added`, `lines_removed` from `git diff`
 - **Work reports** — Per-task details (changed files, decisions, follow-ups)
-- **Code review** — Per-task review items with resolved/unresolved tracking and badge indicators
+- **Code review** — Auto-triggered on `git push` / `gh pr create` via Claude Code hook, with resolved/unresolved tracking
 - **Kanban + List views** — Drag & drop kanban or spreadsheet-style inline editing
 - **Done grouping** — By date, category, or phase
 - **Dark / Light mode** — Toggle with localStorage persistence
@@ -43,7 +43,7 @@ Then run the setup to copy server files and install auto-start:
 /vibekanban setup
 ```
 
-This copies server files to `~/.claude/kanban/` and installs a macOS LaunchAgent that auto-starts the server on login.
+This copies server files, installs auto-start, and registers the code review hook.
 
 Or manually:
 
@@ -61,9 +61,12 @@ cd vibekanban
 python3 scripts/setup.py
 ```
 
-This copies server files to `~/.claude/kanban/` and installs a macOS LaunchAgent for auto-start.
+This will:
+1. Copy server files to `~/.claude/kanban/`
+2. Install a macOS LaunchAgent for auto-start
+3. Install a code review hook in `~/.claude/settings.json` (triggers on `git push` / `gh pr create`)
 
-To uninstall auto-start:
+To uninstall:
 
 ```bash
 cd vibekanban
@@ -122,6 +125,7 @@ Claude Code ──(curl)──→ localhost:4242 ──(sqlite)──→ vibekan
 - **DB**: `{project}/vibekanban/kanban.db` — SQLite per project
 - **Registry**: `~/.claude/kanban/projects.json` — Maps project keys to DB paths
 - **LaunchAgent**: `~/Library/LaunchAgents/com.vibekanban.server.plist` — Auto-start on login
+- **Hook**: `~/.claude/hooks/vibekanban-review.sh` — Code review trigger on push/PR
 - **Log**: `~/.claude/kanban/server.log` — Server output log
 
 ## Web UI
@@ -152,7 +156,8 @@ Click any card to open the right slide-in panel with:
 Tasks can have code review items stored as structured data:
 - Review findings are shown in the detail panel with **resolved/unresolved** radio buttons
 - Cards display a review badge: green `Review ✓` when all resolved, orange `N unresolved` otherwise
-- Claude automatically adds review items during `qq` (daily wrap-up) or task completion
+- Auto-triggered via Claude Code hook on `git push` or `gh pr create`
+- Also runs during `qq` (daily wrap-up) for uncommitted/unpushed changes
 - Review covers security (OWASP), code quality, and architecture concerns
 
 ## API Reference
