@@ -27,7 +27,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/setup.py
 ```
 
 This will:
-1. Copy `server.py` and `kanban.html` to `~/.claude/kanban/`
+1. Copy `server.py` and `kanban.html` to `~/.claude/skills/vibekanban/`
 2. Install a macOS LaunchAgent (`com.vibekanban.server`) that auto-starts the server on login
 
 To uninstall auto-start:
@@ -37,17 +37,17 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/setup.py uninstall
 
 Or manually:
 ```bash
-mkdir -p ~/.claude/kanban
-cp ${CLAUDE_PLUGIN_ROOT}/scripts/server.py ~/.claude/kanban/server.py
-cp ${CLAUDE_PLUGIN_ROOT}/scripts/kanban.html ~/.claude/kanban/kanban.html
+mkdir -p ~/.claude/skills/vibekanban
+cp ${CLAUDE_PLUGIN_ROOT}/scripts/server.py ~/.claude/skills/vibekanban/server.py
+cp ${CLAUDE_PLUGIN_ROOT}/scripts/kanban.html ~/.claude/skills/vibekanban/kanban.html
 ```
 
 ## File Locations
 
 ```
-~/.claude/kanban/server.py           ← Web server (global, shared across projects)
-~/.claude/kanban/kanban.html         ← Web UI (loaded by server)
-~/.claude/kanban/projects.json       ← Project registry
+~/.claude/skills/vibekanban/server.py           ← Web server (global, shared across projects)
+~/.claude/skills/vibekanban/kanban.html         ← Web UI (loaded by server)
+~/.claude/skills/vibekanban/projects.json       ← Project registry
 {project}/vibekanban/kanban.db       ← Per-project SQLite DB
 ```
 
@@ -82,13 +82,13 @@ cp ${CLAUDE_PLUGIN_ROOT}/scripts/kanban.html ~/.claude/kanban/kanban.html
 lsof -ti:4242
 
 # Register project (if server is already running)
-python3 ~/.claude/kanban/server.py register <project_key> <display_name> <db_path>
+python3 ~/.claude/skills/vibekanban/server.py register <project_key> <display_name> <db_path>
 
 # Start server with auto-registration
-python3 ~/.claude/kanban/server.py "$(pwd)/vibekanban/kanban.db" 4242 "ProjectName" &
+python3 ~/.claude/skills/vibekanban/server.py "$(pwd)/vibekanban/kanban.db" 4242 "ProjectName" &
 
 # Start server only (for already-registered projects)
-python3 ~/.claude/kanban/server.py serve 4242 &
+python3 ~/.claude/skills/vibekanban/server.py serve 4242 &
 ```
 
 ### Stop
@@ -358,7 +358,7 @@ curl -X POST http://localhost:4242/api/{project}/import \
 ## Notes
 
 - Single server serves all projects (port 4242)
-- `~/.claude/kanban/projects.json` stores project list
+- `~/.claude/skills/vibekanban/projects.json` stores project list
 - Each project's `vibekanban/` directory can be included in git (except `*.db` files)
 - Server is localhost only (127.0.0.1)
 - SQLite uses WAL mode + busy_timeout for concurrent session safety

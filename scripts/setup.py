@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-VibeKanban Setup — Copy server files to ~/.claude/kanban/ and install launchd agent
+VibeKanban Setup — Copy server files to ~/.claude/skills/vibekanban/ and install launchd agent
 """
 import os
 import shutil
@@ -9,7 +9,7 @@ import sys
 
 import json
 
-DEST = os.path.expanduser("~/.claude/kanban")
+DEST = os.path.expanduser("~/.claude/skills/vibekanban")
 SRC = os.path.dirname(os.path.abspath(__file__))
 HOME = os.path.expanduser("~")
 PLIST_NAME = "com.vibekanban.server.plist"
@@ -18,8 +18,15 @@ SETTINGS_PATH = os.path.expanduser("~/.claude/settings.json")
 
 
 def copy_server_files():
-    """Copy server.py and kanban.html to ~/.claude/kanban/"""
+    """Copy server.py and kanban.html to ~/.claude/skills/vibekanban/"""
     os.makedirs(DEST, exist_ok=True)
+
+    # Copy SKILL.md from skills directory
+    skill_src = os.path.join(SRC, "..", "skills", "vibekanban", "SKILL.md")
+    if os.path.exists(skill_src):
+        dst = os.path.join(DEST, "SKILL.md")
+        shutil.copy2(skill_src, dst)
+        print(f"  COPIED SKILL.md → {dst}")
 
     files = ["server.py", "kanban.html"]
     for f in files:

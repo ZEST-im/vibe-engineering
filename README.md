@@ -21,7 +21,7 @@ Track tasks, code changes, and work reports — all from your terminal.
 - **Auto-tracking** — `started_at` / `completed_at` set automatically on status change
 - **Code change stats** — `lines_added`, `lines_removed` from `git diff`
 - **Work reports** — Per-task details (changed files, decisions, follow-ups)
-- **Code review** — Auto-triggered on `git push` / `gh pr create` via Claude Code hook, with resolved/unresolved tracking
+- **Code review** — Auto-triggered on `git push` / `gh pr create` via Claude Code hook
 - **Kanban + List views** — Drag & drop kanban or spreadsheet-style inline editing
 - **Done grouping** — By date, category, or phase
 - **Dark / Light mode** — Toggle with localStorage persistence
@@ -31,45 +31,38 @@ Track tasks, code changes, and work reports — all from your terminal.
 
 ## Install
 
-### As a Claude Code Plugin (recommended)
+### Step 1. Clone the repo (anywhere you like)
 
 ```bash
-claude plugin install @hoarchi/vibekanban
-```
-
-Then run the setup to copy server files and install auto-start:
-
-```bash
-/vibekanban setup
-```
-
-This copies server files, installs auto-start, and registers the code review hook.
-
-Or manually:
-
-```bash
-mkdir -p ~/.claude/kanban
-cp ~/.claude/plugins/cache/vibekanban/scripts/server.py ~/.claude/kanban/
-cp ~/.claude/plugins/cache/vibekanban/scripts/kanban.html ~/.claude/kanban/
-```
-
-### Manual Install
-
-```bash
+cd ~/dev        # or wherever you keep repos
 git clone https://github.com/hoarchi/vibekanban.git
+```
+
+### Step 2. Run setup
+
+```bash
 cd vibekanban
 python3 scripts/setup.py
 ```
 
-This will:
-1. Copy server files to `~/.claude/kanban/`
-2. Install a macOS LaunchAgent for auto-start
-3. Install a code review hook in `~/.claude/settings.json` (triggers on `git push` / `gh pr create`)
+This does 3 things:
+1. Copies `SKILL.md`, `server.py`, `kanban.html` to `~/.claude/skills/vibekanban/`
+2. Installs a macOS LaunchAgent — server auto-starts on login (port 4242)
+3. Registers a code review hook in `~/.claude/settings.json`
 
-To uninstall:
+After setup, the cloned repo is no longer needed for daily use. You can keep it for updates.
+
+### Verify
 
 ```bash
-cd vibekanban
+curl http://localhost:4242/api/projects
+# Should return [] (empty project list)
+```
+
+### Uninstall
+
+```bash
+cd ~/dev/vibekanban    # or wherever you cloned it
 python3 scripts/setup.py uninstall
 ```
 
@@ -80,13 +73,13 @@ python3 scripts/setup.py uninstall
 If you ran `setup.py`, the server is already running via launchd. Otherwise:
 
 ```bash
-python3 ~/.claude/kanban/server.py serve 4242 &
+python3 ~/.claude/skills/vibekanban/server.py serve 4242 &
 ```
 
 ### 2. Register your project
 
 ```bash
-python3 ~/.claude/kanban/server.py register my_project "My Project" "$(pwd)/vibekanban/kanban.db"
+python3 ~/.claude/skills/vibekanban/server.py register my_project "My Project" "$(pwd)/vibekanban/kanban.db"
 ```
 
 ### 3. Open the board
@@ -120,13 +113,27 @@ Claude Code ──(curl)──→ localhost:4242 ──(sqlite)──→ vibekan
                         Your Browser
 ```
 
-- **Server**: `~/.claude/kanban/server.py` — Python HTTP server, serves API + UI
-- **UI**: `~/.claude/kanban/kanban.html` — Single-file vanilla JS frontend
-- **DB**: `{project}/vibekanban/kanban.db` — SQLite per project
-- **Registry**: `~/.claude/kanban/projects.json` — Maps project keys to DB paths
+All files live in one directory:
+
+```
+~/.claude/skills/vibekanban/
+  SKILL.md           ← Skill definition (Claude reads this)
+  server.py          ← Python HTTP server (API + static)
+  kanban.html        ← Single-file vanilla JS frontend
+  projects.json      ← Project registry (auto-generated)
+  server.log         ← Server output log
+```
+
+Per-project data:
+
+```
+{project}/vibekanban/kanban.db   ← SQLite database (per project, git-ignored)
+```
+
+Other:
+
 - **LaunchAgent**: `~/Library/LaunchAgents/com.vibekanban.server.plist` — Auto-start on login
 - **Hook**: `~/.claude/hooks/vibekanban-review.sh` — Code review trigger on push/PR
-- **Log**: `~/.claude/kanban/server.log` — Server output log
 
 ## Web UI
 
@@ -171,6 +178,8 @@ Tasks can have code review items stored as structured data:
 | PUT | `/api/{key}/tasks/{id}` | Update task |
 | DELETE | `/api/{key}/tasks/{id}` | Delete task |
 | POST | `/api/{key}/tasks/bulk` | Bulk create tasks |
+| GET | `/api/{key}/export` | Export tasks to JSON |
+| POST | `/api/{key}/import` | Import tasks from JSON |
 | GET | `/api/{key}/stats` | Task count by status |
 
 ### Task Fields
@@ -191,12 +200,14 @@ Tasks can have code review items stored as structured data:
 | lines_removed | int | Lines of code removed |
 | position | int | Sort order within column |
 | review | string | JSON array of review items: `[{"text":"...","resolved":false}]` |
+| created_by | string | Creator (auto-set from `git config user.name`) |
+| assigned_to | string | Assignee (set on `/vibekanban start`) |
 
 ## Requirements
 
 - Python 3.6+
 - Claude Code CLI
-- A modern browser
+- macOS (for LaunchAgent auto-start; server works on any OS)
 
 No npm. No pip install. No build step. Just Python and a browser.
 

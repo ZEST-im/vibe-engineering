@@ -9,7 +9,7 @@ VibeKanban runs entirely on your local machine. No data is collected, transmitte
 ## Data Storage
 
 - All task data is stored in local SQLite databases (`vibekanban/kanban.db`) within your project directories.
-- The project registry is stored at `~/.claude/kanban/projects.json` on your local filesystem.
+- The project registry is stored at `~/.claude/skills/vibekanban/projects.json` on your local filesystem.
 - The web server runs on `127.0.0.1` (localhost only) and is not accessible from the network.
 
 ## Data Collection

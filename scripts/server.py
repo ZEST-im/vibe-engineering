@@ -13,7 +13,7 @@ from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
-CONFIG_PATH = os.path.expanduser("~/.claude/kanban/projects.json")
+CONFIG_PATH = os.path.expanduser("~/.claude/skills/vibekanban/projects.json")
 
 # ── Projects Registry ──────────────────────────────
 
