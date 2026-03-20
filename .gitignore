@@ -1,11 +1,10 @@
-# SQLite database files (binary, cannot merge)
-*.db
-*.db-wal
-*.db-shm
-
 # Python
 __pycache__/
 *.pyc
 
 # macOS
 .DS_Store
+
+# Server runtime (not needed in repo)
+*.bak
+server.log

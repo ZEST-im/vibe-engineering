@@ -15,7 +15,8 @@ One server (localhost:4242) serves multiple projects with tab-based switching.
 2. **Auto-tracking**: `in_progress` → `started_at`, `done` → `completed_at` auto-set
 3. **Code change stats**: `lines_added`, `lines_removed` measured via `git diff`
 4. **Work reports**: `details` field stores per-task reports (changed files, decisions)
-5. **Progress sync**: Import existing records from PROGRESS.md / devlog files
+5. **Git-friendly**: JSON storage — diffs, merges, and code review all work naturally
+6. **Archive**: Done tasks archived to monthly files, always visible in dashboard
 
 ## Setup (First Time)
 
@@ -27,8 +28,9 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/setup.py
 ```
 
 This will:
-1. Copy `server.py` and `kanban.html` to `~/.claude/skills/vibekanban/`
+1. Copy `server.py`, `kanban.html`, `SKILL.md` to `~/.claude/skills/vibekanban/`
 2. Install a macOS LaunchAgent (`com.vibekanban.server`) that auto-starts the server on login
+3. Register a code review hook in `~/.claude/settings.json`
 
 To uninstall auto-start:
 ```bash
@@ -48,7 +50,8 @@ cp ${CLAUDE_PLUGIN_ROOT}/scripts/kanban.html ~/.claude/skills/vibekanban/kanban.
 ~/.claude/skills/vibekanban/server.py           ← Web server (global, shared across projects)
 ~/.claude/skills/vibekanban/kanban.html         ← Web UI (loaded by server)
 ~/.claude/skills/vibekanban/projects.json       ← Project registry
-{project}/vibekanban/kanban.db       ← Per-project SQLite DB
+{project}/vibekanban/kanban.json                ← Per-project task data (git-tracked)
+{project}/vibekanban/archive/YYYY-MM.json       ← Monthly archives (git-tracked)
 ```
 
 ## Commands
@@ -66,9 +69,10 @@ cp ${CLAUDE_PLUGIN_ROOT}/scripts/kanban.html ~/.claude/skills/vibekanban/kanban.
 | `/vibekanban list [status]` | List tasks |
 | `/vibekanban sync` | Sync tasks from PROGRESS.md / devlog |
 | `/vibekanban report` | Today's completed work summary |
-| `/vibekanban export` | Export tasks to JSON file (`vibekanban/kanban-export.json`) — git-safe sharing |
+| `/vibekanban export` | Export all tasks to JSON file (`vibekanban/kanban-export.json`) |
 | `/vibekanban import` | Import tasks from JSON file (merge mode: keeps newer version) |
 | `/vibekanban import replace` | Import tasks from JSON file (replace mode: overwrite all) |
+| `/vibekanban archive` | Archive done tasks to monthly files |
 | `/vibekanban phase` | Show current phase status + task summary per phase |
 | `/vibekanban phase init` | Create PHASES.md + docs/CURRENT_PHASE.md templates |
 | `/vibekanban phase done` | Complete current phase (update PHASES.md, verify all tasks done) |
@@ -82,10 +86,10 @@ cp ${CLAUDE_PLUGIN_ROOT}/scripts/kanban.html ~/.claude/skills/vibekanban/kanban.
 lsof -ti:4242
 
 # Register project (if server is already running)
-python3 ~/.claude/skills/vibekanban/server.py register <project_key> <display_name> <db_path>
+python3 ~/.claude/skills/vibekanban/server.py register <project_key> <display_name> <kanban_dir>
 
-# Start server with auto-registration
-python3 ~/.claude/skills/vibekanban/server.py "$(pwd)/vibekanban/kanban.db" 4242 "ProjectName" &
+# Start server with auto-registration (legacy db_path also works)
+python3 ~/.claude/skills/vibekanban/server.py "$(pwd)/vibekanban" 4242 "ProjectName" &
 
 # Start server only (for already-registered projects)
 python3 ~/.claude/skills/vibekanban/server.py serve 4242 &
@@ -107,12 +111,12 @@ curl http://localhost:4242/api/projects
 ```bash
 curl -X POST http://localhost:4242/api/projects \
   -H 'Content-Type: application/json' \
-  -d '{"key":"my_project","name":"My Project","db_path":"/path/to/vibekanban/kanban.db"}'
+  -d '{"key":"my_project","name":"My Project","kanban_dir":"/path/to/vibekanban"}'
 ```
 
 ### Task API
 ```bash
-# List
+# List (returns active + archived tasks)
 curl http://localhost:4242/api/{project_key}/tasks
 
 # Create
@@ -129,6 +133,9 @@ curl -X PUT http://localhost:4242/api/{project_key}/tasks/{id} \
 curl -X POST http://localhost:4242/api/{project_key}/tasks/bulk \
   -H 'Content-Type: application/json' \
   -d '{"tasks":[{"title":"Task 1","status":"done"},{"title":"Task 2","status":"todo"}]}'
+
+# Archive done tasks to monthly files
+curl -X POST http://localhost:4242/api/{project_key}/archive
 ```
 
 ## Auto-Recording Rules (Claude MUST follow)
@@ -285,7 +292,7 @@ Example: `PHASE_MVP01`, `PHASE_PMF02`
 - **Project tabs**: Switch between projects in header (URL hash persisted)
 - **Kanban view**: 4 active columns (Backlog, To Do, In Progress, Review) — drag & drop, cards show description + edit/delete buttons
 - **List view**: Spreadsheet-style table, all tasks (including Done) with inline editing
-- **Done zone**: 3 tabs — by Date / Category / Phase grouping
+- **Done zone**: 3 tabs — by Date / Category / Phase grouping (includes archived tasks)
 - **Done card rules**: No edit/delete on Done cards in kanban — only via detail panel
 - **Detail panel**: Right slide-in, shows report, schedule, code change stats
 - **Dark/Light mode**: Toggle button + localStorage persistence
@@ -300,20 +307,22 @@ Example: `PHASE_MVP01`, `PHASE_PMF02`
 
 ## Multi-User Rules
 
-VibeKanban supports multiple users working on the same project via JSON export/import.
+VibeKanban uses JSON files for storage — fully git-friendly.
 
-### DB File — Never Git Commit
+### Storage — Git-Tracked
 
-- `kanban.db`, `kanban.db-wal`, `kanban.db-shm` are **binary files** — git cannot merge them
-- Always add to `.gitignore` (the project `.gitignore` already includes `*.db` patterns)
-- Share via JSON export only
+- `vibekanban/kanban.json` — active tasks (todo, in_progress, review + recent done)
+- `vibekanban/archive/YYYY-MM.json` — monthly archives of completed tasks
+- All files are text-based JSON — git diff, merge, and conflict resolution work naturally
+- Commit these files along with your code
 
 ### Sharing Workflow
 
 ```
-1. Before push:  /vibekanban export   → vibekanban/kanban-export.json (git-tracked)
-2. After pull:   /vibekanban import   → merge JSON into local DB (keeps newer by updated_at)
-3. Conflict:     JSON is text-based   → standard git merge tools work per-task
+1. Work normally — kanban.json is updated as you work
+2. git add vibekanban/ → commit with your code changes
+3. On pull — if merge conflict in kanban.json, resolve like any JSON (per-task)
+4. Archive periodically: /vibekanban archive → moves done tasks to archive/YYYY-MM.json
 ```
 
 ### User Identification
@@ -326,7 +335,7 @@ VibeKanban supports multiple users working on the same project via JSON export/i
 ### Export/Import API
 
 ```bash
-# Export all tasks to JSON
+# Export all tasks (active + archived) to JSON
 curl http://localhost:4242/api/{project}/export > vibekanban/kanban-export.json
 
 # Import with merge (keeps newer version by updated_at)
@@ -338,6 +347,9 @@ curl -X POST http://localhost:4242/api/{project}/import \
 curl -X POST http://localhost:4242/api/{project}/import \
   -H 'Content-Type: application/json' \
   -d '{"mode":"replace","tasks":[...]}'
+
+# Archive done tasks to monthly files
+curl -X POST http://localhost:4242/api/{project}/archive
 ```
 
 ### Merge Strategy
@@ -352,13 +364,12 @@ curl -X POST http://localhost:4242/api/{project}/import \
 1. On task creation → set `created_by` to `git config user.name`
 2. On `/vibekanban start` → set `assigned_to` to current user
 3. On `in_progress` enforcement → only move **own** tasks back to `todo`, not others'
-4. Before `git push` → run `/vibekanban export` automatically
-5. After `git pull` → run `/vibekanban import` if `kanban-export.json` changed
+4. Periodically archive done tasks (`/vibekanban archive`) to keep kanban.json small
 
 ## Notes
 
 - Single server serves all projects (port 4242)
 - `~/.claude/skills/vibekanban/projects.json` stores project list
-- Each project's `vibekanban/` directory can be included in git (except `*.db` files)
+- Each project's `vibekanban/` directory should be git-tracked (kanban.json + archive/)
 - Server is localhost only (127.0.0.1)
-- SQLite uses WAL mode + busy_timeout for concurrent session safety
+- JSON writes use atomic file replacement (write to .tmp, then rename) for safety

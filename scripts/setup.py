@@ -42,6 +42,11 @@ def copy_server_files():
         shutil.copy2(src, dst)
         print(f"  COPIED {f} → {dst}")
 
+    # Clean up old ~/.claude/kanban/ directory if it exists
+    old_dir = os.path.expanduser("~/.claude/kanban")
+    if os.path.isdir(old_dir):
+        print(f"  NOTE: Old directory {old_dir} still exists. You can remove it manually.")
+
 
 def install_launchd():
     """Install launchd agent for auto-starting kanban server on login"""
@@ -196,6 +201,29 @@ def uninstall_launchd():
         print(f"  {PLIST_NAME} not installed")
 
 
+def migrate_projects_json():
+    """Migrate projects.json from old db_path format to new kanban_dir format"""
+    config_path = os.path.join(DEST, "projects.json")
+    if not os.path.exists(config_path):
+        return
+
+    with open(config_path) as f:
+        projects = json.load(f)
+
+    changed = False
+    for key, info in projects.items():
+        if "db_path" in info and "kanban_dir" not in info:
+            db_path = info["db_path"]
+            info["kanban_dir"] = os.path.dirname(db_path)
+            del info["db_path"]
+            changed = True
+            print(f"  MIGRATED {key}: db_path → kanban_dir ({info['kanban_dir']})")
+
+    if changed:
+        with open(config_path, "w") as f:
+            json.dump(projects, f, indent=2, ensure_ascii=False)
+
+
 def main():
     if len(sys.argv) > 1 and sys.argv[1] == "uninstall":
         print("Uninstalling VibeKanban...")
@@ -207,17 +235,22 @@ def main():
     print()
 
     # Step 1: Copy server files
-    print("[1/3] Copying server files...")
+    print("[1/4] Copying server files...")
     copy_server_files()
     print()
 
-    # Step 2: Install launchd agent
-    print("[2/3] Installing launchd agent (auto-start on login)...")
+    # Step 2: Migrate projects.json if needed
+    print("[2/4] Migrating project registry...")
+    migrate_projects_json()
+    print()
+
+    # Step 3: Install launchd agent
+    print("[3/4] Installing launchd agent (auto-start on login)...")
     install_launchd()
     print()
 
-    # Step 3: Install code review hook
-    print("[3/3] Installing code review hook...")
+    # Step 4: Install code review hook
+    print("[4/4] Installing code review hook...")
     install_hooks()
     print()
 
@@ -228,6 +261,10 @@ def main():
     print()
     print("The server will auto-start on login (port 4242).")
     print("Open: http://localhost:4242/kanban")
+    print()
+    print("Storage: JSON files (git-friendly)")
+    print("  Active tasks: {project}/vibekanban/kanban.json")
+    print("  Archives:     {project}/vibekanban/archive/YYYY-MM.json")
     print()
     print("To uninstall auto-start:")
     print(f"  python3 {os.path.abspath(__file__)} uninstall")

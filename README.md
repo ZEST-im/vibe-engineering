@@ -18,9 +18,11 @@ Track tasks, code changes, and work reports — all from your terminal.
 ## Features
 
 - **Multi-project** — One server, multiple projects via tabs
+- **Git-friendly** — JSON storage, not SQLite. Diffs, merges, code review all work naturally.
 - **Auto-tracking** — `started_at` / `completed_at` set automatically on status change
 - **Code change stats** — `lines_added`, `lines_removed` from `git diff`
 - **Work reports** — Per-task details (changed files, decisions, follow-ups)
+- **Archive** — Done tasks archived to monthly files, always visible in dashboard
 - **Code review** — Auto-triggered on `git push` / `gh pr create` via Claude Code hook
 - **Kanban + List views** — Drag & drop kanban or spreadsheet-style inline editing
 - **Done grouping** — By date, category, or phase
@@ -45,10 +47,11 @@ cd vibekanban
 python3 scripts/setup.py
 ```
 
-This does 3 things:
+This does 4 things:
 1. Copies `SKILL.md`, `server.py`, `kanban.html` to `~/.claude/skills/vibekanban/`
-2. Installs a macOS LaunchAgent — server auto-starts on login (port 4242)
-3. Registers a code review hook in `~/.claude/settings.json`
+2. Migrates old project registry (SQLite paths → JSON paths) if needed
+3. Installs a macOS LaunchAgent — server auto-starts on login (port 4242)
+4. Registers a code review hook in `~/.claude/settings.json`
 
 After setup, the cloned repo is no longer needed for daily use. You can keep it for updates.
 
@@ -79,7 +82,7 @@ python3 ~/.claude/skills/vibekanban/server.py serve 4242 &
 ### 2. Register your project
 
 ```bash
-python3 ~/.claude/skills/vibekanban/server.py register my_project "My Project" "$(pwd)/vibekanban/kanban.db"
+python3 ~/.claude/skills/vibekanban/server.py register my_project "My Project" "$(pwd)/vibekanban"
 ```
 
 ### 3. Open the board
@@ -100,20 +103,21 @@ Or use explicit commands:
 /vibekanban serve      → Start server + register project
 /vibekanban add title  → Add a task
 /vibekanban done 3     → Mark task #3 as done
+/vibekanban archive    → Archive done tasks to monthly files
 /vibekanban report     → Today's summary
 ```
 
 ## How It Works
 
 ```
-Claude Code ──(curl)──→ localhost:4242 ──(sqlite)──→ vibekanban/kanban.db
+Claude Code ──(curl)──→ localhost:4242 ──(JSON)──→ vibekanban/kanban.json
                               │
                          kanban.html
                               │
                         Your Browser
 ```
 
-All files live in one directory:
+All server files live in one directory:
 
 ```
 ~/.claude/skills/vibekanban/
@@ -124,10 +128,14 @@ All files live in one directory:
   server.log         ← Server output log
 ```
 
-Per-project data:
+Per-project data (git-tracked):
 
 ```
-{project}/vibekanban/kanban.db   ← SQLite database (per project, git-ignored)
+{project}/vibekanban/
+  kanban.json              ← Active tasks (todo, in_progress, review, recent done)
+  archive/
+    2026-03.json           ← Monthly archive of completed tasks
+    2026-04.json
 ```
 
 Other:
@@ -152,6 +160,8 @@ Completed tasks grouped by:
 - **Category** — backend, frontend, infra, etc.
 - **Phase** — Phase 1, Phase 2, etc.
 
+Archived tasks are loaded and displayed alongside active done tasks — all visible in one view.
+
 ### Detail Panel
 Click any card to open the right slide-in panel with:
 - Full description and work report
@@ -173,13 +183,14 @@ Tasks can have code review items stored as structured data:
 |--------|----------|-------------|
 | GET | `/api/projects` | List all projects |
 | POST | `/api/projects` | Register a project |
-| GET | `/api/{key}/tasks` | List tasks |
+| GET | `/api/{key}/tasks` | List tasks (active + archived) |
 | POST | `/api/{key}/tasks` | Create task |
 | PUT | `/api/{key}/tasks/{id}` | Update task |
 | DELETE | `/api/{key}/tasks/{id}` | Delete task |
 | POST | `/api/{key}/tasks/bulk` | Bulk create tasks |
-| GET | `/api/{key}/export` | Export tasks to JSON |
+| GET | `/api/{key}/export` | Export all tasks to JSON |
 | POST | `/api/{key}/import` | Import tasks from JSON |
+| POST | `/api/{key}/archive` | Archive done tasks to monthly files |
 | GET | `/api/{key}/stats` | Task count by status |
 
 ### Task Fields
