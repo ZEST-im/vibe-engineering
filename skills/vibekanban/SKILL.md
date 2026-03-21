@@ -167,45 +167,85 @@ VibeKanban replaces PROGRESS.md. All dev progress goes into the kanban.
 3. **Code review**: Run review on all uncommitted + unpushed changes (see "Code Review" section)
 4. Do NOT update PROGRESS.md (kanban replaces it)
 
-### Code Review (on Push / PR)
+### ⚠️ Code Review (MANDATORY — Claude MUST follow)
 
-Code review is triggered on **`git push`** or **`gh pr create`** — NOT on every commit.
-A Claude Code hook enforces this automatically, but Claude should also follow these rules.
+**Claude MUST perform a code review immediately after executing `git push` or `gh pr create`.**
+This is NOT optional. Do NOT skip to the next task. Do NOT ask the user if they want a review.
+Just do it — every single time.
 
-#### When to review
-| Trigger | Scope |
-|---------|-------|
-| `git push` | All commits being pushed (`git diff @{push}..HEAD` or `git diff origin/<branch>..HEAD`) |
-| `gh pr create` | All changes in the PR branch vs base branch |
-| `qq` (daily wrap-up) | All uncommitted + unpushed changes |
+#### Trigger conditions (ANY of these = review MUST happen)
+1. **You just ran `git push`** → review NOW, before doing anything else
+2. **You just ran `gh pr create`** → review NOW, before doing anything else
+3. **User says `qq`** (daily wrap-up) → review all uncommitted + unpushed changes
+4. **User says `/vibekanban review`** → review on demand
 
-#### How to review
-1. Run `git diff` for the appropriate scope (see above)
-2. Check for:
-   - Security issues (OWASP top 10, secrets, injection)
-   - Code quality (unused imports, dead code, error handling)
-   - Architecture concerns (coupling, abstraction, naming)
-3. Find the current `in_progress` task (or most recent `done` task) from kanban
-4. Store review findings in that task's `review` field as JSON:
-   ```json
-   [
-     {"text": "SQL injection risk in search_handler: use parameterized query", "resolved": false},
-     {"text": "Missing error handling for API timeout in fetch_data()", "resolved": false},
-     {"text": "Good: proper input validation on user registration", "resolved": true}
-   ]
-   ```
-5. Update task via API:
-   ```bash
-   curl -X PUT http://localhost:4242/api/{project}/tasks/{id} \
-     -H 'Content-Type: application/json' \
-     -d '{"review": "[{\"text\":\"...\",\"resolved\":false}]"}'
-   ```
-6. Print review summary to the user (🔴 CRITICAL / 🟡 HIGH / 🟠 MEDIUM)
-7. If 🔴 CRITICAL found → warn user before push completes
+#### Step-by-step procedure (follow exactly)
+
+**Step 1: Get the diff**
+```bash
+# After git push:
+git diff @{push}..HEAD 2>/dev/null || git diff origin/$(git branch --show-current)..HEAD
+
+# After gh pr create:
+git diff main..HEAD
+
+# After qq:
+git diff HEAD
+```
+
+**Step 2: Review the diff — focus on CRITICAL and HIGH only**
+
+Keep it lightweight. Do NOT nitpick MEDIUM/LOW issues on every push.
+
+- 🔴 **CRITICAL**: Security issues (secrets, injection, auth bypass, XSS)
+- 🟡 **HIGH**: Bug risks (null refs, race conditions, missing error handling, data loss)
+
+Skip MEDIUM (code quality, naming, dead code) — these can wait for dedicated refactoring sessions.
+
+**Step 3: Create review tasks for CRITICAL/HIGH findings**
+
+For each CRITICAL or HIGH finding, create a **separate kanban task** with `status: "review"` and `category: "review"`:
+```bash
+curl -X POST http://localhost:4242/api/{project}/tasks \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "title": "🔴 SQL injection in search_handler",
+    "description": "Use parameterized query instead of string interpolation in search_handler.py:42",
+    "status": "review",
+    "category": "review",
+    "priority": "high",
+    "created_by": "claude-review"
+  }'
+```
+
+Title format: `{emoji} {brief description}`
+- 🔴 for CRITICAL
+- 🟡 for HIGH
+
+**Step 4: Print summary to user**
+```
+📋 Code Review
+━━━━━━━━━━━━━━
+🔴 CRITICAL: (count)
+🟡 HIGH: (count)
+━━━━━━━━━━━━━━
+Created (N) review tasks in kanban.
+```
+
+If no CRITICAL/HIGH found:
+```
+📋 Code Review — ✅ No critical/high issues found.
+```
+
+**Step 5: If CRITICAL found → warn prominently**
+```
+⚠️ CRITICAL SECURITY ISSUE — fix before merging
+→ (description)
+```
 
 #### Web UI
-- Review badge on kanban cards (green ✓ = all resolved, orange = N unresolved)
-- Detail panel shows full review with interactive 해결/미해결 toggles
+- Review tasks appear in the "Review" column of the kanban board
+- Resolve by moving to `done` after fixing
 
 ### Key Rules
 - PROGRESS.md is "external-sharing snapshot" only. Daily records go to kanban only.
