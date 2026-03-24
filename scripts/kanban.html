@@ -329,7 +329,7 @@ header {
     <table class="list-table">
       <thead><tr>
         <th>Status</th><th>Pri</th><th>Title</th><th>Description</th>
-        <th>Category</th><th>Phase</th><th>Assignee</th><th>Target</th><th>Lines</th><th></th>
+        <th>Category</th><th>Phase</th><th>Creator</th><th>Assignee</th><th>Target</th><th>Lines</th><th></th>
       </tr></thead>
       <tbody id="listBody"></tbody>
     </table>
@@ -503,6 +503,7 @@ function cardHtml(t){
   if(t.priority)meta+='<span class="tag '+t.priority+'">'+t.priority[0].toUpperCase()+'</span>';
   if(t.category)meta+='<span class="tag">'+esc(t.category)+'</span>';
   if(t.phase)meta+='<span class="tag">'+esc(t.phase)+'</span>';
+  if(t.created_by)meta+='<span class="tag" style="opacity:.6" title="생성자">'+esc(t.created_by)+'</span>';
   if(t.assigned_to)meta+='<span class="tag user">@'+esc(t.assigned_to)+'</span>';
   if((t.status==='todo'||t.status==='in_progress')&&t.target_date){
     const dd=dday(t.target_date);
@@ -583,6 +584,7 @@ function renderList(){
       +'<td class="desc-cell" contenteditable="true" onblur="inlineBlur('+t.id+',\'description\',this)">'+esc(t.description||'')+'</td>'
       +'<td contenteditable="true" onblur="inlineBlur('+t.id+',\'category\',this)">'+esc(t.category||'')+'</td>'
       +'<td contenteditable="true" onblur="inlineBlur('+t.id+',\'phase\',this)">'+esc(t.phase||'')+'</td>'
+      +'<td contenteditable="true" onblur="inlineBlur('+t.id+',\'created_by\',this)">'+esc(t.created_by||'')+'</td>'
       +'<td contenteditable="true" onblur="inlineBlur('+t.id+',\'assigned_to\',this)">'+esc(t.assigned_to||'')+'</td>'
       +'<td contenteditable="true" onblur="inlineBlur('+t.id+',\'target_date\',this)">'+esc(t.target_date||'')+'</td>'
       +'<td>'+((la||lr)?linesHtml(la,lr):'')+'</td>'

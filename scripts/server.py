@@ -14,8 +14,21 @@ from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
+import subprocess
+
 SKILL_DIR = os.path.expanduser("~/.claude/skills/vibekanban")
 CONFIG_PATH = os.path.join(SKILL_DIR, "projects.json")
+
+def _git_user():
+    """Get git user.name, cached after first call."""
+    if not hasattr(_git_user, "_cache"):
+        try:
+            _git_user._cache = subprocess.check_output(
+                ["git", "config", "user.name"], stderr=subprocess.DEVNULL
+            ).decode().strip()
+        except Exception:
+            _git_user._cache = ""
+    return _git_user._cache
 
 # ── Projects Registry ──────────────────────────────
 
@@ -137,7 +150,7 @@ def _new_task(data, fields):
         "position": fields.get("position", 0),
         "phase": fields.get("phase", ""),
         "review": fields.get("review", ""),
-        "created_by": fields.get("created_by", ""),
+        "created_by": fields.get("created_by", "") or _git_user(),
         "assigned_to": fields.get("assigned_to", ""),
     }
     data["tasks"].append(task)
@@ -154,10 +167,13 @@ def _update_task(task, fields):
     for k in TASK_FIELDS:
         if k in fields:
             task[k] = fields[k]
-    # Auto-set timestamps
+    # Auto-set timestamps and user
     if "status" in fields:
-        if fields["status"] == "in_progress" and not task.get("started_at"):
-            task["started_at"] = now
+        if fields["status"] == "in_progress":
+            if not task.get("started_at"):
+                task["started_at"] = now
+            if not task.get("assigned_to"):
+                task["assigned_to"] = _git_user()
         if fields["status"] == "done" and "completed_at" not in fields:
             task["completed_at"] = now
     task["updated_at"] = now
