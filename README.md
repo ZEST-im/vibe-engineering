@@ -64,6 +64,25 @@ curl http://localhost:4242/api/projects
 # Should return [] (empty project list)
 ```
 
+### Update (no repo needed)
+
+Already installed? Update to the latest version with one command:
+
+```bash
+python3 ~/.claude/skills/vibekanban/setup.py upgrade
+```
+
+This downloads the latest `server.py`, `kanban.html`, and `SKILL.md` from GitHub and restarts the server automatically. No need to clone or pull the repo.
+
+**First time upgrading?** If your installed version doesn't have the `upgrade` command yet, run this once:
+
+```bash
+curl -sL https://raw.githubusercontent.com/hoarchi/vibekanban/main/scripts/setup.py \
+  -o ~/.claude/skills/vibekanban/setup.py
+```
+
+After that, `setup.py upgrade` will keep everything up to date.
+
 ### Uninstall
 
 ```bash

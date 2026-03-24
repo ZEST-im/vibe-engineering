@@ -15,6 +15,7 @@ HOME = os.path.expanduser("~")
 PLIST_NAME = "com.vibekanban.server.plist"
 LAUNCH_AGENTS = os.path.expanduser("~/Library/LaunchAgents")
 SETTINGS_PATH = os.path.expanduser("~/.claude/settings.json")
+REPO_URL = "https://raw.githubusercontent.com/hoarchi/vibekanban/main"
 
 
 def copy_server_files():
@@ -224,11 +225,79 @@ def migrate_projects_json():
             json.dump(projects, f, indent=2, ensure_ascii=False)
 
 
+def upgrade():
+    """Download latest files from GitHub and reinstall"""
+    import urllib.request
+    import tempfile
+
+    print("Upgrading VibeKanban from GitHub...")
+    print()
+
+    files = {
+        "server.py": f"{REPO_URL}/scripts/server.py",
+        "kanban.html": f"{REPO_URL}/scripts/kanban.html",
+        "SKILL.md": f"{REPO_URL}/skills/vibekanban/SKILL.md",
+    }
+
+    os.makedirs(DEST, exist_ok=True)
+    downloaded = 0
+
+    for fname, url in files.items():
+        dst = os.path.join(DEST, fname)
+        try:
+            print(f"  Downloading {fname}...")
+            req = urllib.request.Request(url, headers={"User-Agent": "VibeKanban-Setup"})
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                content = resp.read()
+            # Backup existing
+            if os.path.exists(dst):
+                shutil.copy2(dst, dst + ".bak")
+            with open(dst, "wb") as f:
+                f.write(content)
+            downloaded += 1
+            print(f"  OK {fname} ({len(content)} bytes)")
+        except Exception as e:
+            print(f"  FAIL {fname}: {e}")
+
+    print()
+    if downloaded == 0:
+        print("No files downloaded. Check your network connection.")
+        return
+
+    print(f"Updated {downloaded}/{len(files)} files.")
+
+    # Restart server if running
+    try:
+        result = subprocess.run(["lsof", "-ti:4242"], capture_output=True, text=True)
+        pids = result.stdout.strip()
+        if pids:
+            for pid in pids.split("\n"):
+                subprocess.run(["kill", pid.strip()], capture_output=True)
+            print("Stopped running server.")
+            # Restart via launchd if available
+            plist = os.path.join(LAUNCH_AGENTS, PLIST_NAME)
+            if os.path.exists(plist):
+                subprocess.run(["launchctl", "unload", plist], capture_output=True)
+                subprocess.run(["launchctl", "load", plist], capture_output=True)
+                print("Restarted server via launchd.")
+            else:
+                print("Restart the server manually: python3 ~/.claude/skills/vibekanban/server.py serve &")
+    except Exception:
+        pass
+
+    print()
+    print("Upgrade complete!")
+
+
 def main():
     if len(sys.argv) > 1 and sys.argv[1] == "uninstall":
         print("Uninstalling VibeKanban...")
         uninstall_launchd()
         uninstall_hooks()
+        return
+
+    if len(sys.argv) > 1 and sys.argv[1] == "upgrade":
+        upgrade()
         return
 
     print("Setting up VibeKanban...")
