@@ -26,6 +26,7 @@ Track tasks, code changes, and work reports — all from your terminal.
 - **Work reports** — Per-task details (changed files, decisions, follow-ups)
 - **Archive** — Done tasks archived to monthly files, always visible in dashboard
 - **Code review** — Auto-triggered on `git push` / `gh pr create` via Claude Code hook
+- **DB Schema view** — Auto-detects schema files (schema.rb, structure.sql, Prisma, SQL) and renders an ERD: table boxes, column types, PK/FK/UQ/NN badges, indexes, and relationship lines between tables
 - **Kanban + List views** — Drag & drop kanban or spreadsheet-style inline editing
 - **Done grouping** — By date, category, or phase
 - **Dark / Light mode** — Toggle with localStorage persistence
@@ -190,6 +191,29 @@ Click any card to open the right slide-in panel with:
 - Schedule (target, started, completed, elapsed time)
 - Code change stats (+/- bar graph)
 
+### DB Schema View
+
+Click the **DB** tab to see your project's database schema as an ERD diagram.
+No DB connection needed — reads directly from schema files.
+
+Auto-detects schema files anywhere in the project directory:
+
+| File | Format |
+|------|--------|
+| `db/schema.rb` | Rails ActiveRecord (incl. `add_foreign_key`) |
+| `db/structure.sql` | Rails SQL dump |
+| `prisma/schema.prisma` | Prisma ORM |
+| `db/migrations/*.sql` | Raw SQL migrations |
+| `schema.sql`, `sql/*.sql` | Any SQL DDL file |
+
+**What's shown per table:**
+- All columns with their types
+- Badges: `PK` (primary key) · `FK` (foreign key) · `UQ` (unique) · `NN` (not null) · `DF` (has default)
+- FK columns show `→ target_table(column)` inline in purple
+- Indexes section at the bottom of each table card
+- Bezier curve lines connecting FK → PK across tables
+- Relationships summary list at the bottom
+
 ### Code Review
 Tasks can have code review items stored as structured data:
 - Review findings are shown in the detail panel with **resolved/unresolved** radio buttons
@@ -213,6 +237,7 @@ Tasks can have code review items stored as structured data:
 | POST | `/api/{key}/import` | Import tasks from JSON |
 | POST | `/api/{key}/archive` | Archive done tasks to monthly files |
 | GET | `/api/{key}/stats` | Task count by status |
+| GET | `/api/{key}/schema` | Parse project schema files → tables, columns, relationships |
 
 ### Task Fields
 

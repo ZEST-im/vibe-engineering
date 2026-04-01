@@ -10,6 +10,8 @@ import os
 import sys
 import signal
 import fcntl
+import re
+import glob as glob_module
 from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
@@ -179,6 +181,352 @@ def _update_task(task, fields):
     task["updated_at"] = now
     return task
 
+# ── Schema Parsing ─────────────────────────────────
+
+def _find_schema_files(kanban_dir):
+    """Find schema definition files in the project directory."""
+    project_dir = os.path.dirname(os.path.abspath(kanban_dir))
+    files = []
+    base_patterns = [
+        "db/schema.rb", "db/structure.sql", "prisma/schema.prisma",
+        "schema.prisma", "db/migrations/*.sql", "db/migrate/*.rb",
+        "migrations/*.sql", "schema.sql", "sql/*.sql",
+    ]
+    # Search at project root and one level deeper (e.g., rails_app/db/schema.rb)
+    for depth_prefix in ["", "*/", "*/*/"]:
+        for pattern in base_patterns:
+            for f in sorted(glob_module.glob(os.path.join(project_dir, depth_prefix + pattern))):
+                if os.path.isfile(f) and f not in files:
+                    files.append(f)
+    return files, project_dir
+
+def _split_ddl(body):
+    """Split DDL body by commas, respecting parentheses."""
+    parts, depth, cur = [], 0, []
+    for ch in body:
+        if ch == '(':
+            depth += 1; cur.append(ch)
+        elif ch == ')':
+            depth -= 1; cur.append(ch)
+        elif ch == ',' and depth == 0:
+            parts.append(''.join(cur)); cur = []
+        else:
+            cur.append(ch)
+    if cur:
+        parts.append(''.join(cur))
+    return parts
+
+def _parse_column(s):
+    """Parse a single SQL column definition."""
+    s = s.strip()
+    if not s:
+        return None
+    upper = s.upper().lstrip()
+    if any(upper.startswith(kw) for kw in ('CONSTRAINT', 'PRIMARY', 'FOREIGN', 'UNIQUE', 'CHECK', 'EXCLUDE', 'LIKE ')):
+        return None
+    name_m = re.match(r'"?(\w+)"?\s+', s)
+    if not name_m:
+        return None
+    name = name_m.group(1)
+    rest = s[name_m.end():]
+    # Extract type: everything until a constraint keyword
+    ckw = r'\b(?:NOT\s+NULL|NULL|DEFAULT|PRIMARY\s+KEY|UNIQUE|REFERENCES|CHECK|CONSTRAINT|GENERATED|COLLATE)\b'
+    type_end = re.search(ckw, rest, re.IGNORECASE)
+    if type_end:
+        col_type = rest[:type_end.start()].strip()
+        cpart = rest[type_end.start():]
+    else:
+        col_type = rest.strip()
+        cpart = ''
+    col_type = col_type.rstrip(',').strip()
+    col = {'name': name, 'type': col_type.upper() if col_type else '', 'pk': False,
+           'fk': None, 'nullable': True, 'unique': False, 'default': None}
+    cu = cpart.upper()
+    if 'PRIMARY KEY' in cu:
+        col['pk'] = True; col['nullable'] = False
+    if 'NOT NULL' in cu:
+        col['nullable'] = False
+    if re.search(r'\bUNIQUE\b', cu):
+        col['unique'] = True
+    def_m = re.search(r"DEFAULT\s+('(?:[^'\\]|\\.)*'|\S+(?:\([^)]*\))?)", cpart, re.IGNORECASE)
+    if def_m:
+        col['default'] = def_m.group(1)
+    ref_m = re.search(r'REFERENCES\s+"?(\w+)"?\s*\("?([^)"]+)"?\)', cpart, re.IGNORECASE)
+    if ref_m:
+        col['fk'] = f"{ref_m.group(1)}({ref_m.group(2).strip()})"
+        col['_inline_ref'] = (ref_m.group(1), ref_m.group(2).strip())
+    if col['type'] in ('SERIAL', 'BIGSERIAL', 'SMALLSERIAL'):
+        col['nullable'] = False
+    return col
+
+def _parse_sql_schema(content):
+    """Parse SQL DDL into structured schema."""
+    tables, relationships = {}, []
+    content = re.sub(r'--[^\n]*', '', content)
+    content = re.sub(r'/\*.*?\*/', '', content, flags=re.DOTALL)
+    # CREATE TABLE
+    for m in re.finditer(
+        r'CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:"?(\w+)"?\.)?\"?(\w+)\"?\s*\((.*?)\)\s*;',
+        content, re.DOTALL | re.IGNORECASE
+    ):
+        schema_name, table_name, body = m.group(1) or '', m.group(2), m.group(3)
+        columns, constraints = [], []
+        for part in _split_ddl(body):
+            part = part.strip()
+            if not part:
+                continue
+            up = part.upper().lstrip()
+            if any(up.startswith(kw) for kw in ('CONSTRAINT', 'PRIMARY KEY', 'FOREIGN KEY', 'UNIQUE(', 'UNIQUE (', 'CHECK', 'EXCLUDE')):
+                constraints.append(part)
+            else:
+                col = _parse_column(part)
+                if col:
+                    columns.append(col)
+        indexes = []
+        for tc in constraints:
+            pk_m = re.search(r'PRIMARY\s+KEY\s*\(([^)]+)\)', tc, re.IGNORECASE)
+            if pk_m:
+                for cn in [c.strip().strip('"') for c in pk_m.group(1).split(',')]:
+                    for col in columns:
+                        if col['name'] == cn:
+                            col['pk'] = True; col['nullable'] = False
+            fk_m = re.search(r'FOREIGN\s+KEY\s*\(([^)]+)\)\s*REFERENCES\s+"?(?:\w+\.)?"?(\w+)"?\s*\(([^)]+)\)', tc, re.IGNORECASE)
+            if fk_m:
+                fk_cols = [c.strip().strip('"') for c in fk_m.group(1).split(',')]
+                ref_table = fk_m.group(2)
+                ref_cols = [c.strip().strip('"') for c in fk_m.group(3).split(',')]
+                for i, fc in enumerate(fk_cols):
+                    rc = ref_cols[i] if i < len(ref_cols) else ref_cols[0]
+                    for col in columns:
+                        if col['name'] == fc:
+                            col['fk'] = f"{ref_table}({rc})"
+                    relationships.append({'from_table': table_name, 'from_column': fc, 'to_table': ref_table, 'to_column': rc})
+            uq_m = re.search(r'UNIQUE\s*\(([^)]+)\)', tc, re.IGNORECASE)
+            if uq_m:
+                uq_cols = [c.strip().strip('"') for c in uq_m.group(1).split(',')]
+                if len(uq_cols) == 1:
+                    for col in columns:
+                        if col['name'] == uq_cols[0]:
+                            col['unique'] = True
+                else:
+                    nm = re.search(r'CONSTRAINT\s+"?(\w+)"?', tc, re.IGNORECASE)
+                    indexes.append({'name': nm.group(1) if nm else f"uq_{'_'.join(uq_cols)}", 'columns': uq_cols, 'unique': True})
+        # Collect inline REFERENCES as relationships
+        for col in columns:
+            iref = col.pop('_inline_ref', None)
+            if iref:
+                relationships.append({'from_table': table_name, 'from_column': col['name'], 'to_table': iref[0], 'to_column': iref[1]})
+        tables[table_name] = {'name': table_name, 'schema': schema_name, 'columns': columns, 'indexes': indexes}
+    # CREATE INDEX
+    for m in re.finditer(
+        r'CREATE\s+(UNIQUE\s+)?INDEX\s+(?:(?:IF\s+NOT\s+EXISTS|CONCURRENTLY)\s+)?\"?(\w+)\"?\s+ON\s+\"?(?:\w+\.)?(\w+)\"?\s*(?:USING\s+\w+\s*)?\(([^)]+)\)',
+        content, re.IGNORECASE
+    ):
+        is_uq, idx_name, tname = bool(m.group(1)), m.group(2), m.group(3)
+        idx_cols = [c.strip().strip('"').split()[0] for c in m.group(4).split(',')]
+        if tname in tables:
+            tables[tname]['indexes'].append({'name': idx_name, 'columns': idx_cols, 'unique': is_uq})
+    # ALTER TABLE ADD CONSTRAINT FK
+    for m in re.finditer(
+        r'ALTER\s+TABLE\s+(?:ONLY\s+)?\"?(?:\w+\.)?(\w+)\"?\s+ADD\s+CONSTRAINT\s+\"?(\w+)\"?\s+FOREIGN\s+KEY\s*\(([^)]+)\)\s*REFERENCES\s+\"?(?:\w+\.)?(\w+)\"?\s*\(([^)]+)\)',
+        content, re.IGNORECASE
+    ):
+        tname, _, fk_str, ref_table, ref_str = m.group(1), m.group(2), m.group(3), m.group(4), m.group(5)
+        for i, fc in enumerate([c.strip().strip('"') for c in fk_str.split(',')]):
+            rcs = [c.strip().strip('"') for c in ref_str.split(',')]
+            rc = rcs[i] if i < len(rcs) else rcs[0]
+            if tname in tables:
+                for col in tables[tname]['columns']:
+                    if col['name'] == fc:
+                        col['fk'] = f"{ref_table}({rc})"
+            relationships.append({'from_table': tname, 'from_column': fc, 'to_table': ref_table, 'to_column': rc})
+    # ALTER TABLE ADD CONSTRAINT UNIQUE
+    for m in re.finditer(
+        r'ALTER\s+TABLE\s+(?:ONLY\s+)?\"?(?:\w+\.)?(\w+)\"?\s+ADD\s+CONSTRAINT\s+\"?(\w+)\"?\s+UNIQUE\s*\(([^)]+)\)',
+        content, re.IGNORECASE
+    ):
+        tname, cname = m.group(1), m.group(2)
+        uq_cols = [c.strip().strip('"') for c in m.group(3).split(',')]
+        if tname in tables:
+            if len(uq_cols) == 1:
+                for col in tables[tname]['columns']:
+                    if col['name'] == uq_cols[0]:
+                        col['unique'] = True
+            else:
+                tables[tname]['indexes'].append({'name': cname, 'columns': uq_cols, 'unique': True})
+    return list(tables.values()), relationships
+
+def _parse_schema_rb(content):
+    """Parse Rails schema.rb."""
+    tables, relationships = {}, []
+    current = None
+    for line in content.split('\n'):
+        line = line.strip()
+        m = re.match(r'create_table\s+"(\w+)"(.*)', line)
+        if m:
+            current = m.group(1)
+            opts = m.group(2)
+            cols = []
+            if 'id: false' not in opts:
+                pk_type = 'BIGINT'
+                pk_m = re.search(r'primary_key:\s*:(\w+)', opts)
+                if pk_m and pk_m.group(1).lower() == 'uuid':
+                    pk_type = 'UUID'
+                cols.append({'name': 'id', 'type': pk_type, 'pk': True, 'fk': None, 'nullable': False, 'unique': False, 'default': None})
+            tables[current] = {'name': current, 'schema': '', 'columns': cols, 'indexes': []}
+            continue
+        if line == 'end':
+            current = None
+            continue
+        if not current or current not in tables:
+            continue
+        col_m = re.match(r't\.(\w+)\s+"(\w+)"(.*)', line)
+        if col_m:
+            rb_type, col_name, opts = col_m.group(1), col_m.group(2), col_m.group(3)
+            tmap = {'string': 'VARCHAR', 'text': 'TEXT', 'integer': 'INTEGER', 'bigint': 'BIGINT',
+                    'float': 'FLOAT', 'decimal': 'DECIMAL', 'boolean': 'BOOLEAN', 'datetime': 'TIMESTAMP',
+                    'date': 'DATE', 'time': 'TIME', 'binary': 'BYTEA', 'jsonb': 'JSONB', 'json': 'JSON',
+                    'uuid': 'UUID', 'inet': 'INET', 'references': 'BIGINT', 'belongs_to': 'BIGINT',
+                    'citext': 'CITEXT', 'hstore': 'HSTORE', 'interval': 'INTERVAL'}
+            ct = tmap.get(rb_type, rb_type.upper())
+            is_ref = rb_type in ('references', 'belongs_to')
+            actual_name = f"{col_name}_id" if is_ref else col_name
+            fk_val = None
+            if is_ref:
+                # Try to find foreign_key option
+                fk_tbl_m = re.search(r'foreign_key:\s*\{?\s*to_table:\s*[:"]+(\w+)', opts)
+                fk_tbl = fk_tbl_m.group(1) if fk_tbl_m else col_name + 's'
+                fk_val = f"{fk_tbl}(id)"
+                relationships.append({'from_table': current, 'from_column': actual_name, 'to_table': fk_tbl, 'to_column': 'id'})
+            col = {'name': actual_name, 'type': ct, 'pk': False, 'fk': fk_val,
+                   'nullable': 'null: false' not in opts, 'unique': False, 'default': None}
+            def_m = re.search(r'default:\s*("([^"]*)"|(\S+))', opts)
+            if def_m:
+                col['default'] = def_m.group(2) if def_m.group(2) is not None else def_m.group(3)
+            tables[current]['columns'].append(col)
+            continue
+        idx_m = re.match(r't\.index\s+\[([^\]]+)\](.*)', line)
+        if idx_m:
+            idx_cols = [c.strip().strip('"') for c in idx_m.group(1).split(',')]
+            rest = idx_m.group(2)
+            nm_m = re.search(r'name:\s*"(\w+)"', rest)
+            idx_name = nm_m.group(1) if nm_m else f"idx_{current}_{'_'.join(idx_cols)}"
+            is_uq = 'unique: true' in rest
+            tables[current]['indexes'].append({'name': idx_name, 'columns': idx_cols, 'unique': is_uq})
+            if is_uq and len(idx_cols) == 1:
+                for col in tables[current]['columns']:
+                    if col['name'] == idx_cols[0]:
+                        col['unique'] = True
+    # add_foreign_key "from_table", "to_table"[, column: "col"]
+    for m in re.finditer(
+        r'add_foreign_key\s+"(\w+)",\s+"(\w+)"(.*)', content
+    ):
+        from_tbl, to_tbl, opts = m.group(1), m.group(2), m.group(3)
+        col_m = re.search(r'column:\s*"(\w+)"', opts)
+        from_col = col_m.group(1) if col_m else to_tbl.rstrip('s') + '_id'
+        relationships.append({'from_table': from_tbl, 'from_column': from_col,
+                              'to_table': to_tbl, 'to_column': 'id'})
+        if from_tbl in tables:
+            for col in tables[from_tbl]['columns']:
+                if col['name'] == from_col:
+                    col['fk'] = f"{to_tbl}(id)"
+    return list(tables.values()), relationships
+
+def _parse_prisma(content):
+    """Parse Prisma schema."""
+    tables, relationships = {}, []
+    current = None
+    for line in content.split('\n'):
+        line = line.strip()
+        m = re.match(r'model\s+(\w+)\s*\{', line)
+        if m:
+            current = m.group(1)
+            tables[current] = {'name': current, 'schema': '', 'columns': [], 'indexes': []}
+            continue
+        if line == '}':
+            current = None
+            continue
+        if not current or current not in tables:
+            continue
+        col_m = re.match(r'(\w+)\s+(\w+)(\[\])?\??(.*)$', line)
+        if col_m:
+            name, ptype, is_arr, attrs = col_m.group(1), col_m.group(2), bool(col_m.group(3)), col_m.group(4) or ''
+            if is_arr:
+                continue
+            tmap = {'Int': 'INTEGER', 'BigInt': 'BIGINT', 'Float': 'FLOAT', 'Decimal': 'DECIMAL',
+                    'String': 'TEXT', 'Boolean': 'BOOLEAN', 'DateTime': 'TIMESTAMP', 'Json': 'JSONB', 'Bytes': 'BYTEA'}
+            if ptype not in tmap:
+                # Relation field
+                if '@relation' in attrs:
+                    rel_m = re.search(r'@relation\(.*?fields:\s*\[(\w+)\].*?references:\s*\[(\w+)\]', attrs)
+                    if rel_m:
+                        relationships.append({'from_table': current, 'from_column': rel_m.group(1), 'to_table': ptype, 'to_column': rel_m.group(2)})
+                continue
+            ct = tmap[ptype]
+            is_id = '@id' in attrs
+            is_uq = '@unique' in attrs
+            nullable = '?' in line.split(name, 1)[1].split('@')[0]
+            def_val = None
+            def_m = re.search(r'@default\(([^)]+)\)', attrs)
+            if def_m:
+                def_val = def_m.group(1)
+            tables[current]['columns'].append({'name': name, 'type': ct, 'pk': is_id,
+                'fk': None, 'nullable': nullable, 'unique': is_uq or is_id, 'default': def_val})
+            continue
+        idx_m = re.match(r'@@(index|unique)\(\[([^\]]+)\](?:.*name:\s*"(\w+)")?\)', line)
+        if idx_m:
+            it, cols_str, iname = idx_m.group(1), idx_m.group(2), idx_m.group(3)
+            cols = [c.strip().strip('"') for c in cols_str.split(',')]
+            tables[current]['indexes'].append({
+                'name': iname or f"{'uq' if it == 'unique' else 'idx'}_{current}_{'_'.join(cols)}",
+                'columns': cols, 'unique': it == 'unique'})
+    # Set FK info on columns
+    for r in relationships:
+        if r['from_table'] in tables:
+            for col in tables[r['from_table']]['columns']:
+                if col['name'] == r['from_column']:
+                    col['fk'] = f"{r['to_table']}({r['to_column']})"
+    return list(tables.values()), relationships
+
+def _get_schema(kanban_dir):
+    """Find and parse all schema files for a project."""
+    files, project_dir = _find_schema_files(kanban_dir)
+    if not files:
+        return {"tables": [], "relationships": [], "files": []}
+    all_tables, all_rels, file_info = {}, [], []
+    # If schema.rb or structure.sql exists, skip migration files
+    has_schema = any(os.path.basename(f) in ("schema.rb", "structure.sql") for f in files)
+    if has_schema:
+        files = [f for f in files if "/migrate/" not in f and "/migrations/" not in f]
+    for fpath in files:
+        with open(fpath, encoding="utf-8", errors="replace") as f:
+            content = f.read()
+        fname = os.path.basename(fpath)
+        if fname.endswith(".rb"):
+            tbls, rels = _parse_schema_rb(content)
+        elif fname.endswith(".prisma"):
+            tbls, rels = _parse_prisma(content)
+        else:
+            tbls, rels = _parse_sql_schema(content)
+        for t in tbls:
+            if t["name"] in all_tables:
+                ex = all_tables[t["name"]]
+                if t["columns"]:
+                    ex["columns"] = t["columns"]
+                ex["indexes"].extend(t.get("indexes", []))
+            else:
+                all_tables[t["name"]] = t
+        all_rels.extend(rels)
+        file_info.append({"path": os.path.relpath(fpath, project_dir), "type": fname.rsplit(".", 1)[-1]})
+    # Deduplicate relationships
+    seen, unique_rels = set(), []
+    for r in all_rels:
+        key = (r["from_table"], r["from_column"], r["to_table"], r["to_column"])
+        if key not in seen:
+            seen.add(key); unique_rels.append(r)
+    return {"tables": sorted(all_tables.values(), key=lambda t: t["name"]),
+            "relationships": unique_rels, "files": file_info}
+
 # ── Handler ─────────────────────────────────────────
 
 class Handler(BaseHTTPRequestHandler):
@@ -280,6 +628,9 @@ class Handler(BaseHTTPRequestHandler):
                 data["tasks"] = [t for t in data["tasks"] if t.get("status") != "done"]
                 _write_kanban(kanban_dir, data)
                 return self._json({"archived": len(done_tasks)})
+
+            if rest == ["schema"]:
+                return self._json(_get_schema(kanban_dir))
 
         self.send_response(404)
         self.end_headers()

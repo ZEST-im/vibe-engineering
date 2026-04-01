@@ -289,6 +289,113 @@ header {
 .review-badge.all-ok { background:var(--green); color:#fff; }
 .review-badge.has-issues { background:var(--orange); color:#fff; }
 
+/* ── Schema/ERD View ── */
+.schema-wrap { flex:1; overflow:auto; display:none; padding:16px; }
+.schema-wrap.active { display:block; }
+.schema-info {
+  display:flex; align-items:center; gap:12px; margin-bottom:14px; flex-wrap:wrap;
+}
+.schema-info .file-tag {
+  font-size:10px; padding:3px 8px; border-radius:4px;
+  background:var(--surface2); border:1px solid var(--border); color:var(--text-dim);
+}
+.schema-legend {
+  display:flex; gap:10px; font-size:10px; color:var(--text-dim); margin-left:auto;
+}
+.schema-legend span { display:flex; align-items:center; gap:3px; }
+.schema-legend .dot-pk { width:6px; height:6px; border-radius:50%; background:var(--orange); }
+.schema-legend .dot-fk { width:6px; height:6px; border-radius:50%; background:var(--purple); }
+.schema-legend .dot-uq { width:6px; height:6px; border-radius:50%; background:var(--accent); }
+.schema-legend .dot-nn { width:6px; height:6px; border-radius:50%; background:var(--red); }
+.schema-canvas { position:relative; }
+.schema-svg {
+  position:absolute; top:0; left:0; width:100%; height:100%;
+  pointer-events:none; z-index:1;
+}
+.schema-svg line { stroke:var(--purple); stroke-width:1.5; opacity:.5; }
+.schema-svg circle { fill:var(--purple); opacity:.7; }
+.schema-grid {
+  display:flex; flex-wrap:wrap; gap:14px; align-items:flex-start;
+  position:relative; z-index:2;
+}
+.schema-tbl {
+  background:var(--surface); border:1px solid var(--border); border-radius:8px;
+  min-width:240px; max-width:360px; overflow:hidden; flex-shrink:0;
+}
+.schema-tbl-head {
+  padding:8px 12px; font-size:12px; font-weight:700;
+  background:var(--surface2); border-bottom:1px solid var(--border);
+  display:flex; align-items:center; gap:6px;
+}
+.schema-tbl-head .tbl-icon { color:var(--accent); font-size:11px; }
+.schema-tbl-head .tbl-schema { color:var(--text-faint); font-weight:400; font-size:10px; }
+.schema-col-row {
+  display:flex; align-items:center; padding:3px 12px; font-size:11px;
+  border-bottom:1px solid var(--border); gap:6px;
+}
+.schema-col-row:last-child { border-bottom:none; }
+.schema-col-row:hover { background:var(--surface2); }
+.schema-col-row[data-fk-target] { cursor:pointer; }
+.schema-col-row[data-fk-target]:hover .schema-fk-ref { opacity:1; text-decoration:underline; }
+@keyframes fkPulseIn {
+  0%   { background:rgba(139,92,246,.0); }
+  20%  { background:rgba(139,92,246,.45); }
+  50%  { background:rgba(139,92,246,.2); }
+  75%  { background:rgba(139,92,246,.38); }
+  100% { background:rgba(139,92,246,.18); }
+}
+/* Static highlight — stays until class is removed. Animation is just the entrance pulse. */
+.schema-col-row.fk-highlight {
+  background:rgba(139,92,246,.18) !important;
+  box-shadow:inset 0 0 0 1px var(--purple) !important;
+  animation:fkPulseIn 1.5s ease;
+}
+.schema-col-name { font-weight:600; min-width:100px; flex-shrink:0; }
+.schema-col-name.is-pk { color:var(--orange); }
+.schema-col-name.is-fk { color:var(--purple); }
+.schema-col-type { color:var(--text-dim); font-size:10px; flex:1; font-family:monospace; }
+.schema-badges { display:flex; gap:3px; flex-shrink:0; }
+.schema-badge {
+  font-size:8px; font-weight:700; padding:1px 4px; border-radius:3px;
+  text-transform:uppercase; letter-spacing:.3px;
+}
+.schema-badge.pk { background:var(--orange); color:#fff; }
+.schema-badge.fk { background:var(--purple); color:#fff; }
+.schema-badge.uq { background:var(--accent); color:#fff; }
+.schema-badge.nn { background:rgba(248,81,73,.2); color:var(--red); }
+.schema-badge.df { background:var(--border); color:var(--text-dim); }
+.schema-fk-ref {
+  font-size:9px; color:var(--purple); margin-left:2px; opacity:.8;
+  white-space:nowrap;
+}
+.schema-idx-section {
+  padding:4px 12px 6px; border-top:1px solid var(--border);
+  background:var(--bg);
+}
+.schema-idx-label { font-size:9px; color:var(--text-faint); font-weight:600; margin-bottom:2px; text-transform:uppercase; letter-spacing:.3px; }
+.schema-idx-row {
+  font-size:10px; color:var(--text-dim); padding:1px 0;
+  font-family:monospace; display:flex; align-items:center; gap:4px;
+}
+.schema-idx-row .idx-uq { color:var(--accent); font-size:8px; font-weight:700; }
+.schema-rels-section {
+  margin-top:16px; padding:12px; background:var(--surface);
+  border:1px solid var(--border); border-radius:8px;
+}
+.schema-rels-section h4 {
+  font-size:11px; color:var(--text-dim); margin-bottom:8px;
+  text-transform:uppercase; letter-spacing:.3px;
+}
+.schema-rel-row {
+  font-size:11px; padding:3px 0; color:var(--text); font-family:monospace;
+  display:flex; align-items:center; gap:6px;
+}
+.schema-rel-arrow { color:var(--purple); font-weight:700; }
+.schema-empty {
+  text-align:center; padding:60px 20px; color:var(--text-dim); font-size:13px;
+}
+.schema-empty code { background:var(--surface2); padding:2px 6px; border-radius:3px; font-size:11px; }
+
 /* ── Save indicator ── */
 .save-toast {
   position:fixed; bottom:16px; right:16px; background:var(--done); color:#fff;
@@ -307,6 +414,7 @@ header {
     <div class="view-tabs">
       <button class="vtab active" data-v="kanban" onclick="setView('kanban')">Kanban</button>
       <button class="vtab" data-v="list" onclick="setView('list')">List</button>
+      <button class="vtab" data-v="schema" onclick="setView('schema')">DB</button>
     </div>
   </div>
   <div class="h-right">
@@ -323,6 +431,9 @@ header {
 <div class="main">
   <!-- Kanban View -->
   <div class="kanban" id="kanban"></div>
+
+  <!-- Schema/ERD View -->
+  <div class="schema-wrap" id="schemaWrap"></div>
 
   <!-- List View -->
   <div class="list-wrap" id="listWrap">
@@ -401,7 +512,7 @@ header {
 
 <script>
 // ── State ──
-let projects=[], curProj=null, tasks=[];
+let projects=[], curProj=null, tasks=[], schemaData=null;
 let view='kanban', doneTab='date';
 const COLS=[
   {id:'backlog',label:'Backlog',color:'var(--backlog)'},
@@ -432,7 +543,7 @@ async function load(){
   tasks=await api('GET',apiP('/tasks'));
   renderPTabs(); render();
 }
-function switchProj(k){ curProj=k; location.hash=k; renderPTabs(); load(); }
+function switchProj(k){ curProj=k; location.hash=k; schemaData=null; renderPTabs(); load(); }
 function renderPTabs(){
   document.getElementById('ptabs').innerHTML=projects.map(p=>
     '<button class="ptab'+(p.key===curProj?' active':'')+'" onclick="switchProj(this.dataset.k)" data-k="'+esc(p.key)+'">'+esc(p.name)+'</button>'
@@ -471,18 +582,24 @@ function render(){
 
   const kb=document.getElementById('kanban');
   const lw=document.getElementById('listWrap');
+  const sw=document.getElementById('schemaWrap');
   const rz=document.getElementById('resizer');
   const dz=document.getElementById('doneZone');
 
+  kb.classList.add('hide'); lw.classList.remove('active'); sw.classList.remove('active');
+  rz.classList.add('hide'); dz.classList.add('hide');
+
   if(view==='kanban'){
-    kb.classList.remove('hide'); lw.classList.remove('active');
+    kb.classList.remove('hide');
     rz.classList.remove('hide'); dz.classList.remove('hide');
     renderKanban(active);
     renderDone(done);
-  } else {
-    kb.classList.add('hide'); lw.classList.add('active');
-    rz.classList.add('hide'); dz.classList.add('hide');
-    renderList(); // all tasks including done
+  } else if(view==='list'){
+    lw.classList.add('active');
+    renderList();
+  } else if(view==='schema'){
+    sw.classList.add('active');
+    loadSchema();
   }
 }
 
@@ -766,6 +883,169 @@ function toast(){
   const t=document.getElementById('toast');t.classList.add('show');
   setTimeout(()=>t.classList.remove('show'),1200);
 }
+
+// ── Schema/ERD ──
+async function loadSchema(){
+  if(!curProj)return;
+  schemaData=await api('GET',apiP('/schema'));
+  renderSchema();
+}
+function renderSchema(){
+  const el=document.getElementById('schemaWrap');
+  if(!schemaData||!schemaData.tables||!schemaData.tables.length){
+    el.innerHTML='<div class="schema-empty">'
+      +'<div style="font-size:24px;margin-bottom:12px">📋</div>'
+      +'<div>스키마 파일을 찾을 수 없습니다</div>'
+      +'<div style="margin-top:8px;font-size:11px">지원 형식: <code>schema.rb</code> <code>structure.sql</code> <code>schema.prisma</code> <code>migrations/*.sql</code></div>'
+      +'<div style="margin-top:4px;font-size:11px">프로젝트 루트에 위 파일이 있는지 확인하세요</div></div>';
+    return;
+  }
+  const {tables,relationships,files}=schemaData;
+  // Info bar
+  let html='<div class="schema-info">';
+  files.forEach(f=>{ html+='<span class="file-tag">'+esc(f.path)+' ('+f.type+')</span>'; });
+  html+='<div class="schema-legend">'
+    +'<span><span class="dot-pk"></span>PK</span>'
+    +'<span><span class="dot-fk"></span>FK</span>'
+    +'<span><span class="dot-uq"></span>UQ</span>'
+    +'<span><span class="dot-nn"></span>NN</span>'
+    +'</div></div>';
+  // Canvas with tables + SVG overlay
+  html+='<div class="schema-canvas" id="schemaCanvas">';
+  html+='<svg class="schema-svg" id="schemaSvg"></svg>';
+  html+='<div class="schema-grid" id="schemaGrid">';
+  tables.forEach(t=>{
+    html+='<div class="schema-tbl" id="stbl_'+esc(t.name)+'" data-tbl="'+esc(t.name)+'">';
+    html+='<div class="schema-tbl-head"><span class="tbl-icon">⊞</span> '+esc(t.name);
+    if(t.schema) html+=' <span class="tbl-schema">'+esc(t.schema)+'</span>';
+    html+=' <span style="color:var(--text-faint);font-weight:400;font-size:9px;margin-left:auto">'+t.columns.length+' cols</span></div>';
+    t.columns.forEach(c=>{
+      let cls='schema-col-name';
+      if(c.pk) cls+=' is-pk';
+      else if(c.fk) cls+=' is-fk';
+      const fkTable=c.fk?c.fk.split('(')[0]:'';
+      const fkCol=c.fk?(c.fk.match(/\(([^)]+)\)/)||['',''])[1]:'';
+      html+='<div class="schema-col-row" data-col="'+esc(c.name)+'"'+(c.fk?' data-fk-target="'+esc(fkTable)+'" data-fk-col="'+esc(fkCol)+'"':'')+'>';
+      html+='<span class="'+cls+'">'+esc(c.name)+'</span>';
+      html+='<span class="schema-col-type">'+esc(c.type)+'</span>';
+      html+='<span class="schema-badges">';
+      if(c.pk) html+='<span class="schema-badge pk">PK</span>';
+      if(c.fk) html+='<span class="schema-badge fk">FK</span>';
+      if(c.unique&&!c.pk) html+='<span class="schema-badge uq">UQ</span>';
+      if(!c.nullable&&!c.pk) html+='<span class="schema-badge nn">NN</span>';
+      if(c.default!==null&&c.default!==undefined) html+='<span class="schema-badge df" title="'+esc(String(c.default))+'">DF</span>';
+      html+='</span>';
+      if(c.fk) html+='<span class="schema-fk-ref">→ '+esc(c.fk)+'</span>';
+      html+='</div>';
+    });
+    if(t.indexes&&t.indexes.length){
+      html+='<div class="schema-idx-section"><div class="schema-idx-label">Indexes</div>';
+      t.indexes.forEach(ix=>{
+        html+='<div class="schema-idx-row">';
+        if(ix.unique) html+='<span class="idx-uq">UQ</span>';
+        html+=esc(ix.name)+' ('+ix.columns.map(c=>esc(c)).join(', ')+')';
+        html+='</div>';
+      });
+      html+='</div>';
+    }
+    html+='</div>';
+  });
+  html+='</div></div>';
+  // Relationships summary
+  if(relationships.length){
+    html+='<div class="schema-rels-section"><h4>Relationships ('+relationships.length+')</h4>';
+    relationships.forEach(r=>{
+      html+='<div class="schema-rel-row">'
+        +esc(r.from_table)+'.'+esc(r.from_column)
+        +' <span class="schema-rel-arrow">→</span> '
+        +esc(r.to_table)+'.'+esc(r.to_column)
+        +'</div>';
+    });
+    html+='</div>';
+  }
+  el.innerHTML=html;
+  // Draw SVG relationship lines after render
+  requestAnimationFrame(()=>drawSchemaLines(relationships));
+}
+function drawSchemaLines(rels){
+  const svg=document.getElementById('schemaSvg');
+  const canvas=document.getElementById('schemaCanvas');
+  if(!svg||!canvas||!rels.length)return;
+  const cr=canvas.getBoundingClientRect();
+  svg.setAttribute('width',canvas.scrollWidth);
+  svg.setAttribute('height',canvas.scrollHeight);
+  svg.innerHTML='';
+  const colors=['var(--purple)','var(--accent)','var(--orange)','var(--green)','var(--red)'];
+  rels.forEach((r,i)=>{
+    const fromEl=document.getElementById('stbl_'+r.from_table);
+    const toEl=document.getElementById('stbl_'+r.to_table);
+    if(!fromEl||!toEl)return;
+    const fr=fromEl.getBoundingClientRect();
+    const tr=toEl.getBoundingClientRect();
+    // Find FK column row for more precise positioning
+    const fkRow=fromEl.querySelector('[data-col="'+r.from_column+'"]');
+    const pkRow=toEl.querySelector('[data-col="'+r.to_column+'"]');
+    const fy=fkRow?(fkRow.getBoundingClientRect().top+fkRow.getBoundingClientRect().height/2-cr.top)
+      :(fr.top+fr.height/2-cr.top);
+    const ty=pkRow?(pkRow.getBoundingClientRect().top+pkRow.getBoundingClientRect().height/2-cr.top)
+      :(tr.top+tr.height/2-cr.top);
+    // Determine connection side
+    let fx,tx;
+    const fCx=fr.left+fr.width/2-cr.left, tCx=tr.left+tr.width/2-cr.left;
+    if(fCx<tCx){ fx=fr.right-cr.left; tx=tr.left-cr.left; }
+    else { fx=fr.left-cr.left; tx=tr.right-cr.left; }
+    const col=colors[i%colors.length];
+    // Draw bezier curve
+    const dx=Math.abs(tx-fx)*0.4;
+    const path=document.createElementNS('http://www.w3.org/2000/svg','path');
+    path.setAttribute('d','M'+fx+','+fy+' C'+(fx+(fCx<tCx?dx:-dx))+','+fy+' '+(tx+(fCx<tCx?-dx:dx))+','+ty+' '+tx+','+ty);
+    path.setAttribute('stroke',col);
+    path.setAttribute('stroke-width','1.5');
+    path.setAttribute('fill','none');
+    path.setAttribute('opacity','0.5');
+    path.setAttribute('stroke-dasharray','4,3');
+    svg.appendChild(path);
+    // Dots at endpoints
+    [['cx',fx,'cy',fy],['cx',tx,'cy',ty]].forEach(([,x,,y])=>{
+      const c=document.createElementNS('http://www.w3.org/2000/svg','circle');
+      c.setAttribute('cx',x); c.setAttribute('cy',y); c.setAttribute('r','3');
+      c.setAttribute('fill',col); c.setAttribute('opacity','0.7');
+      svg.appendChild(c);
+    });
+  });
+}
+
+// ── Schema FK jump ──
+function clearFkHighlight(){
+  document.querySelectorAll('.fk-highlight').forEach(el=>{
+    el.classList.remove('fk-highlight');
+    void el.offsetWidth; // reset animation state
+  });
+}
+function jumpToFk(e){
+  const row=e.target.closest('[data-fk-target]');
+  if(!row){
+    // clicked on non-FK area inside schema → clear highlight
+    clearFkHighlight();
+    return;
+  }
+  const tblName=row.dataset.fkTarget;
+  const colName=row.dataset.fkCol;
+  const tblEl=document.getElementById('stbl_'+tblName);
+  if(!tblEl) return;
+  // clear any existing highlight first
+  clearFkHighlight();
+  // scroll target table into view
+  tblEl.scrollIntoView({behavior:'smooth',block:'nearest',inline:'nearest'});
+  // find target column row and highlight (stays until next action)
+  const targetRow=colName
+    ? tblEl.querySelector('[data-col="'+colName+'"]')
+    : tblEl.querySelector('.schema-col-row');
+  if(!targetRow) return;
+  targetRow.classList.add('fk-highlight');
+}
+document.getElementById('schemaWrap').addEventListener('click',jumpToFk);
+// Note: view/project switches call renderSchema() which rebuilds innerHTML, naturally clearing highlights
 
 // ── Review ──
 function parseReview(t){
