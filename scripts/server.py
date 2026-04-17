@@ -147,6 +147,7 @@ def _new_task(data, fields):
         "completed_at": fields.get("completed_at", ""),
         "lines_added": fields.get("lines_added", 0),
         "lines_removed": fields.get("lines_removed", 0),
+        "tokens_used": fields.get("tokens_used", 0),
         "created_at": now,
         "updated_at": now,
         "position": fields.get("position", 0),
@@ -161,7 +162,7 @@ def _new_task(data, fields):
 
 TASK_FIELDS = ("title", "description", "details", "status", "priority", "category",
                "target_date", "started_at", "completed_at", "lines_added", "lines_removed",
-               "position", "phase", "review", "created_by", "assigned_to")
+               "tokens_used", "position", "phase", "review", "created_by", "assigned_to")
 
 def _update_task(task, fields):
     """Update task fields in place."""
