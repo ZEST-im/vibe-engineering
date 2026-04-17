@@ -499,6 +499,7 @@ header {
     <div class="row">
       <div><label>추가 줄수</label><input type="number" id="mLA" value="0" min="0"></div>
       <div><label>삭제 줄수</label><input type="number" id="mLR" value="0" min="0"></div>
+      <div><label>사용 토큰 (추정)</label><input type="number" id="mTokens" value="0" min="0" placeholder="예: 50000"></div>
     </div>
     <div class="modal-acts">
       <button class="btn btn-del" id="mDel" style="display:none;margin-right:auto" onclick="delTask()">삭제</button>
@@ -672,6 +673,7 @@ function doneCardHtml(t){
   if(t.assigned_to)meta+='<span class="tag user">@'+esc(t.assigned_to)+'</span>';
   if(el)meta+='<span class="tag" style="color:var(--purple)">'+el+'</span>';
   if(la||lr)meta+=linesHtml(la,lr);
+  if(t.tokens_used)meta+='<span class="tag" style="color:var(--purple);opacity:.8" title="사용 토큰(추정)">~'+fmtTokens(t.tokens_used)+'</span>';
   meta+=reviewBadgeHtml(t);
   const cd=shortDate(t.completed_at||t.updated_at);
   if(cd)meta+='<span class="tag" style="opacity:.7">'+cd+'</span>';
@@ -747,6 +749,9 @@ function openDet(id){
     +'<span style="color:var(--green);font-weight:600">+'+la+'</span>'
     +'<span style="color:var(--red);font-weight:600;margin-left:8px">-'+lr+'</span> '
     +linesHtml(la,lr)+'</div></div>':'')
+    +(t.tokens_used?'<div class="det-field"><div class="det-label">사용 토큰 (추정)</div><div class="det-val" style="font-size:12px">'
+    +'<span style="color:var(--purple);font-weight:600">~'+t.tokens_used.toLocaleString()+'</span> tokens'
+    +'</div></div>':'')
     +((t.created_by||t.assigned_to)?'<div class="det-field"><div class="det-label">담당</div><div class="det-val" style="font-size:12px">'
     +(t.created_by?'<div>생성자: <b>'+esc(t.created_by)+'</b></div>':'')
     +(t.assigned_to?'<div>담당자: <b>'+esc(t.assigned_to)+'</b></div>':'')
@@ -768,6 +773,7 @@ function openAdd(st){
   document.getElementById('mPri').value='medium';
   document.getElementById('mLA').value=0;
   document.getElementById('mLR').value=0;
+  document.getElementById('mTokens').value=0;
   document.getElementById('mDel').style.display='none';
   document.getElementById('modalBg').classList.add('open');
   setTimeout(()=>document.getElementById('mName').focus(),80);
@@ -789,6 +795,7 @@ function openEdit(id){
   document.getElementById('mEnd').value=t.completed_at||'';
   document.getElementById('mLA').value=t.lines_added||0;
   document.getElementById('mLR').value=t.lines_removed||0;
+  document.getElementById('mTokens').value=t.tokens_used||0;
   document.getElementById('mDel').style.display='block';
   document.getElementById('modalBg').classList.add('open');
 }
@@ -810,6 +817,7 @@ async function saveModal(){
     completed_at:document.getElementById('mEnd').value.trim(),
     lines_added:parseInt(document.getElementById('mLA').value)||0,
     lines_removed:parseInt(document.getElementById('mLR').value)||0,
+    tokens_used:parseInt(document.getElementById('mTokens').value)||0,
   };
   if(!d.title)return alert('제목을 입력하세요');
   await api(id?'PUT':'POST', id?apiP('/tasks/'+id):apiP('/tasks'), d);
@@ -874,6 +882,7 @@ function elapsed(s,e){
   const d=Math.round((new Date(+b[1],+b[2]-1,+b[3])-new Date(+a[1],+a[2]-1,+a[3]))/864e5);
   return d<0?'':d===0?'당일':d+'일';
 }
+function fmtTokens(n){if(!n)return '0';if(n>=1000000)return (n/1000000).toFixed(1)+'M';if(n>=1000)return Math.round(n/1000)+'K';return String(n);}
 function linesHtml(a,r){
   if(!a&&!r)return '';
   const t=a+r,sc=Math.min(1,150/t),aw=Math.max(1,Math.round(a*sc)),rw=Math.max(1,Math.round(r*sc));

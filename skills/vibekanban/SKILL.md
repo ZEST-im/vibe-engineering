@@ -155,11 +155,15 @@ VibeKanban replaces PROGRESS.md. All dev progress goes into the kanban.
 
 ### On task completion
 1. Measure code changes via `git diff --numstat` → record `lines_added`, `lines_removed`
-2. Write work report in `details`:
+2. Estimate token usage for this task → record `tokens_used`:
+   - Count approximate context size: files read × avg size + code written + conversation turns
+   - Rough heuristic: simple task (few tool calls, small files) ≈ 20K–50K, medium ≈ 50K–200K, complex (many reads, large diffs) ≈ 200K–500K
+   - Record as integer (e.g. `50000`). This is an estimate — accuracy within 2× is acceptable.
+3. Write work report in `details`:
    - Changed files and what changed
    - Key technical decisions and reasoning
    - Follow-up tasks or notes
-3. Move task to `done` (`completed_at` auto-set)
+4. Move task to `done` (`completed_at` auto-set)
 
 ### On qq (daily wrap-up)
 1. Print kanban summary (today's done, in-progress, tomorrow's tasks)
@@ -251,6 +255,7 @@ If no CRITICAL/HIGH found:
 - PROGRESS.md is "external-sharing snapshot" only. Daily records go to kanban only.
 - Every task MUST have a `category` (backend, frontend, infra, data, docs, qa, etc.)
 - Write `details` for completed tasks thoroughly — viewable in web UI
+- Record `tokens_used` (estimated integer) when completing tasks — shown in Done cards and detail panel
 
 ## Phase Management
 

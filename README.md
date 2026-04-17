@@ -23,6 +23,7 @@ Track tasks, code changes, and work reports — all from your terminal.
 - **Git-friendly** — Text-based JSON files. Diffs, merges, code review all work naturally.
 - **Auto-tracking** — `started_at` / `completed_at` set automatically on status change
 - **Code change stats** — `lines_added`, `lines_removed` from `git diff`
+- **Token tracking** — Estimated token usage per task recorded by Claude on completion, shown in Done cards and detail panel
 - **Work reports** — Per-task details (changed files, decisions, follow-ups)
 - **Archive** — Done tasks archived to monthly files, always visible in dashboard
 - **Code review** — Auto-triggered on `git push` / `gh pr create` via Claude Code hook
@@ -190,6 +191,7 @@ Click any card to open the right slide-in panel with:
 - Code review items with interactive resolved/unresolved toggles
 - Schedule (target, started, completed, elapsed time)
 - Code change stats (+/- bar graph)
+- Estimated token usage (`~50K tokens`)
 
 ### DB Schema View
 
@@ -255,6 +257,7 @@ Tasks can have code review items stored as structured data:
 | completed_at | string | Auto-set when → done |
 | lines_added | int | Lines of code added |
 | lines_removed | int | Lines of code removed |
+| tokens_used | int | Estimated token usage for this task (recorded by Claude on completion) |
 | position | int | Sort order within column |
 | review | string | JSON array of review items: `[{"text":"...","resolved":false}]` |
 | created_by | string | Creator (auto-set from `git config user.name`) |
