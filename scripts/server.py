@@ -598,7 +598,7 @@ class Handler(BaseHTTPRequestHandler):
                 # Return active + archived tasks
                 data = _read_kanban(kanban_dir)
                 all_tasks = data["tasks"] + _list_archives(kanban_dir)
-                all_tasks.sort(key=lambda t: (t.get("position", 0), t.get("id", 0)))
+                all_tasks.sort(key=lambda t: (t.get("position", 0), str(t.get("id", 0))))
                 return self._json(all_tasks)
 
             if rest == ["export"]:

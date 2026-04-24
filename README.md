@@ -224,6 +224,27 @@ Tasks can have code review items stored as structured data:
 - Also runs during `qq` (daily wrap-up) for uncommitted/unpushed changes
 - Review covers security (OWASP), code quality, and architecture concerns
 
+### Recommended: Add to your project's CLAUDE.md
+
+The code review hook triggers Claude to perform a review, but adding explicit instructions to your project's `CLAUDE.md` makes it more reliable and consistent. Add the following to your project's `CLAUDE.md`:
+
+```markdown
+## Code Review (VibeKanban)
+
+git push 또는 gh pr create 실행 후 VibeKanban hook이 코드 리뷰를 요청하면, 반드시 수행한다:
+
+1. `git diff`로 push된 변경사항을 확인
+2. 보안(OWASP), 코드 품질, 아키텍처 관점에서 리뷰
+3. CRITICAL/HIGH 이슈 발견 시 각각 칸반에 리뷰 태스크로 등록:
+   curl -X POST http://localhost:4242/api/{project}/tasks \
+     -H 'Content-Type: application/json' \
+     -d '{"title": "...", "status": "review", "category": "review", "priority": "high", "created_by": "claude-review"}'
+4. 리뷰 결과 요약 출력 (CRITICAL/HIGH 건수, 등록된 태스크 수)
+5. MEDIUM 이하는 별도 등록하지 않음
+```
+
+This ensures Claude always follows the review procedure — even without the `/vibekanban` skill loaded.
+
 ## API Reference
 
 | Method | Endpoint | Description |
