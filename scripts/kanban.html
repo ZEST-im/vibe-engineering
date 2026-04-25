@@ -296,9 +296,14 @@ header {
   display:flex; align-items:center; gap:12px; margin-bottom:14px; flex-wrap:wrap;
 }
 .schema-info .file-tag {
-  font-size:10px; padding:3px 8px; border-radius:4px;
+  font-size:10px; padding:3px 8px; border-radius:4px; cursor:pointer;
   background:var(--surface2); border:1px solid var(--border); color:var(--text-dim);
+  transition:background .15s,color .15s,border-color .15s;
 }
+.schema-info .file-tag.active {
+  background:var(--accent); border-color:var(--accent); color:#fff;
+}
+.schema-tbl.file-hidden { display:none; }
 .schema-legend {
   display:flex; gap:10px; font-size:10px; color:var(--text-dim); margin-left:auto;
 }
@@ -912,7 +917,7 @@ function renderSchema(){
   const {tables,relationships,files}=schemaData;
   // Info bar
   let html='<div class="schema-info">';
-  files.forEach(f=>{ html+='<span class="file-tag">'+esc(f.path)+' ('+f.type+')</span>'; });
+  files.forEach(f=>{ html+='<button class="file-tag active" data-file="'+esc(f.path)+'">'+esc(f.path)+' ('+f.type+')</button>'; });
   html+='<div class="schema-legend">'
     +'<span><span class="dot-pk"></span>PK</span>'
     +'<span><span class="dot-fk"></span>FK</span>'
@@ -924,7 +929,7 @@ function renderSchema(){
   html+='<svg class="schema-svg" id="schemaSvg"></svg>';
   html+='<div class="schema-grid" id="schemaGrid">';
   tables.forEach(t=>{
-    html+='<div class="schema-tbl" id="stbl_'+esc(t.name)+'" data-tbl="'+esc(t.name)+'">';
+    html+='<div class="schema-tbl" id="stbl_'+esc(t.name)+'" data-tbl="'+esc(t.name)+'"'+(t.source_file?' data-source-file="'+esc(t.source_file)+'"':'')+'>';
     html+='<div class="schema-tbl-head"><span class="tbl-icon">⊞</span> '+esc(t.name);
     if(t.schema) html+=' <span class="tbl-schema">'+esc(t.schema)+'</span>';
     html+=' <span style="color:var(--text-faint);font-weight:400;font-size:9px;margin-left:auto">'+t.columns.length+' cols</span></div>';
@@ -973,6 +978,17 @@ function renderSchema(){
     html+='</div>';
   }
   el.innerHTML=html;
+  // File tag filter toggle
+  el.querySelectorAll('.file-tag').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      btn.classList.toggle('active');
+      const activeFiles=new Set([...el.querySelectorAll('.file-tag.active')].map(b=>b.dataset.file));
+      el.querySelectorAll('.schema-tbl').forEach(tbl=>{
+        const sf=tbl.dataset.sourceFile;
+        tbl.classList.toggle('file-hidden', sf&&!activeFiles.has(sf));
+      });
+    });
+  });
   // Draw SVG relationship lines after render
   requestAnimationFrame(()=>drawSchemaLines(relationships));
 }

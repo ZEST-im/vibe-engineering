@@ -189,7 +189,7 @@ def _find_schema_files(kanban_dir):
     project_dir = os.path.dirname(os.path.abspath(kanban_dir))
     files = []
     base_patterns = [
-        "db/schema.rb", "db/structure.sql", "prisma/schema.prisma",
+        "db/schema.rb", "db/*_schema.rb", "db/structure.sql", "prisma/schema.prisma",
         "schema.prisma", "db/migrations/*.sql", "db/migrate/*.rb",
         "migrations/*.sql", "schema.sql", "sql/*.sql",
     ]
@@ -496,7 +496,7 @@ def _get_schema(kanban_dir):
         return {"tables": [], "relationships": [], "files": []}
     all_tables, all_rels, file_info = {}, [], []
     # If schema.rb or structure.sql exists, skip migration files
-    has_schema = any(os.path.basename(f) in ("schema.rb", "structure.sql") for f in files)
+    has_schema = any(os.path.basename(f).endswith("_schema.rb") or os.path.basename(f) in ("schema.rb", "structure.sql") for f in files)
     if has_schema:
         files = [f for f in files if "/migrate/" not in f and "/migrations/" not in f]
     for fpath in files:
@@ -509,6 +509,7 @@ def _get_schema(kanban_dir):
             tbls, rels = _parse_prisma(content)
         else:
             tbls, rels = _parse_sql_schema(content)
+        rel_path = os.path.relpath(fpath, project_dir)
         for t in tbls:
             if t["name"] in all_tables:
                 ex = all_tables[t["name"]]
@@ -516,9 +517,10 @@ def _get_schema(kanban_dir):
                     ex["columns"] = t["columns"]
                 ex["indexes"].extend(t.get("indexes", []))
             else:
+                t["source_file"] = rel_path
                 all_tables[t["name"]] = t
         all_rels.extend(rels)
-        file_info.append({"path": os.path.relpath(fpath, project_dir), "type": fname.rsplit(".", 1)[-1]})
+        file_info.append({"path": rel_path, "type": fname.rsplit(".", 1)[-1]})
     # Deduplicate relationships
     seen, unique_rels = set(), []
     for r in all_rels:
