@@ -1,20 +1,20 @@
-# Privacy Policy — VibeKanban
+# Privacy Policy — Vibe-Harness
 
 **Last updated**: 2026-03-14
 
 ## Summary
 
-VibeKanban runs entirely on your local machine. No data is collected, transmitted, or stored externally.
+Vibe-Harness runs entirely on your local machine. No data is collected, transmitted, or stored externally.
 
 ## Data Storage
 
-- All task data is stored in local SQLite databases (`vibekanban/kanban.db`) within your project directories.
-- The project registry is stored at `~/.claude/skills/vibekanban/projects.json` on your local filesystem.
+- All task data is stored in local SQLite databases (`vibe-harness/kanban.db`) within your project directories.
+- The project registry is stored at `~/.claude/skills/vibe-harness/projects.json` on your local filesystem.
 - The web server runs on `127.0.0.1` (localhost only) and is not accessible from the network.
 
 ## Data Collection
 
-VibeKanban does **not**:
+Vibe-Harness does **not**:
 - Collect any personal information
 - Send any data to external servers
 - Use analytics, tracking, or telemetry
@@ -24,10 +24,10 @@ VibeKanban does **not**:
 
 ## Third-Party Services
 
-VibeKanban does not integrate with or send data to any third-party services.
+Vibe-Harness does not integrate with or send data to any third-party services.
 
 ## Contact
 
 If you have questions about this privacy policy:
 - Email: info@zest.im
-- GitHub: https://github.com/hoarchi/vibekanban/issues
+- GitHub: https://github.com/hoarchi/vibe-harness/issues

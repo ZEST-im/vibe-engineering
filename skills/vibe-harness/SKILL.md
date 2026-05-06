@@ -1,10 +1,10 @@
 ---
-name: vibekanban
-description: VibeKanban — Dev progress kanban board for Claude Code. Multi-project support, task tracking with code change stats + web UI.
+name: vibe-harness
+description: Vibe-Harness — Dev progress kanban board for Claude Code. Multi-project support, task tracking with code change stats + web UI.
 user-invocable: true
 ---
 
-# VibeKanban — Dev Progress Kanban Board
+# Vibe-Harness — Dev Progress Kanban Board
 
 Track development progress as a kanban board while coding with Claude Code.
 One server (localhost:4242) serves multiple projects with tab-based switching.
@@ -28,8 +28,8 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/setup.py
 ```
 
 This will:
-1. Copy `server.py`, `kanban.html`, `SKILL.md` to `~/.claude/skills/vibekanban/`
-2. Install a macOS LaunchAgent (`com.vibekanban.server`) that auto-starts the server on login
+1. Copy `server.py`, `kanban.html`, `SKILL.md` to `~/.claude/skills/vibe-harness/`
+2. Install a macOS LaunchAgent (`com.vibe-harness.server`) that auto-starts the server on login
 3. Register a code review hook in `~/.claude/settings.json`
 
 To uninstall auto-start:
@@ -39,44 +39,44 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/setup.py uninstall
 
 Or manually:
 ```bash
-mkdir -p ~/.claude/skills/vibekanban
-cp ${CLAUDE_PLUGIN_ROOT}/scripts/server.py ~/.claude/skills/vibekanban/server.py
-cp ${CLAUDE_PLUGIN_ROOT}/scripts/kanban.html ~/.claude/skills/vibekanban/kanban.html
+mkdir -p ~/.claude/skills/vibe-harness
+cp ${CLAUDE_PLUGIN_ROOT}/scripts/server.py ~/.claude/skills/vibe-harness/server.py
+cp ${CLAUDE_PLUGIN_ROOT}/scripts/kanban.html ~/.claude/skills/vibe-harness/kanban.html
 ```
 
 ## File Locations
 
 ```
-~/.claude/skills/vibekanban/server.py           ← Web server (global, shared across projects)
-~/.claude/skills/vibekanban/kanban.html         ← Web UI (loaded by server)
-~/.claude/skills/vibekanban/projects.json       ← Project registry
-{project}/vibekanban/kanban.json                ← Per-project task data (git-tracked)
-{project}/vibekanban/archive/YYYY-MM.json       ← Monthly archives (git-tracked)
+~/.claude/skills/vibe-harness/server.py           ← Web server (global, shared across projects)
+~/.claude/skills/vibe-harness/kanban.html         ← Web UI (loaded by server)
+~/.claude/skills/vibe-harness/projects.json       ← Project registry
+{project}/vibe-harness/kanban.json                ← Per-project task data (git-tracked)
+{project}/vibe-harness/archive/YYYY-MM.json       ← Monthly archives (git-tracked)
 ```
 
 ## Commands
 
 | Command | Description |
 |---|---|
-| `/vibekanban` | Show current status summary |
-| `/vibekanban serve` | Start server + register current project (`localhost:4242/kanban`) |
-| `/vibekanban stop` | Stop server |
-| `/vibekanban add <title>` | Add new task (default: todo) |
-| `/vibekanban start <id or title>` | Move to in_progress |
-| `/vibekanban done <id or title>` | Move to done |
-| `/vibekanban move <id> <status>` | Change status |
-| `/vibekanban update <id>` | Update task details |
-| `/vibekanban list [status]` | List tasks |
-| `/vibekanban sync` | Sync tasks from PROGRESS.md / devlog |
-| `/vibekanban report` | Today's completed work summary |
-| `/vibekanban export` | Export all tasks to JSON file (`vibekanban/kanban-export.json`) |
-| `/vibekanban import` | Import tasks from JSON file (merge mode: keeps newer version) |
-| `/vibekanban import replace` | Import tasks from JSON file (replace mode: overwrite all) |
-| `/vibekanban archive` | Archive done tasks to monthly files |
-| `/vibekanban phase` | Show current phase status + task summary per phase |
-| `/vibekanban phase init` | Create PHASES.md + docs/CURRENT_PHASE.md templates |
-| `/vibekanban phase done` | Complete current phase (update PHASES.md, verify all tasks done) |
-| `/vibekanban phase next <name>` | Transition to next phase (runs checklist first) |
+| `/vibe-harness` | Show current status summary |
+| `/vibe-harness serve` | Start server + register current project (`localhost:4242/kanban`) |
+| `/vibe-harness stop` | Stop server |
+| `/vibe-harness add <title>` | Add new task (default: todo) |
+| `/vibe-harness start <id or title>` | Move to in_progress |
+| `/vibe-harness done <id or title>` | Move to done |
+| `/vibe-harness move <id> <status>` | Change status |
+| `/vibe-harness update <id>` | Update task details |
+| `/vibe-harness list [status]` | List tasks |
+| `/vibe-harness sync` | Sync tasks from PROGRESS.md / devlog |
+| `/vibe-harness report` | Today's completed work summary |
+| `/vibe-harness export` | Export all tasks to JSON file (`vibe-harness/kanban-export.json`) |
+| `/vibe-harness import` | Import tasks from JSON file (merge mode: keeps newer version) |
+| `/vibe-harness import replace` | Import tasks from JSON file (replace mode: overwrite all) |
+| `/vibe-harness archive` | Archive done tasks to monthly files |
+| `/vibe-harness phase` | Show current phase status + task summary per phase |
+| `/vibe-harness phase init` | Create PHASES.md + docs/CURRENT_PHASE.md templates |
+| `/vibe-harness phase done` | Complete current phase (update PHASES.md, verify all tasks done) |
+| `/vibe-harness phase next <name>` | Transition to next phase (runs checklist first) |
 
 ## Server
 
@@ -86,13 +86,13 @@ cp ${CLAUDE_PLUGIN_ROOT}/scripts/kanban.html ~/.claude/skills/vibekanban/kanban.
 lsof -ti:4242
 
 # Register project (if server is already running)
-python3 ~/.claude/skills/vibekanban/server.py register <project_key> <display_name> <kanban_dir>
+python3 ~/.claude/skills/vibe-harness/server.py register <project_key> <display_name> <kanban_dir>
 
 # Start server with auto-registration (legacy db_path also works)
-python3 ~/.claude/skills/vibekanban/server.py "$(pwd)/vibekanban" 4242 "ProjectName" &
+python3 ~/.claude/skills/vibe-harness/server.py "$(pwd)/vibe-harness" 4242 "ProjectName" &
 
 # Start server only (for already-registered projects)
-python3 ~/.claude/skills/vibekanban/server.py serve 4242 &
+python3 ~/.claude/skills/vibe-harness/server.py serve 4242 &
 ```
 
 ### Stop
@@ -111,7 +111,7 @@ curl http://localhost:4242/api/projects
 ```bash
 curl -X POST http://localhost:4242/api/projects \
   -H 'Content-Type: application/json' \
-  -d '{"key":"my_project","name":"My Project","kanban_dir":"/path/to/vibekanban"}'
+  -d '{"key":"my_project","name":"My Project","kanban_dir":"/path/to/vibe-harness"}'
 ```
 
 ### Task API
@@ -140,7 +140,7 @@ curl -X POST http://localhost:4242/api/{project_key}/archive
 
 ## Auto-Recording Rules (Claude MUST follow)
 
-VibeKanban replaces PROGRESS.md. All dev progress goes into the kanban.
+Vibe-Harness replaces PROGRESS.md. All dev progress goes into the kanban.
 
 ### On serve
 1. Check if server is running (`lsof -ti:4242`)
@@ -181,7 +181,7 @@ Just do it — every single time.
 1. **You just ran `git push`** → review NOW, before doing anything else
 2. **You just ran `gh pr create`** → review NOW, before doing anything else
 3. **User says `qq`** (daily wrap-up) → review all uncommitted + unpushed changes
-4. **User says `/vibekanban review`** → review on demand
+4. **User says `/vibe-harness review`** → review on demand
 
 #### Step-by-step procedure (follow exactly)
 
@@ -259,7 +259,7 @@ If no CRITICAL/HIGH found:
 
 ## Phase Management
 
-VibeKanban includes a built-in phase management system for structured project progression.
+Vibe-Harness includes a built-in phase management system for structured project progression.
 
 ### Phase Naming Convention
 
@@ -321,7 +321,7 @@ Example: `PHASE_MVP01`, `PHASE_PMF02`
 | Tests | All tests for current Phase features pass |
 | Docs | `PHASES.md` updated with completion details + test count |
 | Tech debt | Any debt carried forward is noted in PENDING Phase |
-| VibeKanban | All tasks for the Phase are `done` |
+| Vibe-Harness | All tasks for the Phase are `done` |
 
 ### Coding Style per Phase
 
@@ -352,12 +352,12 @@ Example: `PHASE_MVP01`, `PHASE_PMF02`
 
 ## Multi-User Rules
 
-VibeKanban uses JSON files for storage — fully git-friendly.
+Vibe-Harness uses JSON files for storage — fully git-friendly.
 
 ### Storage — Git-Tracked
 
-- `vibekanban/kanban.json` — active tasks (todo, in_progress, review + recent done)
-- `vibekanban/archive/YYYY-MM.json` — monthly archives of completed tasks
+- `vibe-harness/kanban.json` — active tasks (todo, in_progress, review + recent done)
+- `vibe-harness/archive/YYYY-MM.json` — monthly archives of completed tasks
 - All files are text-based JSON — git diff, merge, and conflict resolution work naturally
 - Commit these files along with your code
 
@@ -365,9 +365,9 @@ VibeKanban uses JSON files for storage — fully git-friendly.
 
 ```
 1. Work normally — kanban.json is updated as you work
-2. git add vibekanban/ → commit with your code changes
+2. git add vibe-harness/ → commit with your code changes
 3. On pull — if merge conflict in kanban.json, resolve like any JSON (per-task)
-4. Archive periodically: /vibekanban archive → moves done tasks to archive/YYYY-MM.json
+4. Archive periodically: /vibe-harness archive → moves done tasks to archive/YYYY-MM.json
 ```
 
 ### User Identification
@@ -381,12 +381,12 @@ VibeKanban uses JSON files for storage — fully git-friendly.
 
 ```bash
 # Export all tasks (active + archived) to JSON
-curl http://localhost:4242/api/{project}/export > vibekanban/kanban-export.json
+curl http://localhost:4242/api/{project}/export > vibe-harness/kanban-export.json
 
 # Import with merge (keeps newer version by updated_at)
 curl -X POST http://localhost:4242/api/{project}/import \
   -H 'Content-Type: application/json' \
-  -d @vibekanban/kanban-export.json
+  -d @vibe-harness/kanban-export.json
 
 # Import with replace (overwrite all tasks)
 curl -X POST http://localhost:4242/api/{project}/import \
@@ -407,14 +407,14 @@ curl -X POST http://localhost:4242/api/{project}/archive
 ### Claude Auto-Recording Rules (Multi-User)
 
 1. On task creation → set `created_by` to `git config user.name`
-2. On `/vibekanban start` → set `assigned_to` to current user
+2. On `/vibe-harness start` → set `assigned_to` to current user
 3. On `in_progress` enforcement → only move **own** tasks back to `todo`, not others'
-4. Periodically archive done tasks (`/vibekanban archive`) to keep kanban.json small
+4. Periodically archive done tasks (`/vibe-harness archive`) to keep kanban.json small
 
 ## Notes
 
 - Single server serves all projects (port 4242)
-- `~/.claude/skills/vibekanban/projects.json` stores project list
-- Each project's `vibekanban/` directory should be git-tracked (kanban.json + archive/)
+- `~/.claude/skills/vibe-harness/projects.json` stores project list
+- Each project's `vibe-harness/` directory should be git-tracked (kanban.json + archive/)
 - Server is localhost only (127.0.0.1)
 - JSON writes use atomic file replacement (write to .tmp, then rename) for safety

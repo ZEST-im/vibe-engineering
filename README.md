@@ -1,4 +1,4 @@
-# VibeKanban
+# Vibe-Harness
 
 Dev progress kanban board for [Claude Code](https://claude.ai/claude-code).
 Track tasks, code changes, and work reports — all from your terminal.
@@ -41,18 +41,18 @@ Track tasks, code changes, and work reports — all from your terminal.
 
 ```bash
 cd ~/dev        # or wherever you keep repos
-git clone https://github.com/hoarchi/vibekanban.git
+git clone https://github.com/hoarchi/vibe-harness.git
 ```
 
 ### Step 2. Run setup
 
 ```bash
-cd vibekanban
+cd vibe-harness
 python3 scripts/setup.py
 ```
 
 This does 4 things:
-1. Copies `SKILL.md`, `server.py`, `kanban.html` to `~/.claude/skills/vibekanban/`
+1. Copies `SKILL.md`, `server.py`, `kanban.html` to `~/.claude/skills/vibe-harness/`
 2. Migrates old project registry (SQLite paths → JSON paths) if needed
 3. Installs a macOS LaunchAgent — server auto-starts on login (port 4242)
 4. Registers a code review hook in `~/.claude/settings.json`
@@ -71,7 +71,7 @@ curl http://localhost:4242/api/projects
 Already installed? Update to the latest version with one command:
 
 ```bash
-python3 ~/.claude/skills/vibekanban/setup.py upgrade
+python3 ~/.claude/skills/vibe-harness/setup.py upgrade
 ```
 
 This downloads the latest `server.py`, `kanban.html`, and `SKILL.md` from GitHub and restarts the server automatically. No need to clone or pull the repo.
@@ -79,8 +79,8 @@ This downloads the latest `server.py`, `kanban.html`, and `SKILL.md` from GitHub
 **First time upgrading?** If your installed version doesn't have the `upgrade` command yet, run this once:
 
 ```bash
-curl -sL https://raw.githubusercontent.com/hoarchi/vibekanban/main/scripts/setup.py \
-  -o ~/.claude/skills/vibekanban/setup.py
+curl -sL https://raw.githubusercontent.com/hoarchi/vibe-harness/main/scripts/setup.py \
+  -o ~/.claude/skills/vibe-harness/setup.py
 ```
 
 After that, `setup.py upgrade` will keep everything up to date.
@@ -88,7 +88,7 @@ After that, `setup.py upgrade` will keep everything up to date.
 ### Uninstall
 
 ```bash
-cd ~/dev/vibekanban    # or wherever you cloned it
+cd ~/dev/vibe-harness    # or wherever you cloned it
 python3 scripts/setup.py uninstall
 ```
 
@@ -99,13 +99,13 @@ python3 scripts/setup.py uninstall
 If you ran `setup.py`, the server is already running via launchd. Otherwise:
 
 ```bash
-python3 ~/.claude/skills/vibekanban/server.py serve 4242 &
+python3 ~/.claude/skills/vibe-harness/server.py serve 4242 &
 ```
 
 ### 2. Register your project
 
 ```bash
-python3 ~/.claude/skills/vibekanban/server.py register my_project "My Project" "$(pwd)/vibekanban"
+python3 ~/.claude/skills/vibe-harness/server.py register my_project "My Project" "$(pwd)/vibe-harness"
 ```
 
 ### 3. Open the board
@@ -123,17 +123,17 @@ Just tell Claude what to do. The skill automatically:
 Or use explicit commands:
 
 ```
-/vibekanban serve      → Start server + register project
-/vibekanban add title  → Add a task
-/vibekanban done 3     → Mark task #3 as done
-/vibekanban archive    → Archive done tasks to monthly files
-/vibekanban report     → Today's summary
+/vibe-harness serve      → Start server + register project
+/vibe-harness add title  → Add a task
+/vibe-harness done 3     → Mark task #3 as done
+/vibe-harness archive    → Archive done tasks to monthly files
+/vibe-harness report     → Today's summary
 ```
 
 ## How It Works
 
 ```
-Claude Code ──(curl)──→ localhost:4242 ──(JSON)──→ vibekanban/kanban.json
+Claude Code ──(curl)──→ localhost:4242 ──(JSON)──→ vibe-harness/kanban.json
                               │
                          kanban.html
                               │
@@ -143,7 +143,7 @@ Claude Code ──(curl)──→ localhost:4242 ──(JSON)──→ vibekanba
 All server files live in one directory:
 
 ```
-~/.claude/skills/vibekanban/
+~/.claude/skills/vibe-harness/
   SKILL.md           ← Skill definition (Claude reads this)
   server.py          ← Python HTTP server (API + static)
   kanban.html        ← Single-file vanilla JS frontend
@@ -154,7 +154,7 @@ All server files live in one directory:
 Per-project data (git-tracked):
 
 ```
-{project}/vibekanban/
+{project}/vibe-harness/
   kanban.json              ← Active tasks (todo, in_progress, review, recent done)
   archive/
     2026-03.json           ← Monthly archive of completed tasks
@@ -163,8 +163,8 @@ Per-project data (git-tracked):
 
 Other:
 
-- **LaunchAgent**: `~/Library/LaunchAgents/com.vibekanban.server.plist` — Auto-start on login
-- **Hook**: `~/.claude/hooks/vibekanban-review.sh` — Code review trigger on push/PR
+- **LaunchAgent**: `~/Library/LaunchAgents/com.vibe-harness.server.plist` — Auto-start on login
+- **Hook**: `~/.claude/hooks/vibe-harness-review.sh` — Code review trigger on push/PR
 
 ## Web UI
 
@@ -229,9 +229,9 @@ Tasks can have code review items stored as structured data:
 The code review hook triggers Claude to perform a review, but adding explicit instructions to your project's `CLAUDE.md` makes it more reliable and consistent. Add the following to your project's `CLAUDE.md`:
 
 ```markdown
-## Code Review (VibeKanban)
+## Code Review (Vibe-Harness)
 
-git push 또는 gh pr create 실행 후 VibeKanban hook이 코드 리뷰를 요청하면, 반드시 수행한다:
+git push 또는 gh pr create 실행 후 Vibe-Harness hook이 코드 리뷰를 요청하면, 반드시 수행한다:
 
 1. `git diff`로 push된 변경사항을 확인
 2. 보안(OWASP), 코드 품질, 아키텍처 관점에서 리뷰
@@ -243,7 +243,7 @@ git push 또는 gh pr create 실행 후 VibeKanban hook이 코드 리뷰를 요�
 5. MEDIUM 이하는 별도 등록하지 않음
 ```
 
-This ensures Claude always follows the review procedure — even without the `/vibekanban` skill loaded.
+This ensures Claude always follows the review procedure — even without the `/vibe-harness` skill loaded.
 
 ## API Reference
 
@@ -282,7 +282,7 @@ This ensures Claude always follows the review procedure — even without the `/v
 | position | int | Sort order within column |
 | review | string | JSON array of review items: `[{"text":"...","resolved":false}]` |
 | created_by | string | Creator (auto-set from `git config user.name`) |
-| assigned_to | string | Assignee (set on `/vibekanban start`) |
+| assigned_to | string | Assignee (set on `/vibe-harness start`) |
 
 ## Requirements
 
