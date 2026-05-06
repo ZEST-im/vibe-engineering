@@ -8,7 +8,6 @@
 - [x] SKILL.md 멀티유저 규칙 문서화
 - [ ] kanban.html에 created_by/assigned_to 표시
 ## Do NOT touch:
-- 서버 아키텍처 변경 (PostgreSQL 전환 등)
-- 인증/로그인 시스템
-- WebSocket/SSE 실시간 동기화
-- task_history 감사 로그 테이블
+<!-- SCOPE_LOCK_BEGIN -->
+<!-- SCOPE_LOCK_END -->
+서버 아키텍처 변경 (PostgreSQL 전환 등), 인증/로그인 시스템, WebSocket/SSE 실시간 동기화, task_history 감사 로그 테이블

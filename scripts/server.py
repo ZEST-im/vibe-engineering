@@ -530,6 +530,75 @@ def _get_schema(kanban_dir):
     return {"tables": sorted(all_tables.values(), key=lambda t: t["name"]),
             "relationships": unique_rels, "files": file_info}
 
+def _get_phase_check(kanban_dir):
+    """Check phase transition readiness: kanban state + CURRENT_PHASE.md checklist."""
+    project_dir = os.path.dirname(os.path.abspath(kanban_dir))
+    issues = []
+    warnings = []
+
+    # 1. Kanban state
+    data = _read_kanban(kanban_dir)
+    tasks = data.get("tasks", [])
+    in_progress = [t for t in tasks if t.get("status") == "in_progress"]
+    review = [t for t in tasks if t.get("status") == "review"]
+    if in_progress:
+        issues.append(f"in_progress 태스크 {len(in_progress)}개: " +
+                      ", ".join(f"#{t['id']} {t['title'][:30]}" for t in in_progress))
+    if review:
+        issues.append(f"review 미해결 태스크 {len(review)}개: " +
+                      ", ".join(f"#{t['id']} {t['title'][:30]}" for t in review))
+
+    # 2. CURRENT_PHASE.md checklist
+    phase_file = None
+    for candidate in [
+        os.path.join(project_dir, "CURRENT_PHASE.md"),
+        os.path.join(project_dir, "docs", "CURRENT_PHASE.md"),
+    ]:
+        if os.path.exists(candidate):
+            phase_file = candidate
+            break
+
+    unchecked, total_checks, phase_name = [], 0, ""
+    if phase_file:
+        with open(phase_file, encoding="utf-8") as f:
+            content = f.read()
+        for line in content.splitlines():
+            m = re.match(r"^##\s*Now:\s*(.+)", line)
+            if m:
+                phase_name = m.group(1).strip()
+            chk = re.match(r"^- \[([ xX])\]\s*(.+)", line)
+            if chk:
+                total_checks += 1
+                if chk.group(1) == " ":
+                    unchecked.append(chk.group(2).strip())
+        if unchecked:
+            issues.append(f"Done when 미완료 {len(unchecked)}/{total_checks}: " +
+                          ", ".join(unchecked[:3]) + ("..." if len(unchecked) > 3 else ""))
+    else:
+        warnings.append("CURRENT_PHASE.md 없음 — 수동으로 확인하세요")
+
+    # 3. PHASES.md freshness
+    phases_file = os.path.join(project_dir, "PHASES.md")
+    if not os.path.exists(phases_file):
+        warnings.append("PHASES.md 없음 — Phase 완료 기록을 남겨야 합니다")
+
+    ready = len(issues) == 0
+    return {
+        "ready": ready,
+        "phase": phase_name,
+        "issues": issues,
+        "warnings": warnings,
+        "kanban": {
+            "in_progress": len(in_progress),
+            "review": len(review),
+            "done": sum(1 for t in tasks if t.get("status") == "done"),
+        },
+        "checklist": {
+            "total": total_checks,
+            "unchecked": len(unchecked),
+        },
+    }
+
 # ── Handler ─────────────────────────────────────────
 
 class Handler(BaseHTTPRequestHandler):
@@ -634,6 +703,9 @@ class Handler(BaseHTTPRequestHandler):
 
             if rest == ["schema"]:
                 return self._json(_get_schema(kanban_dir))
+
+            if rest == ["phase-check"]:
+                return self._json(_get_phase_check(kanban_dir))
 
         self.send_response(404)
         self.end_headers()

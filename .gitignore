@@ -8,3 +8,7 @@ __pycache__/
 # Server runtime (not needed in repo)
 *.bak
 server.log
+
+# SQLite WAL files
+*.db-shm
+*.db-wal

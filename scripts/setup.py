@@ -15,7 +15,48 @@ HOME = os.path.expanduser("~")
 PLIST_NAME = "com.vibe-harness.server.plist"
 LAUNCH_AGENTS = os.path.expanduser("~/Library/LaunchAgents")
 SETTINGS_PATH = os.path.expanduser("~/.claude/settings.json")
+HOOKS_DIR = os.path.expanduser("~/.claude/hooks")
 REPO_URL = "https://raw.githubusercontent.com/hoarchi/vibe-harness/main"
+
+# Hook definitions: (src_name, event, entry_dict)
+HOOKS = [
+    (
+        "vibe-harness-scope-guard.sh",
+        "PreToolUse",
+        {
+            "matcher": "Edit|Write",
+            "hooks": [{"type": "command", "command": os.path.join(HOOKS_DIR, "vibe-harness-scope-guard.sh")}],
+            "_id": "vibe-harness-scope-guard",
+        },
+    ),
+    (
+        "vibe-harness-review.sh",
+        "PostToolUse",
+        {
+            "matcher": "Bash",
+            "hooks": [{"type": "command", "command": os.path.join(HOOKS_DIR, "vibe-harness-review.sh")}],
+            "_id": "vibe-harness-code-review",
+        },
+    ),
+    (
+        "vibe-harness-session-start.sh",
+        "SessionStart",
+        {
+            "hooks": [{"type": "command", "command": os.path.join(HOOKS_DIR, "vibe-harness-session-start.sh")}],
+            "_id": "vibe-harness-session-start",
+        },
+    ),
+    (
+        "vibe-harness-stop-gate.sh",
+        "Stop",
+        {
+            "hooks": [{"type": "command", "command": os.path.join(HOOKS_DIR, "vibe-harness-stop-gate.sh")}],
+            "_id": "vibe-harness-stop-gate",
+        },
+    ),
+]
+
+HOOK_IDS = {entry["_id"] for _, _, entry in HOOKS}
 
 
 def copy_server_files():
@@ -83,87 +124,59 @@ def install_launchd():
         return False
 
 
-HOOKS_DIR = os.path.expanduser("~/.claude/hooks")
-HOOK_SCRIPT = os.path.join(HOOKS_DIR, "vibe-harness-review.sh")
-
-HOOK_SCRIPT_CONTENT = r'''#!/bin/bash
-# Vibe Harness Code Review Hook
-# Triggers after git push or gh pr create
-INPUT=$(cat)
-COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)
-
-if echo "$COMMAND" | grep -qE '^\s*(git\s+push|gh\s+pr\s+create)'; then
-  echo "[Vibe Harness] Code review triggered. Please perform a code review now:"
-  echo "1. Run git diff to see all pushed changes"
-  echo "2. Check for: security issues, code quality, architecture concerns"
-  echo "3. Store review findings in the current kanban task's review field"
-  echo "4. Print review summary with severity levels"
-fi
-exit 0
-'''
-
-REVIEW_HOOK_ENTRY = {
-    "matcher": "Bash",
-    "hooks": [
-        {
-            "type": "command",
-            "command": HOOK_SCRIPT,
-        }
-    ],
-}
-
-HOOK_ID = "vibe-harness-code-review"
-
-
 def install_hooks():
-    """Install code review hook script and register in settings.json"""
-    # Step 1: Write hook script
+    """Copy all hook scripts to ~/.claude/hooks/ and register them in settings.json"""
     os.makedirs(HOOKS_DIR, exist_ok=True)
-    with open(HOOK_SCRIPT, "w", encoding="utf-8") as f:
-        f.write(HOOK_SCRIPT_CONTENT)
-    os.chmod(HOOK_SCRIPT, 0o755)
-    print(f"  INSTALLED hook script: {HOOK_SCRIPT}")
+    hooks_src_dir = os.path.join(SRC, "hooks")
 
-    # Step 2: Register in settings.json
+    # Copy hook scripts
+    for script_name, _, _ in HOOKS:
+        src = os.path.join(hooks_src_dir, script_name)
+        dst = os.path.join(HOOKS_DIR, script_name)
+        if not os.path.exists(src):
+            print(f"  SKIP {script_name} (not found in hooks/)")
+            continue
+        shutil.copy2(src, dst)
+        os.chmod(dst, 0o755)
+        print(f"  INSTALLED {script_name} → {dst}")
+
+    # Register in settings.json
     settings = {}
     if os.path.exists(SETTINGS_PATH):
         with open(SETTINGS_PATH, encoding="utf-8") as f:
             settings = json.load(f)
 
-    hooks = settings.setdefault("hooks", {})
-    post_hooks = hooks.setdefault("PostToolUse", [])
+    hooks_cfg = settings.setdefault("hooks", {})
 
-    # Remove existing vibe-harness hook if present
-    post_hooks = [h for h in post_hooks if not _is_vibe_harness_hook(h)]
+    # Remove any existing vibe-harness entries across all event types
+    for event in ("PreToolUse", "PostToolUse", "SessionStart", "Stop"):
+        existing = hooks_cfg.get(event, [])
+        hooks_cfg[event] = [h for h in existing if h.get("_id") not in HOOK_IDS]
 
-    entry = dict(REVIEW_HOOK_ENTRY)
-    entry["_id"] = HOOK_ID  # marker for identification
-    post_hooks.append(entry)
+    # Insert new entries
+    for _, event, entry in HOOKS:
+        hooks_cfg.setdefault(event, []).append(entry)
 
-    hooks["PostToolUse"] = post_hooks
-    settings["hooks"] = hooks
+    # Clean up empty lists
+    for event in list(hooks_cfg.keys()):
+        if not hooks_cfg[event]:
+            del hooks_cfg[event]
+
+    settings["hooks"] = hooks_cfg
 
     with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
         json.dump(settings, f, indent=2, ensure_ascii=False)
-    print(f"  REGISTERED hook in {SETTINGS_PATH}")
-
-
-def _is_vibe_harness_hook(h):
-    """Check if a hook entry is a vibe-harness hook"""
-    if h.get("_id") == HOOK_ID:
-        return True
-    for hook in h.get("hooks", []):
-        if hook.get("command", "").endswith("vibe-harness-review.sh"):
-            return True
-    return False
+    print(f"  REGISTERED all hooks in {SETTINGS_PATH}")
 
 
 def uninstall_hooks():
-    """Remove code review hook from settings.json and delete script"""
-    # Remove script
-    if os.path.exists(HOOK_SCRIPT):
-        os.remove(HOOK_SCRIPT)
-        print(f"  REMOVED {HOOK_SCRIPT}")
+    """Remove all vibe-harness hook scripts and their settings.json entries"""
+    # Remove scripts
+    for script_name, _, _ in HOOKS:
+        dst = os.path.join(HOOKS_DIR, script_name)
+        if os.path.exists(dst):
+            os.remove(dst)
+            print(f"  REMOVED {dst}")
 
     # Remove from settings.json
     if not os.path.exists(SETTINGS_PATH):
@@ -173,22 +186,28 @@ def uninstall_hooks():
     with open(SETTINGS_PATH, encoding="utf-8") as f:
         settings = json.load(f)
 
-    hooks = settings.get("hooks", {})
-    post_hooks = hooks.get("PostToolUse", [])
-    before = len(post_hooks)
-    post_hooks = [h for h in post_hooks if not _is_vibe_harness_hook(h)]
+    hooks_cfg = settings.get("hooks", {})
+    changed = False
+    for event in ("PreToolUse", "PostToolUse", "SessionStart", "Stop"):
+        before = hooks_cfg.get(event, [])
+        after = [h for h in before if h.get("_id") not in HOOK_IDS]
+        if len(after) < len(before):
+            changed = True
+            if after:
+                hooks_cfg[event] = after
+            else:
+                hooks_cfg.pop(event, None)
 
-    if len(post_hooks) < before:
-        hooks["PostToolUse"] = post_hooks
-        if not post_hooks:
-            del hooks["PostToolUse"]
-        if not hooks:
-            del settings["hooks"]
+    if changed:
+        if hooks_cfg:
+            settings["hooks"] = hooks_cfg
+        else:
+            settings.pop("hooks", None)
         with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
             json.dump(settings, f, indent=2, ensure_ascii=False)
-        print(f"  REMOVED hook from {SETTINGS_PATH}")
+        print(f"  REMOVED vibe-harness hooks from {SETTINGS_PATH}")
     else:
-        print("  Code review hook not found in settings")
+        print("  No vibe-harness hooks found in settings")
 
 
 def uninstall_launchd():
@@ -318,8 +337,8 @@ def main():
     install_launchd()
     print()
 
-    # Step 4: Install code review hook
-    print("[4/4] Installing code review hook...")
+    # Step 4: Install hooks (scope guard, session start, stop gate, code review)
+    print("[4/4] Installing hooks...")
     install_hooks()
     print()
 
@@ -328,6 +347,12 @@ def main():
     print(f"  UI:     {DEST}/kanban.html")
     print(f"  Log:    {DEST}/server.log")
     print()
+    print("Hooks installed:")
+    print("  PreToolUse  → vibe-harness-scope-guard.sh   (blocks Do NOT touch file edits)")
+    print("  PostToolUse → vibe-harness-review.sh         (code review gate on git push)")
+    print("  SessionStart→ vibe-harness-session-start.sh  (loads CURRENT_PHASE.md)")
+    print("  Stop        → vibe-harness-stop-gate.sh      (warns on in_progress tasks)")
+    print()
     print("The server will auto-start on login (port 4242).")
     print("Open: http://localhost:4242/kanban")
     print()
@@ -335,7 +360,7 @@ def main():
     print("  Active tasks: {project}/vibe-harness/kanban.json")
     print("  Archives:     {project}/vibe-harness/archive/YYYY-MM.json")
     print()
-    print("To uninstall auto-start:")
+    print("To uninstall:")
     print(f"  python3 {os.path.abspath(__file__)} uninstall")
 
 

@@ -75,8 +75,9 @@ cp ${CLAUDE_PLUGIN_ROOT}/scripts/kanban.html ~/.claude/skills/vibe-harness/kanba
 | `/vibe-harness archive` | Archive done tasks to monthly files |
 | `/vibe-harness phase` | Show current phase status + task summary per phase |
 | `/vibe-harness phase init` | Create PHASES.md + docs/CURRENT_PHASE.md templates |
-| `/vibe-harness phase done` | Complete current phase (update PHASES.md, verify all tasks done) |
+| `/vibe-harness phase done` | Complete current phase — runs automated pre-check, updates PHASES.md |
 | `/vibe-harness phase next <name>` | Transition to next phase (runs checklist first) |
+| `/vibe-harness phase check` | Run automated phase completion check (non-destructive) |
 
 ## Server
 
@@ -156,9 +157,12 @@ Vibe-Harness replaces PROGRESS.md. All dev progress goes into the kanban.
 ### On task completion
 1. Measure code changes via `git diff --numstat` → record `lines_added`, `lines_removed`
 2. Estimate token usage for this task → record `tokens_used`:
-   - Count approximate context size: files read × avg size + code written + conversation turns
-   - Rough heuristic: simple task (few tool calls, small files) ≈ 20K–50K, medium ≈ 50K–200K, complex (many reads, large diffs) ≈ 200K–500K
-   - Record as integer (e.g. `50000`). This is an estimate — accuracy within 2× is acceptable.
+   - Use conversation turn count and diff size as the signal:
+     - Count tool calls made during the task (Read, Edit, Bash calls each ≈ 2K–5K)
+     - Count lines changed in git diff (each line ≈ 10–20 tokens)
+     - Rough formula: `(tool_calls × 3000) + (lines_changed × 15) + (conversation_turns × 800)`
+   - Quick bands: tiny (≤5 tool calls, <30 diff lines) ≈ 20K; small ≈ 50K; medium ≈ 150K; large (>30 tool calls) ≈ 400K
+   - Record as integer (e.g. `50000`). Accuracy within 2× is acceptable.
 3. Write work report in `details`:
    - Changed files and what changed
    - Key technical decisions and reasoning
@@ -302,9 +306,18 @@ Example: `PHASE_MVP01`, `PHASE_PMF02`
 ```
 ## Now: PHASE_MVP02
 ## Scope: [features/files]
-## Done when: [checklist]
-## Do NOT touch: [out-of-scope list]
+## Done when:
+- [ ] Item 1
+- [ ] Item 2
+## Do NOT touch:
+<!-- SCOPE_LOCK_BEGIN -->
+- billing/
+- auth/
+- app/models/user.rb
+<!-- SCOPE_LOCK_END -->
 ```
+
+The `SCOPE_LOCK_BEGIN` / `SCOPE_LOCK_END` block is machine-readable: the `PreToolUse` scope guard hook reads it automatically and **blocks** any Edit or Write to matching files or directories. Patterns are prefix-matched against the relative path from the project root. No need to list every file — `billing/` covers the entire directory.
 
 ### Phase Rules (Claude MUST follow)
 
@@ -313,6 +326,30 @@ Example: `PHASE_MVP01`, `PHASE_PMF02`
 3. **Update `PHASES.md` on Phase completion** (date, achievements, test count).
 4. **Strictly respect `docs/CURRENT_PHASE.md`'s `Do NOT touch` list.**
 5. **Phase completion criteria**: All items in `Done when` checklist must be checked. Partial = 🚧.
+
+### `phase check` / `phase done` — Automated Pre-check
+
+Before marking a phase done, run the automated check:
+
+```bash
+curl http://localhost:4242/api/{project}/phase-check
+```
+
+Response:
+```json
+{
+  "ready": false,
+  "phase": "PHASE_MVP01",
+  "issues": ["2 in_progress tasks", "1 Done when item unchecked"],
+  "warnings": ["PHASES.md not found"],
+  "kanban": {"in_progress": 2, "review": 0, "done": 12},
+  "checklist": {"total": 5, "unchecked": 1}
+}
+```
+
+**Only proceed with phase transition when `"ready": true`.**
+
+`/vibe-harness phase done` runs this check automatically before updating PHASES.md.
 
 ### Phase Transition Checklist
 

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "next_id": 20,
+  "next_id": 21,
   "tasks": [
     {
       "id": 19,
@@ -374,6 +374,28 @@
       "lines_removed": 0,
       "created_at": "2026-03-14 00:00:00",
       "updated_at": "2026-03-14 00:00:00",
+      "position": 0,
+      "phase": "PHASE_MVP01",
+      "review": "",
+      "created_by": "zest.hogun",
+      "assigned_to": ""
+    },
+    {
+      "id": 20,
+      "title": "하네스 강화 완료: 훅 4종 + setup.py + SKILL.md",
+      "description": "",
+      "details": "4개 훅 설치 인프라 구축 + SKILL.md 업데이트\n\n변경 파일:\n- scripts/hooks/ (신규): 4개 훅 스크립트 (scope-guard, review, session-start, stop-gate)\n- scripts/setup.py: install_hooks()를 전면 재작성 — 4개 훅 모두 설치 + 등록\n- scripts/server.py: _get_phase_check() + GET /api/{project}/phase-check 엔드포인트 추가\n- skills/vibe-harness/SKILL.md: SCOPE_LOCK 포맷 문서화, phase-check API 참조, 토큰 추정 개선\n- docs/CURRENT_PHASE.md: SCOPE_LOCK 마커 추가 (현재는 빈 블록)\n\n기술 결정:\n- 훅 스크립트를 scripts/hooks/ 에 버전 관리 → setup.py가 복사 후 설치\n- SCOPE_LOCK_BEGIN/END 코멘트 블록: 역호환성 유지 (블록 없으면 guard 무동작)\n- phase-check: issues/warnings 분리 — issues는 blocking, warnings는 non-blocking\n- 토큰 추정: 주관적 범위 → 도구 호출 수 + diff 라인 기반 공식으로 개선\n\n후속 작업:\n- 검증: 설치 후 scope-guard 차단 테스트, stop-gate 경고 테스트\n",
+      "status": "done",
+      "priority": "medium",
+      "category": "infra",
+      "target_date": "",
+      "started_at": "",
+      "completed_at": "",
+      "lines_added": 223,
+      "lines_removed": 90,
+      "tokens_used": 180000,
+      "created_at": "2026-05-06T12:57:59",
+      "updated_at": "2026-05-06T12:57:59",
       "position": 0,
       "phase": "PHASE_MVP01",
       "review": "",
