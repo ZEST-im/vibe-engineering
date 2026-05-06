@@ -3,12 +3,12 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.vibekanban.server</string>
+    <string>com.vibe-harness.server</string>
 
     <key>ProgramArguments</key>
     <array>
         <string>/usr/bin/python3</string>
-        <string>__HOME__/.claude/skills/vibekanban/server.py</string>
+        <string>__HOME__/.claude/skills/vibe-harness/server.py</string>
         <string>serve</string>
         <string>4242</string>
     </array>
@@ -23,13 +23,13 @@
     </dict>
 
     <key>StandardOutPath</key>
-    <string>__HOME__/.claude/skills/vibekanban/server.log</string>
+    <string>__HOME__/.claude/skills/vibe-harness/server.log</string>
 
     <key>StandardErrorPath</key>
-    <string>__HOME__/.claude/skills/vibekanban/server.log</string>
+    <string>__HOME__/.claude/skills/vibe-harness/server.log</string>
 
     <key>WorkingDirectory</key>
-    <string>__HOME__/.claude/skills/vibekanban</string>
+    <string>__HOME__/.claude/skills/vibe-harness</string>
 
     <key>ThrottleInterval</key>
     <integer>5</integer>

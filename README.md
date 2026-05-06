@@ -1,14 +1,14 @@
-# Vibe-Harness
+# Vibe Harness
 
-Dev progress kanban board for [Claude Code](https://claude.ai/claude-code).
-Track tasks, code changes, and work reports — all from your terminal.
-**Multi-user ready**: share your kanban via git, just like code.
+**Session harness for Claude Code.**  
+Scope boundaries, task accountability, phase gates, and code review — built for AI-speed development.
+
+Vibe coding is fast. But it drifts. Vibe Harness gives Claude a frame: what to work on, what not to touch, when to stop, and what happened.
+
+---
 
 ### Kanban View (Dark)
 ![Kanban Dark](docs/screenshot-kanban-dark.png)
-
-### Kanban View (Light)
-![Kanban Light](docs/screenshot-kanban-light.png)
 
 ### List View
 ![List View](docs/screenshot-list.png)
@@ -16,281 +16,281 @@ Track tasks, code changes, and work reports — all from your terminal.
 ### Detail Panel
 ![Detail Panel](docs/screenshot-detail.png)
 
+---
+
+## The Problem
+
+When you code with Claude at full speed, three things tend to go wrong:
+
+1. **Drift** — Claude touches files outside the original scope
+2. **Amnesia** — the next session has no idea what was decided last time
+3. **No gates** — code ships without review, docs stay stale, phases blur together
+
+Vibe Harness is a harness, not just a board. It gives Claude the structure to stay in bounds.
+
+---
+
+## How It Works
+
+```
+CURRENT_PHASE.md     ← what Claude may/must not touch this session
+PHASES.md            ← master plan, completion history
+kanban board         ← one in_progress at a time, tracked per task
+review hook          ← auto-triggered on git push / gh pr create
+qq / cc commands     ← session-end rituals that close the loop
+```
+
+The kanban board (localhost:4242) is the visible surface. The real value is the discipline layer underneath: phase files, scope locks, review gates, and session bookends.
+
+---
+
 ## Features
 
-- **Multi-user** — JSON storage means `git pull/push` just works. Multiple developers share one kanban via git — no binary conflicts, no export/import ceremony.
-- **Multi-project** — One server, multiple projects via tabs
-- **Git-friendly** — Text-based JSON files. Diffs, merges, code review all work naturally.
-- **Auto-tracking** — `started_at` / `completed_at` set automatically on status change
-- **Code change stats** — `lines_added`, `lines_removed` from `git diff`
-- **Token tracking** — Estimated token usage per task recorded by Claude on completion, shown in Done cards and detail panel
-- **Work reports** — Per-task details (changed files, decisions, follow-ups)
-- **Archive** — Done tasks archived to monthly files, always visible in dashboard
-- **Code review** — Auto-triggered on `git push` / `gh pr create` via Claude Code hook
-- **DB Schema view** — Auto-detects schema files (schema.rb, structure.sql, Prisma, SQL) and renders an ERD: table boxes, column types, PK/FK/UQ/NN badges, indexes, and relationship lines between tables
-- **Kanban + List views** — Drag & drop kanban or spreadsheet-style inline editing
-- **Done grouping** — By date, category, or phase
-- **Dark / Light mode** — Toggle with localStorage persistence
-- **Auto-start** — macOS LaunchAgent keeps the server running across reboots
-- **Progress sync** — Import from existing PROGRESS.md / devlog files
-- **Zero dependencies** — Pure Python + vanilla JS. No npm, no build step.
+- **Phase management** — SEED → MVP → PMF → SCALE → GTM. Scope per phase defined in `CURRENT_PHASE.md`. Claude must not touch anything outside the `Do NOT touch` list.
+- **One in_progress at a time** — enforced by the skill. If Claude starts a second task, the first gets bumped back to `todo`.
+- **Task accountability** — `lines_added`, `lines_removed`, `tokens_used`, work report, and decisions logged per task on completion.
+- **Review gate** — `git push` / `gh pr create` auto-triggers a structured code review hook. Findings land in the kanban as `review` tasks.
+- **Multi-project** — one server (port 4242), multiple projects as tabs. Each project's data is JSON — git-tracked alongside code.
+- **DB Schema view** — reads schema files (schema.rb, schema.sql, Prisma) and renders an ERD: tables, columns, PK/FK/UQ badges, index list, and FK relationship lines.
+- **Archive** — done tasks auto-archived to monthly JSON files. Always visible. Never lost.
+- **Session rituals** — `qq` (wrap-up without push) and `cc` (commit + push + deploy + docs) as first-class commands.
+- **Zero dependencies** — pure Python + vanilla JS. No npm, no pip, no build step.
+
+---
 
 ## Install
 
-### Step 1. Clone the repo (anywhere you like)
+### 1. Clone
 
 ```bash
-cd ~/dev        # or wherever you keep repos
 git clone https://github.com/hoarchi/vibe-harness.git
+cd vibe-harness
 ```
 
-### Step 2. Run setup
+### 2. Setup
 
 ```bash
-cd vibe-harness
 python3 scripts/setup.py
 ```
 
-This does 4 things:
-1. Copies `SKILL.md`, `server.py`, `kanban.html` to `~/.claude/skills/vibe-harness/`
-2. Migrates old project registry (SQLite paths → JSON paths) if needed
-3. Installs a macOS LaunchAgent — server auto-starts on login (port 4242)
-4. Registers a code review hook in `~/.claude/settings.json`
+This does four things:
 
-After setup, the cloned repo is no longer needed for daily use. You can keep it for updates.
+1. Copies `server.py`, `kanban.html`, `SKILL.md` → `~/.claude/skills/vibe-harness/`
+2. Installs a macOS LaunchAgent — server auto-starts on login at port 4242
+3. Registers a code review hook in `~/.claude/settings.json`
+4. Migrates old project registry if upgrading from a prior version
 
-### Verify
+After setup, the cloned repo is only needed for updates.
+
+### 3. Register your project
 
 ```bash
-curl http://localhost:4242/api/projects
-# Should return [] (empty project list)
+python3 ~/.claude/skills/vibe-harness/server.py register my_project "My Project" "$(pwd)/vibe-harness"
 ```
 
-### Update (no repo needed)
+### 4. Open the board
 
-Already installed? Update to the latest version with one command:
+[http://localhost:4242/kanban](http://localhost:4242/kanban)
+
+---
+
+## Update
 
 ```bash
 python3 ~/.claude/skills/vibe-harness/setup.py upgrade
 ```
 
-This downloads the latest `server.py`, `kanban.html`, and `SKILL.md` from GitHub and restarts the server automatically. No need to clone or pull the repo.
+Downloads latest `server.py`, `kanban.html`, `SKILL.md` from GitHub and restarts the server. No repo pull needed.
 
-**First time upgrading?** If your installed version doesn't have the `upgrade` command yet, run this once:
+**First time upgrading from an older install?**
 
 ```bash
 curl -sL https://raw.githubusercontent.com/hoarchi/vibe-harness/main/scripts/setup.py \
   -o ~/.claude/skills/vibe-harness/setup.py
 ```
 
-After that, `setup.py upgrade` will keep everything up to date.
+---
 
-### Uninstall
+## Uninstall
 
 ```bash
-cd ~/dev/vibe-harness    # or wherever you cloned it
 python3 scripts/setup.py uninstall
 ```
 
-## Quick Start
+---
 
-### 1. Start the server
+## Using It as a Harness
 
-If you ran `setup.py`, the server is already running via launchd. Otherwise:
+The board is useful out of the box. But the real leverage comes from using the full harness pattern.
 
-```bash
-python3 ~/.claude/skills/vibe-harness/server.py serve 4242 &
-```
-
-### 2. Register your project
-
-```bash
-python3 ~/.claude/skills/vibe-harness/server.py register my_project "My Project" "$(pwd)/vibe-harness"
-```
-
-### 3. Open the board
-
-Visit [http://localhost:4242/kanban](http://localhost:4242/kanban)
-
-### 4. Use with Claude Code
-
-Just tell Claude what to do. The skill automatically:
-- Creates tasks when you request work
-- Moves tasks to `in_progress` when starting
-- Records code changes and work reports on completion
-- Tracks everything in the kanban board
-
-Or use explicit commands:
+### Session start prompt (add to your workflow)
 
 ```
-/vibe-harness serve      → Start server + register project
-/vibe-harness add title  → Add a task
-/vibe-harness done 3     → Mark task #3 as done
-/vibe-harness archive    → Archive done tasks to monthly files
-/vibe-harness report     → Today's summary
+PHASES.md와 CURRENT_PHASE.md를 읽고 작업을 시작해.
+현재 Phase의 scope 밖은 건드리지 말고,
+완료 후 PHASES.md를 업데이트해줘.
 ```
 
-## How It Works
+This single prompt means Claude starts every session knowing exactly what's in scope and what to leave alone.
 
-```
-Claude Code ──(curl)──→ localhost:4242 ──(JSON)──→ vibe-harness/kanban.json
-                              │
-                         kanban.html
-                              │
-                        Your Browser
+### Keep CURRENT_PHASE.md tight
+
+```markdown
+## Now: PHASE_MVP02
+## Scope: [auth flow, user model, sessions controller]
+## Done when:
+- [x] login/logout working
+- [ ] password reset email
+- [ ] session expiry
+## Do NOT touch: billing, admin panel, mailers other than password reset
 ```
 
-All server files live in one directory:
+The `Do NOT touch` list is the harness. The shorter the scope, the faster and safer the session.
+
+### One task in_progress
+
+The skill enforces this. If you notice two tasks `in_progress` on the board, something went wrong — Claude started a subtask without closing the parent. Call it out explicitly.
+
+### Token budget as a task size signal
+
+If a task burns >100K tokens and still isn't done, it's too big. Break it in half. Tasks with high `tokens_used` + low `lines_added` are usually analysis tasks masquerading as implementation tasks.
+
+### Review before every push, not just on merge
+
+The hook triggers on `git push`. Don't skip it. If Claude is pushing 10 times a day, 10 reviews is correct — each one is scoped to what actually changed.
+
+### Phase graduation checklist
+
+Before moving to the next phase:
+
+1. All `done-when` items checked in `CURRENT_PHASE.md`
+2. `PHASES.md` updated with completion date and task count
+3. `qq` run to close open work reports
+4. All tasks in kanban are `done` or moved to next phase backlog
+5. Screenshot the board — it's the record of the phase
+
+### Archive as institutional memory
+
+Monthly archive files (`vibe-harness/archive/YYYY-MM.json`) are git-tracked. They're a searchable history of every decision, every file changed, every token spent. When something breaks three months later, check the archive before blaming recent changes.
+
+---
+
+## File Layout
 
 ```
 ~/.claude/skills/vibe-harness/
-  SKILL.md           ← Skill definition (Claude reads this)
-  server.py          ← Python HTTP server (API + static)
-  kanban.html        ← Single-file vanilla JS frontend
-  projects.json      ← Project registry (auto-generated)
-  server.log         ← Server output log
-```
+  SKILL.md           ← Claude reads this to know the commands
+  server.py          ← HTTP server: API + static serving
+  kanban.html        ← Single-file vanilla JS UI
+  projects.json      ← Project registry (which boards exist)
+  server.log         ← Server stdout
 
-Per-project data (git-tracked):
-
-```
 {project}/vibe-harness/
-  kanban.json              ← Active tasks (todo, in_progress, review, recent done)
+  kanban.json              ← Active tasks
   archive/
-    2026-03.json           ← Monthly archive of completed tasks
+    2026-03.json           ← Monthly archives (git-tracked)
     2026-04.json
+
+~/Library/LaunchAgents/com.vibe-harness.server.plist   ← Auto-start
+~/.claude/hooks/vibe-harness-review.sh                 ← Review hook
 ```
 
-Other:
+---
 
-- **LaunchAgent**: `~/Library/LaunchAgents/com.vibe-harness.server.plist` — Auto-start on login
-- **Hook**: `~/.claude/hooks/vibe-harness-review.sh` — Code review trigger on push/PR
+## Commands
+
+| Command | Description |
+|---|---|
+| `/vibe-harness` | Current board status |
+| `/vibe-harness serve` | Start server + register project |
+| `/vibe-harness add <title>` | Add a task |
+| `/vibe-harness start <id>` | Move to in_progress |
+| `/vibe-harness done <id>` | Mark done (records lines + report) |
+| `/vibe-harness archive` | Archive done tasks to monthly file |
+| `/vibe-harness report` | Today's completed task summary |
+| `qq` | Session wrap-up: docs + kanban + no push |
+| `cc` | Full close: docs + kanban + commit + push + deploy |
+
+---
 
 ## Web UI
 
-### Kanban View
-4 active columns (Backlog, To Do, In Progress, Review) with drag & drop.
-Cards show title, description, priority, category, D-day countdown, and code change bars.
-Edit/delete buttons on hover (active cards only — Done cards open detail panel).
+### Kanban view
+Backlog / To Do / In Progress / Review / Done columns. Cards show title, priority, category, D-day countdown, and code change bars. Edit on hover; click card to open detail panel.
 
-### List View
-Spreadsheet-style table with ALL tasks including Done.
-Inline editing — click any cell to edit, changes save automatically.
+### List view
+Spreadsheet-style table with all tasks including archived. Inline editing — click any cell.
 
-### Done Zone
-Completed tasks grouped by:
-- **Date** — Completion date (YYMMDD format)
-- **Category** — backend, frontend, infra, etc.
-- **Phase** — Phase 1, Phase 2, etc.
+### Done zone
+Completed tasks grouped by date, category, or phase. Archived tasks load alongside active done tasks.
 
-Archived tasks are loaded and displayed alongside active done tasks — all visible in one view.
+### Detail panel
+Full description, work report, code review items with resolved/unresolved toggles, schedule, code change bar graph, and token usage.
 
-### Detail Panel
-Click any card to open the right slide-in panel with:
-- Full description and work report
-- Code review items with interactive resolved/unresolved toggles
-- Schedule (target, started, completed, elapsed time)
-- Code change stats (+/- bar graph)
-- Estimated token usage (`~50K tokens`)
+### DB Schema view
+Click **DB** tab to see project database schema as an ERD. No DB connection needed — reads schema files directly.
 
-### DB Schema View
-
-Click the **DB** tab to see your project's database schema as an ERD diagram.
-No DB connection needed — reads directly from schema files.
-
-Auto-detects schema files anywhere in the project directory:
+Auto-detects:
 
 | File | Format |
-|------|--------|
-| `db/schema.rb` | Rails ActiveRecord (incl. `add_foreign_key`) |
+|---|---|
+| `db/schema.rb` | Rails ActiveRecord |
 | `db/structure.sql` | Rails SQL dump |
 | `prisma/schema.prisma` | Prisma ORM |
+| `schema.sql` | Any SQL DDL |
 | `db/migrations/*.sql` | Raw SQL migrations |
-| `schema.sql`, `sql/*.sql` | Any SQL DDL file |
 
-**What's shown per table:**
-- All columns with their types
-- Badges: `PK` (primary key) · `FK` (foreign key) · `UQ` (unique) · `NN` (not null) · `DF` (has default)
-- FK columns show `→ target_table(column)` inline in purple
-- Indexes section at the bottom of each table card
-- Bezier curve lines connecting FK → PK across tables
-- Relationships summary list at the bottom
+Shows: column types, PK/FK/UQ/NN/DF badges, indexes, and Bezier FK relationship lines between tables.
 
-### Code Review
-Tasks can have code review items stored as structured data:
-- Review findings are shown in the detail panel with **resolved/unresolved** radio buttons
-- Cards display a review badge: green `Review ✓` when all resolved, orange `N unresolved` otherwise
-- Auto-triggered via Claude Code hook on `git push` or `gh pr create`
-- Also runs during `qq` (daily wrap-up) for uncommitted/unpushed changes
-- Review covers security (OWASP), code quality, and architecture concerns
+---
 
-### Recommended: Add to your project's CLAUDE.md
-
-The code review hook triggers Claude to perform a review, but adding explicit instructions to your project's `CLAUDE.md` makes it more reliable and consistent. Add the following to your project's `CLAUDE.md`:
-
-```markdown
-## Code Review (Vibe-Harness)
-
-git push 또는 gh pr create 실행 후 Vibe-Harness hook이 코드 리뷰를 요청하면, 반드시 수행한다:
-
-1. `git diff`로 push된 변경사항을 확인
-2. 보안(OWASP), 코드 품질, 아키텍처 관점에서 리뷰
-3. CRITICAL/HIGH 이슈 발견 시 각각 칸반에 리뷰 태스크로 등록:
-   curl -X POST http://localhost:4242/api/{project}/tasks \
-     -H 'Content-Type: application/json' \
-     -d '{"title": "...", "status": "review", "category": "review", "priority": "high", "created_by": "claude-review"}'
-4. 리뷰 결과 요약 출력 (CRITICAL/HIGH 건수, 등록된 태스크 수)
-5. MEDIUM 이하는 별도 등록하지 않음
-```
-
-This ensures Claude always follows the review procedure — even without the `/vibe-harness` skill loaded.
-
-## API Reference
+## API
 
 | Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/projects` | List all projects |
-| POST | `/api/projects` | Register a project |
+|---|---|---|
+| GET | `/api/projects` | List projects |
+| POST | `/api/projects` | Register project |
 | GET | `/api/{key}/tasks` | List tasks (active + archived) |
 | POST | `/api/{key}/tasks` | Create task |
 | PUT | `/api/{key}/tasks/{id}` | Update task |
 | DELETE | `/api/{key}/tasks/{id}` | Delete task |
-| POST | `/api/{key}/tasks/bulk` | Bulk create tasks |
-| GET | `/api/{key}/export` | Export all tasks to JSON |
-| POST | `/api/{key}/import` | Import tasks from JSON |
-| POST | `/api/{key}/archive` | Archive done tasks to monthly files |
-| GET | `/api/{key}/stats` | Task count by status |
-| GET | `/api/{key}/schema` | Parse project schema files → tables, columns, relationships |
+| POST | `/api/{key}/tasks/bulk` | Bulk create |
+| GET | `/api/{key}/export` | Export to JSON |
+| POST | `/api/{key}/import` | Import from JSON |
+| POST | `/api/{key}/archive` | Archive done tasks |
+| GET | `/api/{key}/stats` | Count by status |
+| GET | `/api/{key}/schema` | Parse schema files → ERD data |
 
-### Task Fields
+### Task fields
 
 | Field | Type | Description |
-|-------|------|-------------|
-| title | string | Task title (required) |
-| description | string | Brief description |
-| details | string | Work report (files changed, decisions, notes) |
-| status | string | `backlog` / `todo` / `in_progress` / `review` / `done` |
-| priority | string | `low` / `medium` / `high` |
-| category | string | `backend` / `frontend` / `infra` / `data` / `docs` / `qa` |
-| phase | string | Phase grouping (e.g., "Phase 1") |
-| target_date | string | Target date (YYYY-MM-DD) |
-| started_at | string | Auto-set when → in_progress |
-| completed_at | string | Auto-set when → done |
-| lines_added | int | Lines of code added |
-| lines_removed | int | Lines of code removed |
-| tokens_used | int | Estimated token usage for this task (recorded by Claude on completion) |
-| position | int | Sort order within column |
-| review | string | JSON array of review items: `[{"text":"...","resolved":false}]` |
-| created_by | string | Creator (auto-set from `git config user.name`) |
-| assigned_to | string | Assignee (set on `/vibe-harness start`) |
+|---|---|---|
+| `title` | string | Required |
+| `description` | string | One-liner context |
+| `details` | string | Work report: files changed, decisions, notes |
+| `status` | string | `backlog` / `todo` / `in_progress` / `review` / `done` |
+| `priority` | string | `low` / `medium` / `high` |
+| `category` | string | `backend` / `frontend` / `infra` / `data` / `docs` / `qa` |
+| `phase` | string | e.g. `PHASE_MVP02` |
+| `target_date` | string | YYYY-MM-DD |
+| `started_at` | string | Auto-set on → in_progress |
+| `completed_at` | string | Auto-set on → done |
+| `lines_added` | int | From `git diff --numstat` |
+| `lines_removed` | int | From `git diff --numstat` |
+| `tokens_used` | int | Estimated — Claude records on completion |
+| `review` | string | JSON: `[{"text":"...","resolved":false}]` |
+| `created_by` | string | Auto from `git config user.name` |
+| `assigned_to` | string | Set on `/vibe-harness start` |
+
+---
 
 ## Requirements
 
 - Python 3.6+
 - Claude Code CLI
-- macOS (for LaunchAgent auto-start; server works on any OS)
+- macOS (LaunchAgent auto-start; server works on any OS)
 
-No npm. No pip install. No build step. Just Python and a browser.
+---
 
 ## License
 

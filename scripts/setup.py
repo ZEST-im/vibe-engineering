@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-VibeKanban Setup — Copy server files to ~/.claude/skills/vibekanban/ and install launchd agent
+Vibe Harness Setup — Copy server files to ~/.claude/skills/vibe-harness/ and install launchd agent
 """
 import os
 import shutil
@@ -9,21 +9,21 @@ import sys
 
 import json
 
-DEST = os.path.expanduser("~/.claude/skills/vibekanban")
+DEST = os.path.expanduser("~/.claude/skills/vibe-harness")
 SRC = os.path.dirname(os.path.abspath(__file__))
 HOME = os.path.expanduser("~")
-PLIST_NAME = "com.vibekanban.server.plist"
+PLIST_NAME = "com.vibe-harness.server.plist"
 LAUNCH_AGENTS = os.path.expanduser("~/Library/LaunchAgents")
 SETTINGS_PATH = os.path.expanduser("~/.claude/settings.json")
-REPO_URL = "https://raw.githubusercontent.com/hoarchi/vibekanban/main"
+REPO_URL = "https://raw.githubusercontent.com/hoarchi/vibe-harness/main"
 
 
 def copy_server_files():
-    """Copy server.py and kanban.html to ~/.claude/skills/vibekanban/"""
+    """Copy server.py and kanban.html to ~/.claude/skills/vibe-harness/"""
     os.makedirs(DEST, exist_ok=True)
 
     # Copy SKILL.md from skills directory
-    skill_src = os.path.join(SRC, "..", "skills", "vibekanban", "SKILL.md")
+    skill_src = os.path.join(SRC, "..", "skills", "vibe-harness", "SKILL.md")
     if os.path.exists(skill_src):
         dst = os.path.join(DEST, "SKILL.md")
         shutil.copy2(skill_src, dst)
@@ -84,16 +84,16 @@ def install_launchd():
 
 
 HOOKS_DIR = os.path.expanduser("~/.claude/hooks")
-HOOK_SCRIPT = os.path.join(HOOKS_DIR, "vibekanban-review.sh")
+HOOK_SCRIPT = os.path.join(HOOKS_DIR, "vibe-harness-review.sh")
 
 HOOK_SCRIPT_CONTENT = r'''#!/bin/bash
-# VibeKanban Code Review Hook
+# Vibe Harness Code Review Hook
 # Triggers after git push or gh pr create
 INPUT=$(cat)
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)
 
 if echo "$COMMAND" | grep -qE '^\s*(git\s+push|gh\s+pr\s+create)'; then
-  echo "[VibeKanban] Code review triggered. Please perform a code review now:"
+  echo "[Vibe Harness] Code review triggered. Please perform a code review now:"
   echo "1. Run git diff to see all pushed changes"
   echo "2. Check for: security issues, code quality, architecture concerns"
   echo "3. Store review findings in the current kanban task's review field"
@@ -112,7 +112,7 @@ REVIEW_HOOK_ENTRY = {
     ],
 }
 
-HOOK_ID = "vibekanban-code-review"
+HOOK_ID = "vibe-harness-code-review"
 
 
 def install_hooks():
@@ -133,8 +133,8 @@ def install_hooks():
     hooks = settings.setdefault("hooks", {})
     post_hooks = hooks.setdefault("PostToolUse", [])
 
-    # Remove existing vibekanban hook if present
-    post_hooks = [h for h in post_hooks if not _is_vibekanban_hook(h)]
+    # Remove existing vibe-harness hook if present
+    post_hooks = [h for h in post_hooks if not _is_vibe_harness_hook(h)]
 
     entry = dict(REVIEW_HOOK_ENTRY)
     entry["_id"] = HOOK_ID  # marker for identification
@@ -148,12 +148,12 @@ def install_hooks():
     print(f"  REGISTERED hook in {SETTINGS_PATH}")
 
 
-def _is_vibekanban_hook(h):
-    """Check if a hook entry is a vibekanban hook"""
+def _is_vibe_harness_hook(h):
+    """Check if a hook entry is a vibe-harness hook"""
     if h.get("_id") == HOOK_ID:
         return True
     for hook in h.get("hooks", []):
-        if hook.get("command", "").endswith("vibekanban-review.sh"):
+        if hook.get("command", "").endswith("vibe-harness-review.sh"):
             return True
     return False
 
@@ -176,7 +176,7 @@ def uninstall_hooks():
     hooks = settings.get("hooks", {})
     post_hooks = hooks.get("PostToolUse", [])
     before = len(post_hooks)
-    post_hooks = [h for h in post_hooks if not _is_vibekanban_hook(h)]
+    post_hooks = [h for h in post_hooks if not _is_vibe_harness_hook(h)]
 
     if len(post_hooks) < before:
         hooks["PostToolUse"] = post_hooks
@@ -230,13 +230,13 @@ def upgrade():
     import urllib.request
     import tempfile
 
-    print("Upgrading VibeKanban from GitHub...")
+    print("Upgrading Vibe Harness from GitHub...")
     print()
 
     files = {
         "server.py": f"{REPO_URL}/scripts/server.py",
         "kanban.html": f"{REPO_URL}/scripts/kanban.html",
-        "SKILL.md": f"{REPO_URL}/skills/vibekanban/SKILL.md",
+        "SKILL.md": f"{REPO_URL}/skills/vibe-harness/SKILL.md",
     }
 
     os.makedirs(DEST, exist_ok=True)
@@ -246,7 +246,7 @@ def upgrade():
         dst = os.path.join(DEST, fname)
         try:
             print(f"  Downloading {fname}...")
-            req = urllib.request.Request(url, headers={"User-Agent": "VibeKanban-Setup"})
+            req = urllib.request.Request(url, headers={"User-Agent": "Vibe-Harness-Setup"})
             with urllib.request.urlopen(req, timeout=15) as resp:
                 content = resp.read()
             # Backup existing
@@ -281,7 +281,7 @@ def upgrade():
                 subprocess.run(["launchctl", "load", plist], capture_output=True)
                 print("Restarted server via launchd.")
             else:
-                print("Restart the server manually: python3 ~/.claude/skills/vibekanban/server.py serve &")
+                print("Restart the server manually: python3 ~/.claude/skills/vibe-harness/server.py serve &")
     except Exception:
         pass
 
@@ -291,7 +291,7 @@ def upgrade():
 
 def main():
     if len(sys.argv) > 1 and sys.argv[1] == "uninstall":
-        print("Uninstalling VibeKanban...")
+        print("Uninstalling Vibe Harness...")
         uninstall_launchd()
         uninstall_hooks()
         return
@@ -300,7 +300,7 @@ def main():
         upgrade()
         return
 
-    print("Setting up VibeKanban...")
+    print("Setting up Vibe Harness...")
     print()
 
     # Step 1: Copy server files
@@ -332,8 +332,8 @@ def main():
     print("Open: http://localhost:4242/kanban")
     print()
     print("Storage: JSON files (git-friendly)")
-    print("  Active tasks: {project}/vibekanban/kanban.json")
-    print("  Archives:     {project}/vibekanban/archive/YYYY-MM.json")
+    print("  Active tasks: {project}/vibe-harness/kanban.json")
+    print("  Archives:     {project}/vibe-harness/archive/YYYY-MM.json")
     print()
     print("To uninstall auto-start:")
     print(f"  python3 {os.path.abspath(__file__)} uninstall")

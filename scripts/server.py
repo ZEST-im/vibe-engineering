@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-VibeKanban Server v5 — JSON-based Multi-project Kanban Board
+Vibe Harness Server v5 — JSON-based Multi-project Kanban Board
 Git-friendly: stores tasks as JSON files instead of SQLite.
 One server (localhost:4242) serves multiple projects with tab-based switching.
 """
@@ -18,7 +18,7 @@ from urllib.parse import urlparse, parse_qs
 
 import subprocess
 
-SKILL_DIR = os.path.expanduser("~/.claude/skills/vibekanban")
+SKILL_DIR = os.path.expanduser("~/.claude/skills/vibe-harness")
 CONFIG_PATH = os.path.join(SKILL_DIR, "projects.json")
 
 def _git_user():
@@ -772,7 +772,7 @@ def main():
     if len(sys.argv) > 1 and sys.argv[1] == "register":
         key = sys.argv[2]
         name = sys.argv[3] if len(sys.argv) > 3 else key
-        kanban_dir = sys.argv[4] if len(sys.argv) > 4 else os.path.join(os.getcwd(), "vibekanban")
+        kanban_dir = sys.argv[4] if len(sys.argv) > 4 else os.path.join(os.getcwd(), "vibe-harness")
         projects = register_project(key, name, kanban_dir)
         print(f"Registered: {key} → {kanban_dir}")
         print(f"Total projects: {len(projects)}")
@@ -809,7 +809,7 @@ def main():
     signal.signal(signal.SIGINT, shutdown)
     signal.signal(signal.SIGTERM, shutdown)
 
-    print(f"VibeKanban v5 — http://localhost:{port}/kanban")
+    print(f"Vibe Harness v5 — http://localhost:{port}/kanban")
     print(f"  Projects: {', '.join(projects.keys()) if projects else '(none)'}")
     print(f"  Storage: JSON (git-friendly)")
     print(f"  Ctrl+C to stop")
