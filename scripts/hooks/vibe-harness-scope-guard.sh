@@ -22,6 +22,10 @@ find_phase_file() {
   dir=$(dirname "$1")
   local depth=0
   while [[ "$dir" != "/" && $depth -lt 7 ]]; do
+    if [[ -f "$dir/private/CURRENT_PHASE.md" ]]; then
+      echo "$dir/private/CURRENT_PHASE.md"
+      return 0
+    fi
     if [[ -f "$dir/CURRENT_PHASE.md" ]]; then
       echo "$dir/CURRENT_PHASE.md"
       return 0

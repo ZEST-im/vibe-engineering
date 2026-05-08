@@ -78,6 +78,7 @@ cp ${CLAUDE_PLUGIN_ROOT}/scripts/kanban.html ~/.claude/skills/vibe-harness/kanba
 | `/vibe-harness phase done` | Complete current phase — runs automated pre-check, updates PHASES.md |
 | `/vibe-harness phase next <name>` | Transition to next phase (runs checklist first) |
 | `/vibe-harness phase check` | Run automated phase completion check (non-destructive) |
+| `/vibe-harness decide "<title>"` | Record a technical decision in the Decision Log |
 
 ## Server
 
@@ -139,6 +140,44 @@ curl -X POST http://localhost:4242/api/{project_key}/tasks/bulk \
 curl -X POST http://localhost:4242/api/{project_key}/archive
 ```
 
+### Decision Log API
+```bash
+# List decisions
+curl http://localhost:4242/api/{project_key}/decisions
+
+# Record a decision
+curl -X POST http://localhost:4242/api/{project_key}/decisions \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"SQLite WAL 유지","why":"동시 사용자 3명 이하면 충분","revisit":"동시 접속 10명 초과 시","phase":"PHASE_PMF01"}'
+```
+
+### Velocity & Stats API
+```bash
+curl http://localhost:4242/api/{project_key}/velocity
+# Returns: phase burndown, daily trend, category token breakdown, cost estimate
+```
+
+## Session Start (Claude MUST follow)
+
+세션 시작 시 반드시 현재 미션 컨텍스트를 확인한다:
+
+```bash
+curl http://localhost:4242/api/{project_key}/context
+```
+
+응답에서 다음을 파악하고 작업을 시작한다:
+- `phase` — 현재 Phase 이름
+- `scope` — 이번 Phase의 작업 범위
+- `in_progress` — 이미 진행 중인 태스크 (있으면 이어서 진행)
+- `do_not_touch` — 절대 건드리면 안 되는 영역 (**이 목록을 반드시 준수**)
+- `checklist.items` — 남은 완료 체크리스트
+
+컨텍스트가 없거나 서버가 응답 안 하면 → 서버 시작 후 재시도.
+
+**웹 UI**: 사용자가 브라우저에서 `localhost:4242/kanban`을 열고 **🎯 Mission** 탭을 클릭하면 같은 정보를 시각적으로 확인할 수 있다.
+
+---
+
 ## Auto-Recording Rules (Claude MUST follow)
 
 Vibe-Harness replaces PROGRESS.md. All dev progress goes into the kanban.
@@ -168,6 +207,11 @@ Vibe-Harness replaces PROGRESS.md. All dev progress goes into the kanban.
    - Key technical decisions and reasoning
    - Follow-up tasks or notes
 4. Move task to `done` (`completed_at` auto-set)
+
+### When recording a decision (`/vibe-harness decide`)
+1. Capture: title (what was decided), why (reasoning), revisit condition, linked task ID
+2. POST to `/api/{project_key}/decisions`
+3. Example: `"왜 이렇게 했지?" → Log 탭에서 검색`
 
 ### On qq (daily wrap-up)
 1. Print kanban summary (today's done, in-progress, tomorrow's tasks)

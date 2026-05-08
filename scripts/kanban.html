@@ -31,33 +31,52 @@ body {
 
 /* ── Header ── */
 header {
-  padding: 8px 16px; border-bottom: 1px solid var(--border);
+  padding: 12px 20px; border-bottom: 1px solid var(--border);
   display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
   background: var(--surface); gap: 8px;
 }
-.h-left { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-.logo { font-size:14px; font-weight:800; color:var(--text-dim); letter-spacing:-0.5px; white-space:nowrap; }
-.project-tabs { display:flex; gap:3px; }
-.ptab {
-  padding:4px 12px; border-radius:6px; font-size:11px; font-weight:600;
-  cursor:pointer; border:1px solid transparent; background:transparent; color:var(--text-dim); transition:all .12s;
+.h-left { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.logo { font-size:16px; font-weight:800; color:var(--text-dim); letter-spacing:-0.5px; white-space:nowrap; }
+/* ── Project Selector Dropdown ── */
+.proj-select { position:relative; }
+.proj-btn {
+  display:flex; align-items:center; gap:6px;
+  padding:6px 12px; border-radius:7px; font-size:13px; font-weight:600;
+  cursor:pointer; border:1px solid var(--border); background:var(--surface);
+  color:var(--text); transition:all .12s; white-space:nowrap;
+  min-width:160px; justify-content:space-between;
 }
-.ptab:hover { background:var(--surface2); color:var(--text); }
-.ptab.active { background:var(--accent-dim); color:var(--accent); border-color:rgba(88,166,255,.2); }
-.view-tabs { display:flex; gap:1px; background:var(--border); border-radius:6px; padding:1px; margin-left:6px; }
+.proj-btn:hover { border-color:var(--accent); color:var(--accent); }
+.proj-btn .proj-arrow { font-size:9px; color:var(--text-faint); margin-left:2px; }
+.proj-dropdown {
+  display:none; position:absolute; top:calc(100% + 5px); left:0;
+  background:var(--surface); border:1px solid var(--border); border-radius:8px;
+  min-width:180px; z-index:200; overflow:hidden;
+  box-shadow:0 8px 24px rgba(0,0,0,.35);
+}
+.proj-dropdown.open { display:block; }
+.proj-drop-item {
+  padding:9px 16px; font-size:13px; cursor:pointer; transition:background .1s;
+  display:flex; align-items:center; gap:8px; color:var(--text-dim);
+}
+.proj-drop-item:hover { background:var(--surface2); color:var(--text); }
+.proj-drop-item.active { color:var(--accent); font-weight:700; }
+.proj-drop-dot { width:7px; height:7px; border-radius:50%; background:var(--border); flex-shrink:0; }
+.proj-drop-item.active .proj-drop-dot { background:var(--accent); }
+.view-tabs { display:flex; gap:1px; background:var(--border); border-radius:8px; padding:2px; margin-left:8px; }
 .vtab {
-  padding:4px 10px; border-radius:5px; font-size:10px; font-weight:600;
+  padding:6px 13px; border-radius:6px; font-size:11px; font-weight:600;
   cursor:pointer; color:var(--text-dim); background:transparent; border:none; transition:all .12s;
 }
 .vtab.active { background:var(--surface); color:var(--text); }
-.h-right { display:flex; align-items:center; gap:12px; flex-shrink:0; }
-.stats { display:flex; gap:14px; font-size:11px; color:var(--text-dim); }
-.stats b { color:var(--text); font-size:12px; margin-right:1px; }
+.h-right { display:flex; align-items:center; gap:16px; flex-shrink:0; }
+.stats { display:flex; gap:16px; font-size:12px; color:var(--text-dim); }
+.stats b { color:var(--text); font-size:13px; margin-right:1px; }
 .stats .s-ip b { color:var(--in_progress); }
 .stats .s-dn b { color:var(--done); }
 .icon-btn {
-  background:none; border:1px solid var(--border); border-radius:6px;
-  color:var(--text-dim); cursor:pointer; padding:4px 8px; font-size:13px; transition:all .12s;
+  background:none; border:1px solid var(--border); border-radius:7px;
+  color:var(--text-dim); cursor:pointer; padding:6px 10px; font-size:15px; transition:all .12s;
 }
 .icon-btn:hover { color:var(--text); border-color:var(--accent); }
 
@@ -401,6 +420,155 @@ header {
 }
 .schema-empty code { background:var(--surface2); padding:2px 6px; border-radius:3px; font-size:11px; }
 
+/* ── Mission View ── */
+.mission-wrap { flex:1; overflow-y:auto; display:none; padding:20px; }
+.mission-wrap.active { display:block; }
+
+.mission-phase-header {
+  background: linear-gradient(135deg, var(--surface) 0%, var(--surface2) 100%);
+  border: 1px solid var(--border); border-radius:12px;
+  padding:20px 24px; margin-bottom:16px;
+}
+.mph-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+.mph-name { font-size:20px; font-weight:800; color:var(--text); letter-spacing:-0.5px; }
+.mph-pct { font-size:24px; font-weight:800; color:var(--accent); }
+.mph-bar {
+  height:8px; background:var(--border); border-radius:4px; overflow:hidden; margin-bottom:8px;
+}
+.mph-fill { height:100%; background:var(--accent); border-radius:4px; transition:width .4s ease; }
+.mph-sub { font-size:12px; color:var(--text-dim); }
+.mph-checks { font-size:11px; color:var(--text-faint); margin-top:4px; }
+
+.mission-grid {
+  display:grid; grid-template-columns:1fr 1fr; gap:12px;
+}
+@media(max-width:700px){ .mission-grid { grid-template-columns:1fr; } }
+
+.mission-panel {
+  background:var(--surface); border:1px solid var(--border); border-radius:10px;
+  padding:14px 16px;
+}
+.mission-panel.full-width { grid-column:1/-1; }
+.mp-label {
+  font-size:10px; font-weight:700; color:var(--text-dim);
+  text-transform:uppercase; letter-spacing:.5px; margin-bottom:10px;
+}
+
+.mission-task-card {
+  display:flex; align-items:center; gap:8px; padding:8px 10px;
+  background:var(--bg); border:1px solid var(--border); border-radius:6px;
+  margin-bottom:6px; cursor:pointer; transition:border-color .12s;
+}
+.mission-task-card:hover { border-color:var(--accent); }
+.mission-task-card.active { border-color:var(--in_progress); background:rgba(88,166,255,.05); }
+.mtask-num { font-size:10px; color:var(--text-faint); font-family:monospace; flex-shrink:0; }
+.mtask-title { font-size:13px; font-weight:600; flex:1; }
+.mtask-elapsed { font-size:10px; color:var(--purple); flex-shrink:0; }
+
+.mission-lock-item {
+  padding:5px 8px; font-size:12px; color:var(--text-dim);
+  border-left:2px solid var(--red); margin-bottom:4px; border-radius:0 4px 4px 0;
+  background:rgba(248,81,73,.05);
+}
+
+.mission-check-item {
+  display:flex; align-items:flex-start; gap:8px; padding:4px 0;
+  font-size:12px; border-bottom:1px solid var(--border);
+}
+.mission-check-item:last-child { border-bottom:none; }
+.mission-check-item.done { color:var(--text-dim); }
+.check-icon { font-size:12px; color:var(--text-faint); flex-shrink:0; margin-top:1px; }
+.mission-check-item.done .check-icon { color:var(--done); }
+.check-text { flex:1; line-height:1.4; }
+.mission-check-item.done .check-text { text-decoration:line-through; }
+
+.mission-done-item {
+  font-size:12px; color:var(--text-dim); padding:4px 0;
+  border-bottom:1px solid var(--border); display:flex; align-items:center; gap:6px;
+}
+.mission-done-item:last-child { border-bottom:none; }
+.mission-done-item::before { content:'✓'; color:var(--done); font-size:11px; flex-shrink:0; }
+
+.mission-empty-msg { font-size:12px; color:var(--text-faint); padding:8px 0; }
+
+.mission-stats-row {
+  display:flex; gap:16px; margin-top:6px; flex-wrap:wrap;
+}
+.mission-stat { font-size:11px; color:var(--text-dim); }
+.mission-stat b { color:var(--text); }
+
+.mission-no-phase {
+  text-align:center; padding:60px 20px; color:var(--text-dim);
+}
+.mission-no-phase h3 { font-size:16px; margin-bottom:8px; color:var(--text); }
+.mission-no-phase p { font-size:12px; line-height:1.6; }
+.mission-no-phase code { background:var(--surface2); padding:2px 6px; border-radius:3px; font-size:11px; }
+
+/* ── Decision Log View ── */
+.log-wrap { flex:1; overflow-y:auto; display:none; padding:20px; }
+.log-wrap.active { display:block; }
+.log-toolbar {
+  display:flex; align-items:center; gap:8px; margin-bottom:16px; flex-wrap:wrap;
+}
+.log-toolbar h3 { font-size:14px; font-weight:700; flex:1; }
+.dec-grid { display:flex; flex-direction:column; gap:10px; }
+.dec-card {
+  background:var(--surface); border:1px solid var(--border); border-radius:10px;
+  padding:14px 16px; cursor:pointer; transition:border-color .12s;
+  border-left:3px solid var(--accent);
+}
+.dec-card:hover { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent-dim); }
+.dec-card-top { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }
+.dec-title { font-size:13px; font-weight:700; line-height:1.4; flex:1; }
+.dec-meta { display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; align-items:center; }
+.dec-row { font-size:12px; color:var(--text-dim); margin-top:6px; line-height:1.5; }
+.dec-row b { color:var(--text); font-weight:600; font-size:11px; }
+.dec-row.revisit b { color:var(--orange); }
+.dec-acts { display:flex; gap:2px; flex-shrink:0; }
+.dec-act { background:none; border:none; color:var(--text-faint); cursor:pointer; font-size:13px; padding:2px 5px; border-radius:3px; }
+.dec-act:hover { background:var(--border); color:var(--text); }
+.dec-act.del:hover { color:var(--red); }
+.dec-empty { text-align:center; padding:60px 20px; color:var(--text-dim); }
+.dec-empty h3 { font-size:15px; margin-bottom:8px; color:var(--text); }
+.dec-empty p { font-size:12px; line-height:1.6; }
+.dec-empty code { background:var(--surface2); padding:2px 6px; border-radius:3px; font-size:11px; }
+
+/* ── Velocity / Stats View ── */
+.stats-wrap { flex:1; overflow-y:auto; display:none; padding:20px; }
+.stats-wrap.active { display:block; }
+.stats-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:16px; }
+@media(max-width:700px){ .stats-grid { grid-template-columns:1fr; } }
+.stats-panel {
+  background:var(--surface); border:1px solid var(--border); border-radius:10px;
+  padding:14px 16px;
+}
+.stats-panel.full { grid-column:1/-1; }
+.sp-label { font-size:10px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:.5px; margin-bottom:12px; }
+.sp-kpi-row { display:flex; gap:20px; flex-wrap:wrap; }
+.sp-kpi { text-align:center; }
+.sp-kpi-val { font-size:28px; font-weight:800; color:var(--accent); line-height:1; }
+.sp-kpi-lbl { font-size:10px; color:var(--text-faint); margin-top:2px; }
+.phase-row {
+  display:flex; align-items:center; gap:10px; padding:6px 0;
+  border-bottom:1px solid var(--border); font-size:12px;
+}
+.phase-row:last-child { border-bottom:none; }
+.phase-name { min-width:130px; font-weight:600; flex-shrink:0; }
+.phase-bar-wrap { flex:1; height:8px; background:var(--border); border-radius:4px; overflow:hidden; }
+.phase-bar-fill { height:100%; background:var(--accent); border-radius:4px; transition:width .4s; }
+.phase-pct { font-size:11px; color:var(--accent); font-weight:700; min-width:36px; text-align:right; flex-shrink:0; }
+.phase-cost { font-size:10px; color:var(--purple); min-width:60px; text-align:right; flex-shrink:0; }
+.trend-bars { display:flex; align-items:flex-end; gap:3px; height:60px; }
+.trend-bar-wrap { flex:1; display:flex; flex-direction:column; align-items:center; gap:2px; }
+.trend-bar { width:100%; background:var(--accent); border-radius:2px 2px 0 0; min-height:2px; transition:height .3s; }
+.trend-date { font-size:7px; color:var(--text-faint); writing-mode:vertical-rl; transform:rotate(180deg); white-space:nowrap; }
+.cat-row { display:flex; align-items:center; gap:8px; padding:4px 0; font-size:11px; }
+.cat-row:not(:last-child) { border-bottom:1px solid var(--border); }
+.cat-name { min-width:80px; color:var(--text-dim); flex-shrink:0; }
+.cat-bar-wrap { flex:1; height:6px; background:var(--border); border-radius:3px; overflow:hidden; }
+.cat-bar-fill { height:100%; background:var(--purple); border-radius:3px; }
+.cat-cost { font-size:10px; color:var(--purple); min-width:50px; text-align:right; }
+
 /* ── Save indicator ── */
 .save-toast {
   position:fixed; bottom:16px; right:16px; background:var(--done); color:#fff;
@@ -415,11 +583,20 @@ header {
 <header>
   <div class="h-left">
     <span class="logo">Vibe Harness</span>
-    <div class="project-tabs" id="ptabs"></div>
+    <div class="proj-select" id="projSelect">
+      <button class="proj-btn" id="projBtn" onclick="toggleProjDrop(event)">
+        <span id="projLabel">—</span>
+        <span class="proj-arrow">▾</span>
+      </button>
+      <div class="proj-dropdown" id="projDropdown"></div>
+    </div>
     <div class="view-tabs">
-      <button class="vtab active" data-v="kanban" onclick="setView('kanban')">Kanban</button>
-      <button class="vtab" data-v="list" onclick="setView('list')">List</button>
-      <button class="vtab" data-v="schema" onclick="setView('schema')">DB</button>
+      <button class="vtab" data-v="mission" onclick="setView('mission')">🎯 Mission</button>
+      <button class="vtab active" data-v="kanban" onclick="setView('kanban')">🗂️ Kanban</button>
+      <button class="vtab" data-v="list" onclick="setView('list')">📝 List</button>
+      <button class="vtab" data-v="log" onclick="setView('log')">📋 Log</button>
+      <button class="vtab" data-v="stats" onclick="setView('stats')">📊 Stats</button>
+      <button class="vtab" data-v="schema" onclick="setView('schema')">🗄️ DB</button>
     </div>
   </div>
   <div class="h-right">
@@ -434,8 +611,17 @@ header {
 </header>
 
 <div class="main">
+  <!-- Mission View -->
+  <div class="mission-wrap" id="missionWrap"></div>
+
   <!-- Kanban View -->
   <div class="kanban" id="kanban"></div>
+
+  <!-- Decision Log View -->
+  <div class="log-wrap" id="logWrap"></div>
+
+  <!-- Velocity / Stats View -->
+  <div class="stats-wrap" id="statsWrap"></div>
 
   <!-- Schema/ERD View -->
   <div class="schema-wrap" id="schemaWrap"></div>
@@ -514,11 +700,35 @@ header {
   </div>
 </div>
 
+<!-- Decision Modal -->
+<div class="modal-bg" id="decModalBg" onclick="if(event.target===this)closeDecModal()">
+  <div class="modal">
+    <h2 id="decMHeading">결정 기록</h2>
+    <input type="hidden" id="decMId">
+    <label>결정 제목 <span style="color:var(--text-faint);font-size:9px">(무엇을 결정했나)</span></label>
+    <input id="decMName" placeholder="예: SQLite WAL 유지 — PostgreSQL 전환 보류">
+    <label>이유 (why)</label>
+    <textarea id="decMWhy" rows="3" placeholder="이 결정을 내린 이유와 근거"></textarea>
+    <label>재검토 조건 (revisit when)</label>
+    <input id="decMRevisit" placeholder="예: 동시 접속 10명 초과 시">
+    <div class="row">
+      <div><label>Phase</label><input id="decMPhase" placeholder="PHASE_PMF01"></div>
+      <div><label>연결 태스크 #ID</label><input type="number" id="decMTask" placeholder="선택사항"></div>
+    </div>
+    <div class="modal-acts">
+      <button class="btn btn-del" id="decMDel" style="display:none;margin-right:auto" onclick="delDecision()">삭제</button>
+      <button class="btn" onclick="closeDecModal()">취소</button>
+      <button class="btn btn-pri" onclick="saveDecModal()">저장</button>
+    </div>
+  </div>
+</div>
+
 <div class="save-toast" id="toast">Saved</div>
 
 <script>
 // ── State ──
-let projects=[], curProj=null, tasks=[], schemaData=null;
+let projects=[], curProj=null, tasks=[], schemaData=null, missionData=null;
+let decisions=[], velocityData=null;
 let view='kanban', doneTab='date';
 const COLS=[
   {id:'backlog',label:'Backlog',color:'var(--backlog)'},
@@ -539,28 +749,61 @@ function apiP(p){ return '/api/'+curProj+p; }
 // ── Init ──
 async function init(){
   projects=await api('GET','/api/projects');
-  renderPTabs();
+  renderProjSelector();
   const h=location.hash.slice(1);
   curProj=(projects.find(p=>p.key===h)||projects[0]||{}).key;
   if(curProj){location.hash=curProj; await load();}
+  // Close dropdown when clicking outside
+  document.addEventListener('click',e=>{
+    if(!e.target.closest('#projSelect')) closeProjDrop();
+  });
 }
 async function load(){
   if(!curProj)return;
   tasks=await api('GET',apiP('/tasks'));
-  renderPTabs(); render();
+  renderProjSelector();
+  renderHeaderStats();
+  if(view==='mission') loadMission();
+  else if(view==='log') loadLog();
+  else if(view==='stats') loadStats();
+  else render();
 }
-function switchProj(k){ curProj=k; location.hash=k; schemaData=null; renderPTabs(); load(); }
-function renderPTabs(){
-  document.getElementById('ptabs').innerHTML=projects.map(p=>
-    '<button class="ptab'+(p.key===curProj?' active':'')+'" onclick="switchProj(this.dataset.k)" data-k="'+esc(p.key)+'">'+esc(p.name)+'</button>'
+function switchProj(k){
+  curProj=k; location.hash=k; schemaData=null; missionData=null;
+  renderProjSelector(); load();
+}
+function renderProjSelector(){
+  const cur=projects.find(p=>p.key===curProj);
+  document.getElementById('projLabel').textContent=cur?cur.name:'No Project';
+  document.getElementById('projDropdown').innerHTML=projects.map(p=>
+    '<div class="proj-drop-item'+(p.key===curProj?' active':'')+'" onclick="switchProj(\''+esc(p.key)+'\');closeProjDrop()">'
+    +'<span class="proj-drop-dot"></span>'+esc(p.name)+'</div>'
   ).join('');
+}
+function toggleProjDrop(e){
+  e.stopPropagation();
+  document.getElementById('projDropdown').classList.toggle('open');
+}
+function closeProjDrop(){
+  document.getElementById('projDropdown').classList.remove('open');
+}
+function renderHeaderStats(){
+  const done=tasks.filter(t=>t.status==='done');
+  document.getElementById('sIP').textContent=tasks.filter(t=>t.status==='in_progress').length;
+  document.getElementById('sWait').textContent=tasks.filter(t=>t.status==='backlog'||t.status==='todo').length;
+  document.getElementById('sDone').textContent=done.length;
+  document.getElementById('sAll').textContent=tasks.length;
+  document.getElementById('doneCnt').textContent=done.length;
 }
 
 // ── View ──
 function setView(v){
   view=v;
   document.querySelectorAll('.vtab').forEach(t=>t.classList.toggle('active',t.dataset.v===v));
-  render();
+  if(v==='mission') loadMission();
+  else if(v==='log') loadLog();
+  else if(v==='stats') loadStats();
+  else render();
 }
 function setDoneTab(t){
   doneTab=t;
@@ -575,24 +818,315 @@ function toggleTheme(){
 }
 if(localStorage.getItem('vk-theme')==='light')document.documentElement.classList.add('light');
 
+// ── Mission View ──
+async function loadMission(){
+  const w=document.getElementById('missionWrap');
+  w.classList.add('active');
+  document.getElementById('kanban').classList.add('hide');
+  document.getElementById('listWrap').classList.remove('active');
+  document.getElementById('schemaWrap').classList.remove('active');
+  document.getElementById('logWrap').classList.remove('active');
+  document.getElementById('statsWrap').classList.remove('active');
+  document.getElementById('resizer').classList.add('hide');
+  document.getElementById('doneZone').classList.add('hide');
+  if(!curProj){w.innerHTML='<div class="mission-no-phase"><h3>프로젝트 없음</h3></div>';return;}
+  try{
+    missionData=await api('GET',apiP('/context'));
+    renderMission();
+  }catch(e){
+    w.innerHTML='<div class="mission-no-phase"><h3>로딩 실패</h3><p>서버를 확인해주세요</p></div>';
+  }
+}
+
+function renderMission(){
+  const w=document.getElementById('missionWrap');
+  const m=missionData;
+  if(!m){return;}
+
+  const total=m.checklist.total||0;
+  const done=m.checklist.done||0;
+  const pct=total?Math.round(done/total*100):0;
+
+  // Phase header
+  const noPhase=!m.phase;
+  const phaseHtml=noPhase
+    ?'<div class="mission-no-phase"><h3>CURRENT_PHASE.md 없음</h3><p>프로젝트 루트의 <code>private/CURRENT_PHASE.md</code> 또는 <code>docs/CURRENT_PHASE.md</code>를 생성하면 미션 현황이 표시됩니다.</p></div>'
+    :`<div class="mission-phase-header">
+        <div class="mph-top">
+          <span class="mph-name">🎯 ${esc(m.phase)}</span>
+          <span class="mph-pct">${pct}%</span>
+        </div>
+        <div class="mph-bar"><div class="mph-fill" style="width:${pct}%"></div></div>
+        ${m.scope?`<div class="mph-sub">${esc(m.scope)}</div>`:''}
+        <div class="mph-checks">${done}/${total} 완료 · 백로그 ${m.stats.backlog||0} · 진행 ${m.stats.in_progress||0} · 검토 ${m.stats.review||0}</div>
+      </div>`;
+
+  // In-progress tasks
+  const ipHtml=m.in_progress.length
+    ?m.in_progress.map(t=>`
+        <div class="mission-task-card active" onclick="openDet(${t.id})">
+          <span class="mtask-num">#${t.id}</span>
+          <span class="mtask-title">${esc(t.title)}</span>
+          ${t.category?`<span class="tag">${esc(t.category)}</span>`:''}
+          ${t.started_at?`<span class="mtask-elapsed">${elapsed(t.started_at,null)||''}</span>`:''}
+        </div>`).join('')
+    :'<div class="mission-empty-msg">진행 중인 작업 없음</div>';
+
+  // Checklist
+  const clHtml=m.checklist.items.length
+    ?m.checklist.items.map(c=>`
+        <div class="mission-check-item${c.done?' done':''}">
+          <span class="check-icon">${c.done?'✓':'○'}</span>
+          <span class="check-text">${esc(c.text)}</span>
+        </div>`).join('')
+    :'<div class="mission-empty-msg">체크리스트 없음</div>';
+
+  // Do not touch
+  const dntHtml=m.do_not_touch.length
+    ?m.do_not_touch.map(s=>`<div class="mission-lock-item">${esc(s)}</div>`).join('')
+    :'<div class="mission-empty-msg">제한 없음</div>';
+
+  // Recent done
+  const rdHtml=m.recent_done.length
+    ?m.recent_done.map(t=>`
+        <div class="mission-done-item" onclick="openDet(${t.id})" style="cursor:pointer">
+          <span style="flex:1">${esc(t.title)}</span>
+          ${t.completed_at?`<span style="font-size:10px;color:var(--text-faint)">${shortDate(t.completed_at)}</span>`:''}
+        </div>`).join('')
+    :'<div class="mission-empty-msg">완료 항목 없음</div>';
+
+  w.innerHTML=phaseHtml+(noPhase?'':
+    `<div class="mission-grid">
+      <div class="mission-panel">
+        <div class="mp-label">🔥 지금 작업 중</div>
+        ${ipHtml}
+      </div>
+      <div class="mission-panel">
+        <div class="mp-label">✅ 최근 완료</div>
+        ${rdHtml}
+      </div>
+      <div class="mission-panel">
+        <div class="mp-label">📋 완료 체크리스트</div>
+        <div>${clHtml}</div>
+      </div>
+      <div class="mission-panel">
+        <div class="mp-label">🔒 건드리면 안 되는 것</div>
+        ${dntHtml}
+      </div>
+    </div>`);
+}
+
+// ── Decision Log ──
+async function loadLog(){
+  const w=document.getElementById('logWrap');
+  w.classList.add('active');
+  document.getElementById('kanban').classList.add('hide');
+  document.getElementById('listWrap').classList.remove('active');
+  document.getElementById('schemaWrap').classList.remove('active');
+  document.getElementById('missionWrap').classList.remove('active');
+  document.getElementById('statsWrap').classList.remove('active');
+  document.getElementById('resizer').classList.add('hide');
+  document.getElementById('doneZone').classList.add('hide');
+  if(!curProj){w.innerHTML='<div class="dec-empty"><h3>프로젝트 없음</h3></div>';return;}
+  try{
+    decisions=await api('GET',apiP('/decisions'));
+    renderLog();
+  }catch(e){
+    w.innerHTML='<div class="dec-empty"><h3>로딩 실패</h3></div>';
+  }
+}
+
+function renderLog(){
+  const w=document.getElementById('logWrap');
+  if(!decisions.length){
+    w.innerHTML=`<div class="log-toolbar"><h3>📋 Decision Log</h3><button class="btn btn-pri" onclick="openAddDec()">+ 결정 기록</button></div>
+      <div class="dec-empty">
+        <h3>아직 기록된 결정이 없습니다</h3>
+        <p>중요한 기술 결정을 여기에 남겨두세요.<br>
+        나중에 "왜 이렇게 했지?"를 찾는 시간을 줄여줍니다.</p>
+        <p style="margin-top:12px"><code>/vibe-harness decide "결정 제목"</code></p>
+      </div>`;
+    return;
+  }
+  const cards=decisions.slice().reverse().map(d=>{
+    const taskLnk=d.task_id?`<span class="tag">#${d.task_id}</span>`:'';
+    const ph=d.phase?`<span class="tag">${esc(d.phase)}</span>`:'';
+    const dt=d.created_at?`<span style="font-size:10px;color:var(--text-faint)">${shortDate(d.created_at)}</span>`:'';
+    return `<div class="dec-card" onclick="openEditDec(${d.id})">
+      <div class="dec-card-top">
+        <div class="dec-title">${esc(d.title)}</div>
+        <div class="dec-acts">
+          <button class="dec-act del" onclick="event.stopPropagation();confirmDelDec(${d.id})">&times;</button>
+        </div>
+      </div>
+      <div class="dec-meta">${ph}${taskLnk}${dt}</div>
+      ${d.why?`<div class="dec-row"><b>Why:</b> ${esc(d.why)}</div>`:''}
+      ${d.revisit?`<div class="dec-row revisit"><b>Revisit:</b> ${esc(d.revisit)}</div>`:''}
+    </div>`;
+  }).join('');
+  w.innerHTML=`<div class="log-toolbar"><h3>📋 Decision Log <span style="font-size:11px;color:var(--text-faint);font-weight:400">(${decisions.length}건)</span></h3>
+    <button class="btn btn-pri" onclick="openAddDec()">+ 결정 기록</button></div>
+    <div class="dec-grid">${cards}</div>`;
+}
+
+function openAddDec(){
+  document.getElementById('decMHeading').textContent='결정 기록';
+  document.getElementById('decMId').value='';
+  document.getElementById('decMName').value='';
+  ['decMWhy','decMRevisit'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('decMPhase').value=
+    document.querySelector('#missionWrap .mph-name')?.textContent?.replace('🎯 ','') || '';
+  document.getElementById('decMTask').value='';
+  document.getElementById('decMDel').style.display='none';
+  document.getElementById('decModalBg').classList.add('open');
+  setTimeout(()=>document.getElementById('decMName').focus(),80);
+}
+function openEditDec(id){
+  const d=decisions.find(x=>x.id===id);if(!d)return;
+  document.getElementById('decMHeading').textContent='결정 수정';
+  document.getElementById('decMId').value=d.id;
+  document.getElementById('decMName').value=d.title;
+  document.getElementById('decMWhy').value=d.why||'';
+  document.getElementById('decMRevisit').value=d.revisit||'';
+  document.getElementById('decMPhase').value=d.phase||'';
+  document.getElementById('decMTask').value=d.task_id||'';
+  document.getElementById('decMDel').style.display='block';
+  document.getElementById('decModalBg').classList.add('open');
+}
+function closeDecModal(){ document.getElementById('decModalBg').classList.remove('open'); }
+async function saveDecModal(){
+  const id=document.getElementById('decMId').value;
+  const d={
+    title:document.getElementById('decMName').value.trim(),
+    why:document.getElementById('decMWhy').value.trim(),
+    revisit:document.getElementById('decMRevisit').value.trim(),
+    phase:document.getElementById('decMPhase').value.trim(),
+    task_id:parseInt(document.getElementById('decMTask').value)||null,
+  };
+  if(!d.title)return alert('결정 제목을 입력하세요');
+  await api(id?'PUT':'POST', id?apiP('/decisions/'+id):apiP('/decisions'), d);
+  closeDecModal(); toast(); loadLog();
+}
+async function delDecision(){
+  const id=document.getElementById('decMId').value;
+  if(!id||!confirm('삭제할까요?'))return;
+  await api('DELETE',apiP('/decisions/'+id));
+  closeDecModal(); loadLog();
+}
+async function confirmDelDec(id){
+  if(!confirm('삭제할까요?'))return;
+  await api('DELETE',apiP('/decisions/'+id));
+  loadLog();
+}
+
+// ── Velocity / Stats ──
+async function loadStats(){
+  const w=document.getElementById('statsWrap');
+  w.classList.add('active');
+  document.getElementById('kanban').classList.add('hide');
+  document.getElementById('listWrap').classList.remove('active');
+  document.getElementById('schemaWrap').classList.remove('active');
+  document.getElementById('missionWrap').classList.remove('active');
+  document.getElementById('logWrap').classList.remove('active');
+  document.getElementById('resizer').classList.add('hide');
+  document.getElementById('doneZone').classList.add('hide');
+  if(!curProj){w.innerHTML='<div style="padding:40px;color:var(--text-dim)">프로젝트 없음</div>';return;}
+  try{
+    velocityData=await api('GET',apiP('/velocity'));
+    renderStats();
+  }catch(e){
+    w.innerHTML='<div style="padding:40px;color:var(--text-dim)">로딩 실패</div>';
+  }
+}
+
+function renderStats(){
+  const w=document.getElementById('statsWrap');
+  const v=velocityData;
+  if(!v){return;}
+
+  // KPI row
+  const totalDoneRate=v.total_tasks?Math.round(v.total_done/v.total_tasks*100):0;
+  const kpiHtml=`<div class="sp-kpi-row">
+    <div class="sp-kpi"><div class="sp-kpi-val">${v.total_tasks}</div><div class="sp-kpi-lbl">전체 태스크</div></div>
+    <div class="sp-kpi"><div class="sp-kpi-val" style="color:var(--done)">${v.total_done}</div><div class="sp-kpi-lbl">완료</div></div>
+    <div class="sp-kpi"><div class="sp-kpi-val" style="color:var(--accent)">${totalDoneRate}%</div><div class="sp-kpi-lbl">완료율</div></div>
+    <div class="sp-kpi"><div class="sp-kpi-val" style="color:var(--purple)">${fmtTokens(v.total_tokens)}</div><div class="sp-kpi-lbl">총 토큰</div></div>
+    <div class="sp-kpi"><div class="sp-kpi-val" style="color:var(--orange);font-size:20px">$${v.total_cost_usd}</div><div class="sp-kpi-lbl">추정 비용</div></div>
+  </div>`;
+
+  // Phase burndown
+  const phaseHtml=v.phases.length
+    ?v.phases.map(p=>`
+      <div class="phase-row">
+        <div class="phase-name">${esc(p.phase)}</div>
+        <div class="phase-bar-wrap"><div class="phase-bar-fill" style="width:${p.pct}%"></div></div>
+        <div class="phase-pct">${p.pct}%</div>
+        <div class="phase-cost" title="토큰: ${p.tokens.toLocaleString()}">$${p.cost_usd}</div>
+      </div>`).join('')
+    :'<div style="color:var(--text-faint);font-size:12px;padding:8px 0">Phase 데이터 없음 — 태스크에 Phase를 입력하세요</div>';
+
+  // Daily trend chart
+  const maxCount=Math.max(1,...v.daily_trend.map(d=>d.count));
+  const trendHtml=v.daily_trend.length
+    ?`<div class="trend-bars">`+v.daily_trend.map(d=>{
+        const h=Math.max(4,Math.round(d.count/maxCount*56));
+        return `<div class="trend-bar-wrap" title="${d.date}: ${d.count}건">
+          <div class="trend-bar" style="height:${h}px"></div>
+          <div class="trend-date">${d.date.slice(5)}</div>
+        </div>`;
+      }).join('')+`</div>`
+    :'<div style="color:var(--text-faint);font-size:12px">완료 태스크 없음</div>';
+
+  // Category breakdown
+  const maxCatTokens=Math.max(1,...v.category_breakdown.map(c=>c.tokens));
+  const catHtml=v.category_breakdown.length
+    ?v.category_breakdown.slice(0,8).map(c=>`
+      <div class="cat-row">
+        <div class="cat-name">${esc(c.category)}</div>
+        <div class="cat-bar-wrap"><div class="cat-bar-fill" style="width:${Math.round(c.tokens/maxCatTokens*100)}%"></div></div>
+        <div class="cat-cost">${fmtTokens(c.tokens)}</div>
+      </div>`).join('')
+    :'<div style="color:var(--text-faint);font-size:12px">토큰 데이터 없음</div>';
+
+  w.innerHTML=`
+    <div class="stats-grid">
+      <div class="stats-panel full">
+        <div class="sp-label">📊 전체 현황</div>
+        ${kpiHtml}
+      </div>
+      <div class="stats-panel full">
+        <div class="sp-label">🏁 Phase 번다운</div>
+        ${phaseHtml}
+      </div>
+      <div class="stats-panel">
+        <div class="sp-label">📅 일별 완료 추이 (최근 30일)</div>
+        ${trendHtml}
+      </div>
+      <div class="stats-panel">
+        <div class="sp-label">🏷️ 카테고리별 토큰 사용</div>
+        ${catHtml}
+        <div style="margin-top:8px;font-size:9px;color:var(--text-faint)">단가 기준: ~$9/MTok (Claude Sonnet 블렌드 추정)</div>
+      </div>
+    </div>`;
+}
+
 // ── Render ──
 function render(){
   const active=tasks.filter(t=>t.status!=='done');
   const done=tasks.filter(t=>t.status==='done');
-  // Stats
-  document.getElementById('sIP').textContent=tasks.filter(t=>t.status==='in_progress').length;
-  document.getElementById('sWait').textContent=tasks.filter(t=>t.status==='backlog'||t.status==='todo').length;
-  document.getElementById('sDone').textContent=done.length;
-  document.getElementById('sAll').textContent=tasks.length;
-  document.getElementById('doneCnt').textContent=done.length;
 
   const kb=document.getElementById('kanban');
   const lw=document.getElementById('listWrap');
   const sw=document.getElementById('schemaWrap');
+  const mw=document.getElementById('missionWrap');
+  const logw=document.getElementById('logWrap');
+  const statsw=document.getElementById('statsWrap');
   const rz=document.getElementById('resizer');
   const dz=document.getElementById('doneZone');
 
-  kb.classList.add('hide'); lw.classList.remove('active'); sw.classList.remove('active');
+  kb.classList.add('hide');
+  lw.classList.remove('active'); sw.classList.remove('active'); mw.classList.remove('active');
+  logw.classList.remove('active'); statsw.classList.remove('active');
   rz.classList.add('hide'); dz.classList.add('hide');
 
   if(view==='kanban'){

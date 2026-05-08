@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "next_id": 2,
+  "decisions": [
+    {
+      "id": 1,
+      "title": "JSON 파일 기반 스토리지 유지 — SQLite 전환 보류",
+      "why": "Git-friendly + 마이그레이션 없음 + vibe 코딩에 최적화",
+      "revisit": "동시 쓰기 충돌이 실제로 발생할 때",
+      "task_id": null,
+      "phase": "PHASE_PMF01",
+      "tags": [],
+      "created_at": "2026-05-09T00:22:47",
+      "updated_at": "2026-05-09T00:22:47"
+    }
+  ]
+}

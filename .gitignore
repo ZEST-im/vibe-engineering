@@ -15,3 +15,4 @@ server.log
 
 # Private — internal planning, business docs (not for public repo)
 private/
+.gstack/

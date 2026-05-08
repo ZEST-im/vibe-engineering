@@ -530,6 +530,78 @@ def _get_schema(kanban_dir):
     return {"tables": sorted(all_tables.values(), key=lambda t: t["name"]),
             "relationships": unique_rels, "files": file_info}
 
+def _get_context(kanban_dir):
+    """Current session context: phase, scope, in-progress tasks, do-not-touch."""
+    project_dir = os.path.dirname(os.path.abspath(kanban_dir))
+    phase_file = None
+    for candidate in [
+        os.path.join(project_dir, "private", "CURRENT_PHASE.md"),
+        os.path.join(project_dir, "docs", "CURRENT_PHASE.md"),
+        os.path.join(project_dir, "CURRENT_PHASE.md"),
+    ]:
+        if os.path.exists(candidate):
+            phase_file = candidate
+            break
+
+    phase_name, scope, checklist_items, do_not_touch = "", "", [], []
+
+    if phase_file:
+        with open(phase_file, encoding="utf-8") as f:
+            content = f.read()
+        section = None
+        for line in content.splitlines():
+            m = re.match(r"^##\s*Now:\s*(.+)", line)
+            if m: phase_name = m.group(1).strip(); continue
+            m = re.match(r"^##\s*Scope:\s*(.+)", line)
+            if m: scope = m.group(1).strip(); continue
+            if re.match(r"^##\s*Done when", line, re.IGNORECASE): section = "checklist"; continue
+            if re.match(r"^##\s*Do NOT touch", line, re.IGNORECASE): section = "do_not_touch"; continue
+            if re.match(r"^##", line): section = None; continue
+            if line.strip().startswith("<!--"): continue
+            if section == "checklist":
+                chk = re.match(r"^- \[([xX ])\]\s*(.+)", line)
+                if chk:
+                    checklist_items.append({"text": chk.group(2).strip(), "done": chk.group(1).lower() == "x"})
+            elif section == "do_not_touch":
+                bullet = re.match(r"^-\s+(.+)", line)
+                if bullet:
+                    do_not_touch.append(bullet.group(1).strip())
+                elif line.strip() and not line.strip().startswith("#"):
+                    do_not_touch.extend(p.strip() for p in line.split(",") if p.strip())
+
+    data = _read_kanban(kanban_dir)
+    all_tasks = data.get("tasks", [])
+    archived = _list_archives(kanban_dir)
+
+    in_progress = [t for t in all_tasks if t.get("status") == "in_progress"]
+    all_done = sorted(
+        [t for t in (all_tasks + archived) if t.get("status") == "done"],
+        key=lambda t: t.get("completed_at") or t.get("updated_at") or "",
+        reverse=True
+    )
+
+    stats = {s: 0 for s in ["backlog", "todo", "in_progress", "review", "done"]}
+    for t in all_tasks + archived:
+        s = t.get("status", "")
+        if s in stats:
+            stats[s] += 1
+
+    done_checks = sum(1 for c in checklist_items if c["done"])
+    return {
+        "phase": phase_name,
+        "scope": scope,
+        "checklist": {
+            "total": len(checklist_items),
+            "done": done_checks,
+            "items": checklist_items,
+        },
+        "do_not_touch": do_not_touch,
+        "in_progress": in_progress,
+        "recent_done": all_done[:3],
+        "stats": stats,
+    }
+
+
 def _get_phase_check(kanban_dir):
     """Check phase transition readiness: kanban state + CURRENT_PHASE.md checklist."""
     project_dir = os.path.dirname(os.path.abspath(kanban_dir))
@@ -598,6 +670,122 @@ def _get_phase_check(kanban_dir):
             "unchecked": len(unchecked),
         },
     }
+
+# ── Decision Log ────────────────────────────────────
+
+def _decisions_path(kanban_dir):
+    return os.path.join(kanban_dir, "decisions.json")
+
+def _read_decisions(kanban_dir):
+    p = _decisions_path(kanban_dir)
+    if not os.path.exists(p):
+        return {"version": 1, "next_id": 1, "decisions": []}
+    with open(p) as f:
+        return json.load(f)
+
+def _write_decisions(kanban_dir, data):
+    p = _decisions_path(kanban_dir)
+    os.makedirs(kanban_dir, exist_ok=True)
+    tmp = p + ".tmp"
+    with open(tmp, "w") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        json.dump(data, f, indent=2, ensure_ascii=False)
+        f.flush()
+        os.fsync(f.fileno())
+        fcntl.flock(f, fcntl.LOCK_UN)
+    os.replace(tmp, p)
+
+def _new_decision(data, d):
+    dec = {
+        "id": data["next_id"],
+        "title": d.get("title", "").strip(),
+        "why": d.get("why", "").strip(),
+        "revisit": d.get("revisit", "").strip(),
+        "task_id": d.get("task_id"),
+        "phase": d.get("phase", "").strip(),
+        "tags": d.get("tags", []),
+        "created_at": _now(),
+        "updated_at": _now(),
+    }
+    data["next_id"] += 1
+    data["decisions"].append(dec)
+    return data, dec
+
+def _update_decision(dec, d):
+    for f in ("title", "why", "revisit", "task_id", "phase", "tags"):
+        if f in d:
+            dec[f] = d[f]
+    dec["updated_at"] = _now()
+
+
+# ── Velocity & Cost Tracking ─────────────────────────
+
+CLAUDE_COST_PER_TOKEN = 0.000009  # ~$9/MTok blended (Sonnet 4.6 input+output avg)
+
+def _get_velocity(kanban_dir):
+    """Phase burndown + token cost stats."""
+    data = _read_kanban(kanban_dir)
+    archived = _list_archives(kanban_dir)
+    all_tasks = data.get("tasks", []) + archived
+
+    # ── Phase stats ──
+    phase_map = {}
+    for t in all_tasks:
+        ph = t.get("phase") or "No Phase"
+        if ph not in phase_map:
+            phase_map[ph] = {"phase": ph, "total": 0, "done": 0, "tokens": 0, "dates": []}
+        phase_map[ph]["total"] += 1
+        if t.get("status") == "done":
+            phase_map[ph]["done"] += 1
+            cd = t.get("completed_at") or t.get("updated_at") or ""
+            if cd:
+                phase_map[ph]["dates"].append(cd[:10])
+        phase_map[ph]["tokens"] += t.get("tokens_used") or 0
+
+    phases = []
+    for ph, s in sorted(phase_map.items()):
+        pct = round(s["done"] / s["total"] * 100) if s["total"] else 0
+        phases.append({
+            "phase": ph,
+            "total": s["total"],
+            "done": s["done"],
+            "remaining": s["total"] - s["done"],
+            "pct": pct,
+            "tokens": s["tokens"],
+            "cost_usd": round(s["tokens"] * CLAUDE_COST_PER_TOKEN, 4),
+        })
+
+    # ── Daily done trend (last 30 days) ──
+    from collections import defaultdict
+    daily = defaultdict(int)
+    for t in all_tasks:
+        if t.get("status") == "done":
+            cd = (t.get("completed_at") or t.get("updated_at") or "")[:10]
+            if cd:
+                daily[cd] += 1
+    daily_trend = [{"date": k, "count": v} for k, v in sorted(daily.items())[-30:]]
+
+    # ── Category token breakdown ──
+    cat_tokens = defaultdict(int)
+    for t in all_tasks:
+        cat = t.get("category") or "기타"
+        cat_tokens[cat] += t.get("tokens_used") or 0
+    category_breakdown = [
+        {"category": k, "tokens": v, "cost_usd": round(v * CLAUDE_COST_PER_TOKEN, 4)}
+        for k, v in sorted(cat_tokens.items(), key=lambda x: -x[1])
+    ]
+
+    total_tokens = sum(t.get("tokens_used") or 0 for t in all_tasks)
+    return {
+        "phases": phases,
+        "daily_trend": daily_trend,
+        "category_breakdown": category_breakdown,
+        "total_tokens": total_tokens,
+        "total_cost_usd": round(total_tokens * CLAUDE_COST_PER_TOKEN, 4),
+        "total_tasks": len(all_tasks),
+        "total_done": sum(1 for t in all_tasks if t.get("status") == "done"),
+    }
+
 
 # ── Handler ─────────────────────────────────────────
 
@@ -707,6 +895,16 @@ class Handler(BaseHTTPRequestHandler):
             if rest == ["phase-check"]:
                 return self._json(_get_phase_check(kanban_dir))
 
+            if rest == ["context"]:
+                return self._json(_get_context(kanban_dir))
+
+            if rest == ["decisions"]:
+                data = _read_decisions(kanban_dir)
+                return self._json(data["decisions"])
+
+            if rest == ["velocity"]:
+                return self._json(_get_velocity(kanban_dir))
+
         self.send_response(404)
         self.end_headers()
 
@@ -780,6 +978,13 @@ class Handler(BaseHTTPRequestHandler):
                 _write_kanban(kanban_dir, data)
                 return self._json({"created": len(ids), "ids": ids}, 201)
 
+            if rest == ["decisions"]:
+                d = self._body()
+                data = _read_decisions(kanban_dir)
+                data, dec = _new_decision(data, d)
+                _write_decisions(kanban_dir, data)
+                return self._json(dec, 201)
+
             if rest == ["archive"]:
                 # POST to archive = archive done tasks
                 data = _read_kanban(kanban_dir)
@@ -814,6 +1019,17 @@ class Handler(BaseHTTPRequestHandler):
                 _write_kanban(kanban_dir, data)
                 return self._json(task)
 
+            if len(rest) == 2 and rest[0] == "decisions":
+                did = int(rest[1])
+                d = self._body()
+                data = _read_decisions(kanban_dir)
+                dec = next((x for x in data["decisions"] if x["id"] == did), None)
+                if not dec:
+                    return self._json({"error": "not found"}, 404)
+                _update_decision(dec, d)
+                _write_decisions(kanban_dir, data)
+                return self._json(dec)
+
         self.send_response(404)
         self.end_headers()
 
@@ -831,6 +1047,13 @@ class Handler(BaseHTTPRequestHandler):
                 data["tasks"] = [t for t in data["tasks"] if t["id"] != tid]
                 _write_kanban(kanban_dir, data)
                 return self._json({"deleted": tid})
+
+            if len(rest) == 2 and rest[0] == "decisions":
+                did = int(rest[1])
+                data = _read_decisions(kanban_dir)
+                data["decisions"] = [x for x in data["decisions"] if x["id"] != did]
+                _write_decisions(kanban_dir, data)
+                return self._json({"deleted": did})
 
         self.send_response(404)
         self.end_headers()
