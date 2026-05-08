@@ -12,3 +12,6 @@ server.log
 # SQLite WAL files
 *.db-shm
 *.db-wal
+
+# Private — internal planning, business docs (not for public repo)
+private/
