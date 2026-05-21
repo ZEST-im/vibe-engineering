@@ -16,3 +16,10 @@ server.log
 # Private — internal planning, business docs (not for public repo)
 private/
 .gstack/
+.rocketride/
+
+# Local secrets and external tool footprints
+.env
+.env.*
+.claude/
+.github/

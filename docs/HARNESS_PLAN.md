@@ -40,7 +40,7 @@
 
 **목표**: git push 후 단순 echo가 아니라 실제 diff + 구조화된 리뷰 지시 출력
 
-- `vibe-harness-review.sh` 개선: diff 요약 + kanban API curl 명령어 포함한 강제 프롬프트 출력
+- `vibe-harness-review.sh` 개선: diff 요약 + `vibe-harness/kanban.json`에 review 태스크를 append하라는 구조화된 지시 출력 (서버가 떠 있으면 API POST도 가능, 하지만 JSON 직접 편집이 기본 경로)
 - Claude가 반드시 리뷰를 수행하게 강한 컨텍스트 제공
 
 ### 강화 3: SessionStart/Stop 훅
