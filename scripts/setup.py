@@ -70,7 +70,7 @@ def copy_server_files():
         shutil.copy2(skill_src, dst)
         print(f"  COPIED SKILL.md → {dst}")
 
-    files = ["server.py", "kanban.html"]
+    files = ["server.py", "kanban.html", "setup.py"]
     for f in files:
         src = os.path.join(SRC, f)
         dst = os.path.join(DEST, f)
@@ -256,6 +256,7 @@ def upgrade():
         "server.py": f"{REPO_URL}/scripts/server.py",
         "kanban.html": f"{REPO_URL}/scripts/kanban.html",
         "SKILL.md": f"{REPO_URL}/skills/vibe-harness/SKILL.md",
+        "setup.py": f"{REPO_URL}/scripts/setup.py",
     }
 
     os.makedirs(DEST, exist_ok=True)

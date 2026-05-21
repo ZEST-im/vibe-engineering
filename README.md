@@ -100,14 +100,20 @@ python3 ~/.claude/skills/vibe-harness/server.py register my_project "My Project"
 python3 ~/.claude/skills/vibe-harness/setup.py upgrade
 ```
 
-Downloads latest `server.py`, `kanban.html`, `SKILL.md` from GitHub and restarts the server. No repo pull needed.
+Downloads the latest `server.py`, `kanban.html`, `SKILL.md`, and `setup.py` itself from GitHub, then restarts the server. No repo pull needed.
 
 **First time upgrading from an older install?**
 
+Older installs didn't copy `setup.py` to `~/.claude/skills/vibe-harness/`, so the command above will say "No such file." Bootstrap it once:
+
 ```bash
+mkdir -p ~/.claude/skills/vibe-harness
 curl -sL https://raw.githubusercontent.com/hoarchi/vibe-harness/main/scripts/setup.py \
   -o ~/.claude/skills/vibe-harness/setup.py
+python3 ~/.claude/skills/vibe-harness/setup.py upgrade
 ```
+
+After this one-time bootstrap, every future update is just the single `setup.py upgrade` command at the top.
 
 ---
 
