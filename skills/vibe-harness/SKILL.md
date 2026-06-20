@@ -225,7 +225,12 @@ Append-only log of **who ran what, at what cost**. Agent-agnostic — any tool (
 - **Atomic writes**: same `.tmp` + rename discipline as kanban.json.
 - **Relationship to `tokens_used`**: when a task has runs logged here, set the task's `kanban.json` `tokens_used` to the **sum of that task's runs** (so the existing board/stats stay correct). If no run is logged, `tokens_used` falls back to a rough estimate.
 
-> Server `/runs` API + per-model cost in the Stats tab are **not yet implemented** (server.py is scope-locked). For now agents write `runs.json` directly; the server still reads `tokens_used` from kanban.json as before.
+**Server path (optional convenience):** if `localhost:4242` is running you can let it manage runs instead of editing the file:
+- `GET  /api/{project}/runs` — list runs (`?task_id=N` to filter).
+- `POST /api/{project}/runs` — append a run (`agent` required; `tokens`/`model`/`time_seconds`/`commit`/`ts` optional). The server appends to `runs.json` **and** auto-syncs the linked task's `tokens_used` to the sum of its runs.
+- The 📊 Stats tab shows per-agent and per-model token + cost breakdown. Cost rates are blended estimates per agent/model: Codex/GPT ~$6, Claude Opus ~$30 / Sonnet ~$9, Gemini ~$4 per MTok (`COST_PER_TOKEN` in server.py).
+
+Editing `runs.json` directly stays the canonical path — the server is just a wrapper.
 
 ### When the user requests work
 
@@ -552,6 +557,13 @@ curl http://localhost:4242/api/{project_key}/velocity
 
 # Automated phase completion pre-check
 curl http://localhost:4242/api/{project_key}/phase-check
+
+# Agent run usage log (append-only, agent-agnostic)
+curl http://localhost:4242/api/{project_key}/runs              # list (optionally ?task_id=N)
+curl -X POST http://localhost:4242/api/{project_key}/runs \
+  -H 'Content-Type: application/json' \
+  -d '{"task_id":6,"agent":"codex","model":"gpt-5-codex","tokens":297469,"time_seconds":737,"commit":"017b446"}'
+  # appends to runs.json AND syncs the task's tokens_used to the sum of its runs
 ```
 
 ### Export / Import API

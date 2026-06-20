@@ -718,29 +718,134 @@ def _update_decision(dec, d):
     dec["updated_at"] = _now()
 
 
+# ── Runs Log (agent run usage, append-only) ──────────
+
+def _runs_path(kanban_dir):
+    return os.path.join(kanban_dir, "runs.json")
+
+def _read_runs(kanban_dir):
+    p = _runs_path(kanban_dir)
+    if not os.path.exists(p):
+        return {"version": 1, "runs": []}
+    with open(p) as f:
+        return json.load(f)
+
+def _write_runs(kanban_dir, data):
+    p = _runs_path(kanban_dir)
+    os.makedirs(kanban_dir, exist_ok=True)
+    tmp = p + ".tmp"
+    with open(tmp, "w") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        json.dump(data, f, indent=2, ensure_ascii=False)
+        f.flush()
+        os.fsync(f.fileno())
+        fcntl.flock(f, fcntl.LOCK_UN)
+    os.replace(tmp, p)
+
+def _safe_int(v):
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return 0
+
+def _new_run(data, r):
+    """Append an agent run. Agent-agnostic: `agent` is a free string."""
+    run = {
+        "task_id": r.get("task_id"),
+        "agent": (r.get("agent") or "").strip(),
+        "model": (r.get("model") or "").strip(),
+        "tokens": _safe_int(r.get("tokens")),
+        "input_tokens": r.get("input_tokens"),
+        "output_tokens": r.get("output_tokens"),
+        "time_seconds": r.get("time_seconds"),
+        "commit": (r.get("commit") or "").strip(),
+        "ts": (r.get("ts") or "").strip() or _now(),
+    }
+    data.setdefault("runs", []).append(run)
+    return data, run
+
+def _sync_task_tokens(kanban_dir, task_id, runs):
+    """Derive a task's tokens_used from the sum of its runs (board stays correct)."""
+    if task_id is None:
+        return
+    total = sum(_safe_int(r.get("tokens")) for r in runs if r.get("task_id") == task_id)
+    data = _read_kanban(kanban_dir)
+    task = next((t for t in data["tasks"] if t.get("id") == task_id), None)
+    if task is not None:
+        task["tokens_used"] = total
+        task["updated_at"] = _now()
+        _write_kanban(kanban_dir, data)
+
+
 # ── Velocity & Cost Tracking ─────────────────────────
 
-CLAUDE_COST_PER_TOKEN = 0.000009  # ~$9/MTok blended (Sonnet 4.6 input+output avg)
+CLAUDE_COST_PER_TOKEN = 0.000009  # ~$9/MTok blended (Sonnet 4.6 avg) — fallback default
+
+# Blended $/token (input+output rough avg) per agent → model substring.
+# Used when runs.json carries per-run agent/model attribution; falls back to _default.
+COST_PER_TOKEN = {
+    "claude": {
+        "_default": 0.000009,
+        "opus": 0.00003,    # ~$15/$75 in/out blended
+        "sonnet": 0.000009,
+        "haiku": 0.0000024,
+    },
+    "codex": {"_default": 0.000006},
+    "gpt": {"_default": 0.000006},
+    "gemini": {"_default": 0.000004},
+    "cursor": {"_default": 0.000006},
+    "_default": CLAUDE_COST_PER_TOKEN,
+}
+
+def _cost_per_token(agent, model):
+    """Resolve blended cost rate from agent + model (substring match)."""
+    amap = COST_PER_TOKEN.get((agent or "").lower())
+    if not amap:
+        return COST_PER_TOKEN["_default"]
+    ml = (model or "").lower()
+    for key, rate in amap.items():
+        if key != "_default" and key in ml:
+            return rate
+    return amap.get("_default", COST_PER_TOKEN["_default"])
 
 def _get_velocity(kanban_dir):
-    """Phase burndown + token cost stats."""
+    """Phase burndown + token cost stats. Tokens/cost derive from runs.json when present."""
+    from collections import defaultdict
     data = _read_kanban(kanban_dir)
     archived = _list_archives(kanban_dir)
     all_tasks = data.get("tasks", []) + archived
+
+    runs = _read_runs(kanban_dir).get("runs", [])
+    runs_by_task = defaultdict(list)
+    for r in runs:
+        runs_by_task[r.get("task_id")].append(r)
+
+    def task_tokens(t):
+        rs = runs_by_task.get(t.get("id"))
+        if rs:
+            return sum(_safe_int(r.get("tokens")) for r in rs)
+        return t.get("tokens_used") or 0
+
+    def task_cost(t):
+        rs = runs_by_task.get(t.get("id"))
+        if rs:
+            return sum(_safe_int(r.get("tokens")) * _cost_per_token(r.get("agent"), r.get("model")) for r in rs)
+        return (t.get("tokens_used") or 0) * CLAUDE_COST_PER_TOKEN
 
     # ── Phase stats ──
     phase_map = {}
     for t in all_tasks:
         ph = t.get("phase") or "No Phase"
         if ph not in phase_map:
-            phase_map[ph] = {"phase": ph, "total": 0, "done": 0, "tokens": 0, "dates": []}
+            phase_map[ph] = {"phase": ph, "total": 0, "done": 0, "tokens": 0, "cost": 0.0, "dates": []}
         phase_map[ph]["total"] += 1
         if t.get("status") == "done":
             phase_map[ph]["done"] += 1
             cd = t.get("completed_at") or t.get("updated_at") or ""
             if cd:
                 phase_map[ph]["dates"].append(cd[:10])
-        phase_map[ph]["tokens"] += t.get("tokens_used") or 0
+        phase_map[ph]["tokens"] += task_tokens(t)
+        phase_map[ph]["cost"] += task_cost(t)
 
     phases = []
     for ph, s in sorted(phase_map.items()):
@@ -752,11 +857,10 @@ def _get_velocity(kanban_dir):
             "remaining": s["total"] - s["done"],
             "pct": pct,
             "tokens": s["tokens"],
-            "cost_usd": round(s["tokens"] * CLAUDE_COST_PER_TOKEN, 4),
+            "cost_usd": round(s["cost"], 4),
         })
 
     # ── Daily done trend (last 30 days) ──
-    from collections import defaultdict
     daily = defaultdict(int)
     for t in all_tasks:
         if t.get("status") == "done":
@@ -767,21 +871,47 @@ def _get_velocity(kanban_dir):
 
     # ── Category token breakdown ──
     cat_tokens = defaultdict(int)
+    cat_cost = defaultdict(float)
     for t in all_tasks:
         cat = t.get("category") or "기타"
-        cat_tokens[cat] += t.get("tokens_used") or 0
+        cat_tokens[cat] += task_tokens(t)
+        cat_cost[cat] += task_cost(t)
     category_breakdown = [
-        {"category": k, "tokens": v, "cost_usd": round(v * CLAUDE_COST_PER_TOKEN, 4)}
+        {"category": k, "tokens": v, "cost_usd": round(cat_cost[k], 4)}
         for k, v in sorted(cat_tokens.items(), key=lambda x: -x[1])
     ]
 
-    total_tokens = sum(t.get("tokens_used") or 0 for t in all_tasks)
+    # ── Agent / model breakdown (from runs.json) ──
+    agent_tok = defaultdict(int); agent_cost = defaultdict(float); agent_runs = defaultdict(int)
+    model_tok = defaultdict(int); model_cost = defaultdict(float); model_runs = defaultdict(int)
+    for r in runs:
+        ag = r.get("agent") or "unknown"
+        md = r.get("model") or "—"
+        tok = _safe_int(r.get("tokens"))
+        c = tok * _cost_per_token(ag, md)
+        agent_tok[ag] += tok; agent_cost[ag] += c; agent_runs[ag] += 1
+        mk = (ag, md)
+        model_tok[mk] += tok; model_cost[mk] += c; model_runs[mk] += 1
+    agent_breakdown = [
+        {"agent": k, "tokens": v, "cost_usd": round(agent_cost[k], 4), "runs": agent_runs[k]}
+        for k, v in sorted(agent_tok.items(), key=lambda x: -x[1])
+    ]
+    model_breakdown = [
+        {"agent": k[0], "model": k[1], "tokens": v, "cost_usd": round(model_cost[k], 4), "runs": model_runs[k]}
+        for k, v in sorted(model_tok.items(), key=lambda x: -x[1])
+    ]
+
+    total_tokens = sum(task_tokens(t) for t in all_tasks)
+    total_cost = sum(task_cost(t) for t in all_tasks)
     return {
         "phases": phases,
         "daily_trend": daily_trend,
         "category_breakdown": category_breakdown,
+        "agent_breakdown": agent_breakdown,
+        "model_breakdown": model_breakdown,
         "total_tokens": total_tokens,
-        "total_cost_usd": round(total_tokens * CLAUDE_COST_PER_TOKEN, 4),
+        "total_cost_usd": round(total_cost, 4),
+        "total_runs": len(runs),
         "total_tasks": len(all_tasks),
         "total_done": sum(1 for t in all_tasks if t.get("status") == "done"),
     }
@@ -905,6 +1035,14 @@ class Handler(BaseHTTPRequestHandler):
             if rest == ["velocity"]:
                 return self._json(_get_velocity(kanban_dir))
 
+            if rest == ["runs"]:
+                qs = parse_qs(parsed.query)
+                runs = _read_runs(kanban_dir)["runs"]
+                tid = qs.get("task_id", [None])[0]
+                if tid is not None:
+                    runs = [r for r in runs if str(r.get("task_id")) == str(tid)]
+                return self._json(runs)
+
         self.send_response(404)
         self.end_headers()
 
@@ -984,6 +1122,17 @@ class Handler(BaseHTTPRequestHandler):
                 data, dec = _new_decision(data, d)
                 _write_decisions(kanban_dir, data)
                 return self._json(dec, 201)
+
+            if rest == ["runs"]:
+                d = self._body()
+                if not (d.get("agent") or "").strip():
+                    return self._json({"error": "agent required"}, 400)
+                data = _read_runs(kanban_dir)
+                data, run = _new_run(data, d)
+                _write_runs(kanban_dir, data)
+                # Derive the linked task's tokens_used from its runs (board stays correct).
+                _sync_task_tokens(kanban_dir, run.get("task_id"), data["runs"])
+                return self._json(run, 201)
 
             if rest == ["archive"]:
                 # POST to archive = archive done tasks

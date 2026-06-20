@@ -1088,6 +1088,21 @@ function renderStats(){
       </div>`).join('')
     :'<div style="color:var(--text-faint);font-size:12px">토큰 데이터 없음</div>';
 
+  // Agent / model breakdown (from runs.json)
+  const agents=v.agent_breakdown||[], models=v.model_breakdown||[];
+  const maxAgentTokens=Math.max(1,...agents.map(a=>a.tokens));
+  const agentHtml=agents.length
+    ?agents.map(a=>`
+      <div class="cat-row">
+        <div class="cat-name" title="${a.runs} run(s)">${esc(a.agent)}</div>
+        <div class="cat-bar-wrap"><div class="cat-bar-fill" style="width:${Math.round(a.tokens/maxAgentTokens*100)}%;background:var(--purple)"></div></div>
+        <div class="cat-cost" title="${a.tokens.toLocaleString()} tokens">${fmtTokens(a.tokens)} · $${a.cost_usd}</div>
+      </div>`).join('')
+      +(models.length?`<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:6px">`
+        +models.map(m=>`<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text-faint);padding:1px 0">
+          <span>${esc(m.agent)} / ${esc(m.model||'—')}</span><span>${fmtTokens(m.tokens)} · $${m.cost_usd}</span></div>`).join('')+`</div>`:'')
+    :'<div style="color:var(--text-faint);font-size:12px">runs.json 기록 없음 — 완료 시 에이전트 run을 기록하세요</div>';
+
   w.innerHTML=`
     <div class="stats-grid">
       <div class="stats-panel full">
@@ -1105,7 +1120,11 @@ function renderStats(){
       <div class="stats-panel">
         <div class="sp-label">🏷️ 카테고리별 토큰 사용</div>
         ${catHtml}
-        <div style="margin-top:8px;font-size:9px;color:var(--text-faint)">단가 기준: ~$9/MTok (Claude Sonnet 블렌드 추정)</div>
+      </div>
+      <div class="stats-panel">
+        <div class="sp-label">🤖 에이전트별 토큰·비용${v.total_runs?` (${v.total_runs} runs)`:''}</div>
+        ${agentHtml}
+        <div style="margin-top:8px;font-size:9px;color:var(--text-faint)">단가: Codex/GPT ~$6 · Claude Opus ~$30 / Sonnet ~$9 · Gemini ~$4 /MTok (블렌드 추정)</div>
       </div>
     </div>`;
 }
