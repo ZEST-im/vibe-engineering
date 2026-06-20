@@ -161,7 +161,8 @@ The default path for an agent is to read and edit `vibe-harness/kanban.json` and
 - **On completion (`status: "done"`)**: also record:
   - `lines_added`, `lines_removed` — from `git diff --numstat` for files changed in this task.
   - `details` — work report: changed files, key decisions, follow-ups.
-  - `tokens_used` — rough integer estimate (see Token Estimation below).
+  - `tokens_used` — sum of this task's runs in `runs.json` if logged, else a rough integer estimate (see Token Estimation below).
+  - **Append a run to `runs.json`** — `{agent, model, tokens, time_seconds, commit, ts}` for the agent that did the work (see runs.json section). Agent-agnostic: record it whether the work was done by Codex, Claude, Gemini, or any other agent.
   - Any verification notes (tests run, manual checks) belong in `details`.
 - **Atomic writes**: Write to `kanban.json.tmp` first, then rename over `kanban.json`. The server does this; agents editing directly should do the same to avoid leaving the file half-written.
 - **Don't reorder the file just to reorder it.** Append new tasks; sort only via `position` if needed.
@@ -194,6 +195,38 @@ Record a decision in `decisions.json` (not in a task's `details`) when the choic
 - `task_id` links back to the kanban task that spawned the decision (nullable).
 - `revisit` should describe a concrete condition that would make this decision worth re-opening.
 
+### runs.json shape and rules (agent run usage log)
+
+Append-only log of **who ran what, at what cost**. Agent-agnostic — any tool (Codex, Claude Code, Gemini, Cursor, …) records into the same file. `kanban.json` stays a status board; per-run usage lives here so a single task can accumulate multiple runs from different agents without overwriting.
+
+```json
+{
+  "version": 1,
+  "runs": [
+    {
+      "task_id": 6,
+      "agent": "codex",
+      "model": "gpt-5-codex",
+      "tokens": 297469,
+      "input_tokens": null,
+      "output_tokens": null,
+      "time_seconds": 737,
+      "commit": "017b446",
+      "ts": "2026-06-20T14:02:00"
+    }
+  ]
+}
+```
+
+- **Append-only.** Add a run object; never edit or delete existing entries. No `next_id` — entries are not addressed by id.
+- **Required per run**: `agent` (free string: `codex` / `claude` / `gemini` / …), `tokens` (integer), `ts` (ISO-8601).
+- **Optional**: `task_id` (links to a kanban task, nullable for ad-hoc runs), `model` (specific model id), `input_tokens` / `output_tokens` (breakdown when known, else `null`), `time_seconds`, `commit` (git short SHA the run produced).
+- **`agent` is the recording dimension** — cost rates differ per agent/model, so always set it. Don't assume Claude.
+- **Atomic writes**: same `.tmp` + rename discipline as kanban.json.
+- **Relationship to `tokens_used`**: when a task has runs logged here, set the task's `kanban.json` `tokens_used` to the **sum of that task's runs** (so the existing board/stats stay correct). If no run is logged, `tokens_used` falls back to a rough estimate.
+
+> Server `/runs` API + per-model cost in the Stats tab are **not yet implemented** (server.py is scope-locked). For now agents write `runs.json` directly; the server still reads `tokens_used` from kanban.json as before.
+
 ### When the user requests work
 
 1. If a matching task isn't in kanban → create one as `todo` (or `in_progress` if starting immediately).
@@ -202,7 +235,7 @@ Record a decision in `decisions.json` (not in a task's `details`) when the choic
 
 ### Token estimation (for `tokens_used` on completion)
 
-Rough estimate is fine — accuracy within 2× is acceptable.
+Prefer **actual** usage: if you logged a run in `runs.json`, set `tokens_used` to the sum of that task's runs. Estimate only as a fallback when no real number is available — accuracy within 2× is acceptable.
 
 - Tool calls (Read/Edit/Bash) ≈ 2K–5K each
 - Diff lines ≈ 10–20 tokens each

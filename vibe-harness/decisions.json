@@ -1,7 +1,18 @@
 {
   "version": 1,
-  "next_id": 2,
+  "next_id": 3,
   "decisions": [
+    {
+      "id": 2,
+      "title": "에이전트 run 사용량은 runs.json append-only 로그로 분리 (agent-agnostic)",
+      "why": "kanban.json의 tokens_used는 태스크당 단일 숫자라 한 태스크에 Claude+Codex 등 여러 run이 섞이면 분리 불가하고, 비용 단가도 모델마다 다름. kanban은 상태 보드로 두고 per-run usage(agent/model/tokens/time/commit)는 별도 append-only 로그로 둠. agent 필드를 자유 문자열로 둬 Codex/Claude/Gemini 등 무엇이든 기록. tokens_used는 해당 태스크 run 합계로 파생.",
+      "revisit": "server.py 잠금이 풀려 /runs API + Stats 탭 모델별 단가 집계를 구현할 때 (현재 PMF01 scope-lock으로 보류). 또는 runs.json이 너무 커져 월별 아카이브가 필요할 때.",
+      "task_id": null,
+      "phase": "PHASE_PMF01",
+      "tags": ["runs", "tokens", "scope-safe"],
+      "created_at": "2026-06-20T00:00:00",
+      "updated_at": "2026-06-20T00:00:00"
+    },
     {
       "id": 1,
       "title": "JSON 파일 기반 스토리지 유지 — SQLite 전환 보류",
