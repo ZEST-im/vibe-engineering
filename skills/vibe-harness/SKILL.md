@@ -205,13 +205,16 @@ Append-only log of **who ran what, at what cost**. Agent-agnostic — any tool (
   "runs": [
     {
       "task_id": 6,
-      "agent": "codex",
-      "model": "gpt-5-codex",
-      "tokens": 297469,
-      "input_tokens": null,
-      "output_tokens": null,
-      "time_seconds": 737,
-      "commit": "017b446",
+      "agent": "claude",
+      "model": "claude-opus-4-8",
+      "tokens": 4628627,
+      "input_tokens": 46438,
+      "output_tokens": 79449,
+      "cache_read_tokens": 4111339,
+      "cache_write_tokens": 391401,
+      "time_seconds": null,
+      "commit": "59675cc",
+      "session_id": "d87cee14-...",
       "ts": "2026-06-20T14:02:00"
     }
   ]
@@ -220,17 +223,31 @@ Append-only log of **who ran what, at what cost**. Agent-agnostic — any tool (
 
 - **Append-only.** Add a run object; never edit or delete existing entries. No `next_id` — entries are not addressed by id.
 - **Required per run**: `agent` (free string: `codex` / `claude` / `gemini` / …), `tokens` (integer), `ts` (ISO-8601).
-- **Optional**: `task_id` (links to a kanban task, nullable for ad-hoc runs), `model` (specific model id), `input_tokens` / `output_tokens` (breakdown when known, else `null`), `time_seconds`, `commit` (git short SHA the run produced).
+- **Optional**: `task_id` (links to a kanban task, nullable for ad-hoc runs), `model` (specific model id), token breakdown (`input_tokens` / `output_tokens` / `cache_read_tokens` / `cache_write_tokens`, else `null`), `time_seconds`, `commit` (git short SHA), `session_id` (for idempotent auto-collection).
 - **`agent` is the recording dimension** — cost rates differ per agent/model, so always set it. Don't assume Claude.
+- **Token breakdown drives accurate cost.** Claude runs are cache-dominated (cache reads cost ~10% of input), so a flat sum overstates cost ~7×. When the breakdown is present, cost is computed per-component (`COMPONENT_RATES` in server.py); otherwise it falls back to a blended flat rate on `tokens` (fine for Codex/Gemini single-number usage).
 - **Atomic writes**: same `.tmp` + rename discipline as kanban.json.
-- **Relationship to `tokens_used`**: when a task has runs logged here, set the task's `kanban.json` `tokens_used` to the **sum of that task's runs** (so the existing board/stats stay correct). If no run is logged, `tokens_used` falls back to a rough estimate.
+- **Relationship to `tokens_used`**: when a task has runs logged here, set the task's `kanban.json` `tokens_used` to the **sum of that task's runs**. If no run is logged, `tokens_used` falls back to a rough estimate.
 
-**Server path (optional convenience):** if `localhost:4242` is running you can let it manage runs instead of editing the file:
+#### Auto-collection (PHASE_PMF03) — preferred over manual estimates
+
+Real usage is captured automatically; you rarely set `tokens_used` by hand anymore.
+
+- **Claude Code**: the `SessionEnd` hook (`vibe-harness-token-collector.sh`) parses the session transcript, sums real usage, and records one run via the shared recorder. Idempotent by `session_id`.
+- **Codex / Gemini / any agent**: call the shared recorder directly with the agent's reported usage:
+  ```bash
+  python3 ~/.claude/hooks/vibe-harness-record-run.py \
+    --agent codex --model gpt-5-codex --tokens 297469 \
+    --time-seconds 737 --cwd "$PWD"
+  ```
+- The recorder resolves the project (cwd → git root → `projects.json`), the current `in_progress` task, and the git commit automatically; posts to the server if up, else appends to `runs.json` directly.
+
+**Server path (optional convenience):** if `localhost:4242` is running:
 - `GET  /api/{project}/runs` — list runs (`?task_id=N` to filter).
-- `POST /api/{project}/runs` — append a run (`agent` required; `tokens`/`model`/`time_seconds`/`commit`/`ts` optional). The server appends to `runs.json` **and** auto-syncs the linked task's `tokens_used` to the sum of its runs.
-- The 📊 Stats tab shows per-agent and per-model token + cost breakdown. Cost rates are blended estimates per agent/model: Codex/GPT ~$6, Claude Opus ~$30 / Sonnet ~$9, Gemini ~$4 per MTok (`COST_PER_TOKEN` in server.py).
+- `POST /api/{project}/runs` — append a run (`agent` required; breakdown/`session_id`/`commit`/etc. optional). Appends to `runs.json` **and** auto-syncs the linked task's `tokens_used`.
+- The 📊 Stats tab shows per-agent and per-model token + cost breakdown.
 
-Editing `runs.json` directly stays the canonical path — the server is just a wrapper.
+Editing `runs.json` directly stays the canonical path — the server and recorder are just wrappers.
 
 ### When the user requests work
 

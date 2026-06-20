@@ -749,7 +749,13 @@ def _safe_int(v):
         return 0
 
 def _new_run(data, r):
-    """Append an agent run. Agent-agnostic: `agent` is a free string."""
+    """Append an agent run. Agent-agnostic: `agent` is a free string.
+
+    Optional cache_read_tokens/cache_write_tokens enable accurate component-based
+    cost (Claude transcripts are cache-heavy). session_id supports idempotent
+    auto-collection (skip if already recorded). All extra fields are additive —
+    runs.json stays append-only and backward compatible.
+    """
     run = {
         "task_id": r.get("task_id"),
         "agent": (r.get("agent") or "").strip(),
@@ -757,8 +763,11 @@ def _new_run(data, r):
         "tokens": _safe_int(r.get("tokens")),
         "input_tokens": r.get("input_tokens"),
         "output_tokens": r.get("output_tokens"),
+        "cache_read_tokens": r.get("cache_read_tokens"),
+        "cache_write_tokens": r.get("cache_write_tokens"),
         "time_seconds": r.get("time_seconds"),
         "commit": (r.get("commit") or "").strip(),
+        "session_id": (r.get("session_id") or "").strip(),
         "ts": (r.get("ts") or "").strip() or _now(),
     }
     data.setdefault("runs", []).append(run)
@@ -808,6 +817,42 @@ def _cost_per_token(agent, model):
             return rate
     return amap.get("_default", COST_PER_TOKEN["_default"])
 
+# Per-component $/token (PMF03, cost model A). Used when a run carries a token
+# breakdown (input/output/cache_read/cache_write) — accurate because Claude runs
+# are cache-dominated and cache reads cost ~10% of input.
+COMPONENT_RATES = {
+    "claude": {
+        "opus":     {"in": 0.000015, "out": 0.000075, "cw": 0.00001875, "cr": 0.0000015},
+        "sonnet":   {"in": 0.000003, "out": 0.000015, "cw": 0.00000375, "cr": 0.0000003},
+        "haiku":    {"in": 0.000001, "out": 0.000005, "cw": 0.00000125, "cr": 0.0000001},
+        "_default": {"in": 0.000003, "out": 0.000015, "cw": 0.00000375, "cr": 0.0000003},
+    },
+}
+
+def _component_rates(agent, model):
+    amap = COMPONENT_RATES.get((agent or "").lower())
+    if not amap:
+        return None
+    ml = (model or "").lower()
+    for key, rates in amap.items():
+        if key != "_default" and key in ml:
+            return rates
+    return amap.get("_default")
+
+def _run_cost(run):
+    """Cost of one run. Uses component rates when a breakdown is present,
+    else falls back to the blended flat rate on `tokens` (e.g. Codex/Gemini)."""
+    agent, model = run.get("agent"), run.get("model")
+    rates = _component_rates(agent, model)
+    has_breakdown = any(run.get(k) is not None for k in
+                        ("input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens"))
+    if rates and has_breakdown:
+        return (_safe_int(run.get("input_tokens")) * rates["in"]
+                + _safe_int(run.get("output_tokens")) * rates["out"]
+                + _safe_int(run.get("cache_read_tokens")) * rates["cr"]
+                + _safe_int(run.get("cache_write_tokens")) * rates["cw"])
+    return _safe_int(run.get("tokens")) * _cost_per_token(agent, model)
+
 def _get_velocity(kanban_dir):
     """Phase burndown + token cost stats. Tokens/cost derive from runs.json when present."""
     from collections import defaultdict
@@ -829,7 +874,7 @@ def _get_velocity(kanban_dir):
     def task_cost(t):
         rs = runs_by_task.get(t.get("id"))
         if rs:
-            return sum(_safe_int(r.get("tokens")) * _cost_per_token(r.get("agent"), r.get("model")) for r in rs)
+            return sum(_run_cost(r) for r in rs)
         return (t.get("tokens_used") or 0) * CLAUDE_COST_PER_TOKEN
 
     # ── Phase stats ──
@@ -888,7 +933,7 @@ def _get_velocity(kanban_dir):
         ag = r.get("agent") or "unknown"
         md = r.get("model") or "—"
         tok = _safe_int(r.get("tokens"))
-        c = tok * _cost_per_token(ag, md)
+        c = _run_cost(r)
         agent_tok[ag] += tok; agent_cost[ag] += c; agent_runs[ag] += 1
         mk = (ag, md)
         model_tok[mk] += tok; model_cost[mk] += c; model_runs[mk] += 1

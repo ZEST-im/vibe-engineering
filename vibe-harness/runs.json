@@ -1,16 +1,4 @@
 {
   "version": 1,
-  "runs": [
-    {
-      "task_id": 1,
-      "agent": "claude",
-      "model": "claude-opus-4-8",
-      "tokens": 480000,
-      "input_tokens": null,
-      "output_tokens": null,
-      "time_seconds": null,
-      "commit": "59675cc",
-      "ts": "2026-06-20T19:25:58"
-    }
-  ]
+  "runs": []
 }

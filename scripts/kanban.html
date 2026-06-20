@@ -1125,7 +1125,7 @@ function renderStats(){
       <div class="stats-panel">
         <div class="sp-label">🤖 에이전트별 토큰·비용${v.total_runs?` (${v.total_runs} runs)`:''}</div>
         ${agentHtml}
-        <div style="margin-top:8px;font-size:9px;color:var(--text-faint)">단가: Codex/GPT ~$6 · Claude Opus ~$30 / Sonnet ~$9 · Gemini ~$4 /MTok (블렌드 추정)</div>
+        <div style="margin-top:8px;font-size:9px;color:var(--text-faint)">비용: Claude는 입력/출력/캐시 종류별 단가로 정밀 계산(캐시 read ~10%). 그 외 에이전트는 블렌드 단가(Codex/GPT ~$6 · Gemini ~$4 /MTok).</div>
       </div>
     </div>`;
 }

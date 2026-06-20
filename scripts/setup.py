@@ -54,9 +54,20 @@ HOOKS = [
             "_id": "vibe-harness-stop-gate",
         },
     ),
+    (
+        "vibe-harness-token-collector.sh",
+        "SessionEnd",
+        {
+            "hooks": [{"type": "command", "command": os.path.join(HOOKS_DIR, "vibe-harness-token-collector.sh")}],
+            "_id": "vibe-harness-token-collector",
+        },
+    ),
 ]
 
 HOOK_IDS = {entry["_id"] for _, _, entry in HOOKS}
+
+# Helper scripts copied alongside hooks (not registered as hooks themselves).
+HOOK_HELPERS = ["vibe-harness-record-run.py"]
 
 
 def copy_server_files():
@@ -140,6 +151,15 @@ def install_hooks():
         os.chmod(dst, 0o755)
         print(f"  INSTALLED {script_name} → {dst}")
 
+    # Copy helper scripts (recorder used by the token-collector hook)
+    for helper in HOOK_HELPERS:
+        src = os.path.join(hooks_src_dir, helper)
+        dst = os.path.join(HOOKS_DIR, helper)
+        if os.path.exists(src):
+            shutil.copy2(src, dst)
+            os.chmod(dst, 0o755)
+            print(f"  INSTALLED {helper} → {dst}")
+
     # Register in settings.json
     settings = {}
     if os.path.exists(SETTINGS_PATH):
@@ -149,7 +169,7 @@ def install_hooks():
     hooks_cfg = settings.setdefault("hooks", {})
 
     # Remove any existing vibe-harness entries across all event types
-    for event in ("PreToolUse", "PostToolUse", "SessionStart", "Stop"):
+    for event in ("PreToolUse", "PostToolUse", "SessionStart", "Stop", "SessionEnd"):
         existing = hooks_cfg.get(event, [])
         hooks_cfg[event] = [h for h in existing if h.get("_id") not in HOOK_IDS]
 
@@ -177,6 +197,11 @@ def uninstall_hooks():
         if os.path.exists(dst):
             os.remove(dst)
             print(f"  REMOVED {dst}")
+    for helper in HOOK_HELPERS:
+        dst = os.path.join(HOOKS_DIR, helper)
+        if os.path.exists(dst):
+            os.remove(dst)
+            print(f"  REMOVED {dst}")
 
     # Remove from settings.json
     if not os.path.exists(SETTINGS_PATH):
@@ -188,7 +213,7 @@ def uninstall_hooks():
 
     hooks_cfg = settings.get("hooks", {})
     changed = False
-    for event in ("PreToolUse", "PostToolUse", "SessionStart", "Stop"):
+    for event in ("PreToolUse", "PostToolUse", "SessionStart", "Stop", "SessionEnd"):
         before = hooks_cfg.get(event, [])
         after = [h for h in before if h.get("_id") not in HOOK_IDS]
         if len(after) < len(before):
