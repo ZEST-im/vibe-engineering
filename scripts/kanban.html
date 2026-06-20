@@ -558,10 +558,11 @@ header {
 .phase-bar-fill { height:100%; background:var(--accent); border-radius:4px; transition:width .4s; }
 .phase-pct { font-size:11px; color:var(--accent); font-weight:700; min-width:36px; text-align:right; flex-shrink:0; }
 .phase-cost { font-size:10px; color:var(--purple); min-width:60px; text-align:right; flex-shrink:0; }
-.trend-bars { display:flex; align-items:flex-end; gap:3px; height:60px; }
-.trend-bar-wrap { flex:1; display:flex; flex-direction:column; align-items:center; gap:2px; }
+.trend-bars { display:flex; align-items:flex-end; gap:3px; overflow-x:auto; }
+.trend-col { flex:1 1 0; min-width:6px; display:flex; flex-direction:column; align-items:center; }
+.trend-bar-track { width:100%; height:64px; display:flex; align-items:flex-end; }
 .trend-bar { width:100%; background:var(--accent); border-radius:2px 2px 0 0; min-height:2px; transition:height .3s; }
-.trend-date { font-size:7px; color:var(--text-faint); writing-mode:vertical-rl; transform:rotate(180deg); white-space:nowrap; }
+.trend-date { font-size:7px; color:var(--text-faint); writing-mode:vertical-rl; transform:rotate(180deg); white-space:nowrap; margin-top:3px; }
 .cat-row { display:flex; align-items:center; gap:8px; padding:4px 0; font-size:11px; }
 .cat-row:not(:last-child) { border-bottom:1px solid var(--border); }
 .cat-name { min-width:80px; color:var(--text-dim); flex-shrink:0; }
@@ -1069,9 +1070,9 @@ function renderStats(){
   const maxCount=Math.max(1,...v.daily_trend.map(d=>d.count));
   const trendHtml=v.daily_trend.length
     ?`<div class="trend-bars">`+v.daily_trend.map(d=>{
-        const h=Math.max(4,Math.round(d.count/maxCount*56));
-        return `<div class="trend-bar-wrap" title="${d.date}: ${d.count}건">
-          <div class="trend-bar" style="height:${h}px"></div>
+        const pct=Math.max(3,Math.round(d.count/maxCount*100));
+        return `<div class="trend-col" title="${d.date}: ${d.count}건">
+          <div class="trend-bar-track"><div class="trend-bar" style="height:${pct}%"></div></div>
           <div class="trend-date">${d.date.slice(5)}</div>
         </div>`;
       }).join('')+`</div>`
