@@ -530,6 +530,54 @@ def _get_schema(kanban_dir):
     return {"tables": sorted(all_tables.values(), key=lambda t: t["name"]),
             "relationships": unique_rels, "files": file_info}
 
+# Phase-name extraction tolerant of format drift across projects.
+# Naming: PHASE_{SEED|MVP|PMF|SCALE|GTM|...}{NN} (per global rules), but real
+# CURRENT_PHASE.md files vary: some omit "## Now:", some bury the phase in an H1
+# title or a parallel-track table, some trail status emoji/slugs. We normalize.
+_PHASE_FULL = re.compile(r'PHASE_[A-Za-z0-9_]+')
+_PHASE_BARE = re.compile(r'\b(?:SEED|MVP|PMF|SCALE|GTM|HR|QUALITY)[A-Za-z]*\d+\b', re.IGNORECASE)
+
+def _normalize_phase(text):
+    """Pull a clean phase token out of one line of free text."""
+    if not text:
+        return ""
+    m = _PHASE_FULL.search(text)
+    if m:
+        return m.group(0)
+    m = _PHASE_BARE.search(text)
+    if m:
+        return m.group(0)
+    # No recognizable token — strip status emoji / trailing slug and return the head.
+    head = re.split(r'\s*[—/(]\s*|\s{2,}', text.strip())[0]
+    head = re.sub(r'[\U0001F000-\U0001FAFF☀-➿️]', '', head).strip()
+    return head
+
+def _extract_phase(content):
+    """Best-effort current-phase name from a CURRENT_PHASE.md body.
+
+    Priority: `## Now:` line → H1 title token → first PHASE_ token in the body
+    (preferring a line marked active with 🚧). Returns "" if nothing found.
+    """
+    lines = content.splitlines()
+    for line in lines:
+        m = re.match(r'^##\s*Now:\s*(.+)', line)
+        if m:
+            return _normalize_phase(m.group(1))
+    for line in lines:
+        if line.startswith('# '):
+            m = _PHASE_FULL.search(line) or _PHASE_BARE.search(line)
+            if m:
+                return m.group(0)
+    active, first = "", ""
+    for line in lines:
+        m = _PHASE_FULL.search(line)
+        if m:
+            if not first:
+                first = m.group(0)
+            if '🚧' in line and not active:
+                active = m.group(0)
+    return active or first
+
 def _get_context(kanban_dir):
     """Current session context: phase, scope, in-progress tasks, do-not-touch."""
     project_dir = os.path.dirname(os.path.abspath(kanban_dir))
@@ -548,10 +596,9 @@ def _get_context(kanban_dir):
     if phase_file:
         with open(phase_file, encoding="utf-8") as f:
             content = f.read()
+        phase_name = _extract_phase(content)
         section = None
         for line in content.splitlines():
-            m = re.match(r"^##\s*Now:\s*(.+)", line)
-            if m: phase_name = m.group(1).strip(); continue
             m = re.match(r"^##\s*Scope:\s*(.+)", line)
             if m: scope = m.group(1).strip(); continue
             if re.match(r"^##\s*Done when", line, re.IGNORECASE): section = "checklist"; continue
@@ -635,10 +682,8 @@ def _get_phase_check(kanban_dir):
     if phase_file:
         with open(phase_file, encoding="utf-8") as f:
             content = f.read()
+        phase_name = _extract_phase(content)
         for line in content.splitlines():
-            m = re.match(r"^##\s*Now:\s*(.+)", line)
-            if m:
-                phase_name = m.group(1).strip()
             chk = re.match(r"^- \[([ xX])\]\s*(.+)", line)
             if chk:
                 total_checks += 1
@@ -647,6 +692,8 @@ def _get_phase_check(kanban_dir):
         if unchecked:
             issues.append(f"Done when 미완료 {len(unchecked)}/{total_checks}: " +
                           ", ".join(unchecked[:3]) + ("..." if len(unchecked) > 3 else ""))
+        if not phase_name:
+            warnings.append("CURRENT_PHASE.md에서 Phase를 인식 못함 — '## Now: PHASE_xxx' 형식 권장")
     else:
         warnings.append("CURRENT_PHASE.md 없음 — 수동으로 확인하세요")
 
