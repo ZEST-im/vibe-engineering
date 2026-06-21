@@ -8,6 +8,9 @@ find_phase_file() {
   local dir="$1"
   local depth=0
   while [[ "$dir" != "/" && $depth -lt 6 ]]; do
+    if [[ -f "$dir/private/CURRENT_PHASE.md" ]]; then
+      echo "$dir/private/CURRENT_PHASE.md"; return 0
+    fi
     if [[ -f "$dir/CURRENT_PHASE.md" ]]; then
       echo "$dir/CURRENT_PHASE.md"; return 0
     fi
@@ -26,7 +29,8 @@ if [[ -z "$PHASE_FILE" ]]; then
 fi
 
 PROJECT=$(basename "$(dirname "$PHASE_FILE")")
-[[ "$PROJECT" == "docs" ]] && PROJECT=$(basename "$(dirname "$(dirname "$PHASE_FILE")")")
+# CURRENT_PHASE.md may live in private/ or docs/ — project name is one level up
+[[ "$PROJECT" == "docs" || "$PROJECT" == "private" ]] && PROJECT=$(basename "$(dirname "$(dirname "$PHASE_FILE")")")
 
 echo ""
 echo "┌─────────────────────────────────────────────────┐"

@@ -623,6 +623,7 @@ def _get_phase_check(kanban_dir):
     # 2. CURRENT_PHASE.md checklist
     phase_file = None
     for candidate in [
+        os.path.join(project_dir, "private", "CURRENT_PHASE.md"),
         os.path.join(project_dir, "CURRENT_PHASE.md"),
         os.path.join(project_dir, "docs", "CURRENT_PHASE.md"),
     ]:
@@ -650,8 +651,15 @@ def _get_phase_check(kanban_dir):
         warnings.append("CURRENT_PHASE.md 없음 — 수동으로 확인하세요")
 
     # 3. PHASES.md freshness
-    phases_file = os.path.join(project_dir, "PHASES.md")
-    if not os.path.exists(phases_file):
+    phases_file = next(
+        (p for p in (
+            os.path.join(project_dir, "private", "PHASES.md"),
+            os.path.join(project_dir, "PHASES.md"),
+            os.path.join(project_dir, "docs", "PHASES.md"),
+        ) if os.path.exists(p)),
+        None,
+    )
+    if not phases_file:
         warnings.append("PHASES.md 없음 — Phase 완료 기록을 남겨야 합니다")
 
     ready = len(issues) == 0
