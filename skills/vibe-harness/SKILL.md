@@ -96,7 +96,7 @@ These commands are convenience wrappers. They ultimately read and write the same
 
 At the start of a session, establish current mission context by reading the project files in this order. **Do not call the API and do not start the server just to do this.**
 
-1. **`docs/CURRENT_PHASE.md`** (if present) — current phase name, scope, `Done when` checklist, and the `Do NOT touch` block. This is the primary scope signal.
+1. **`CURRENT_PHASE.md`** (if present — checked in `private/`, then root, then `docs/`) — current phase name, scope, `Done when` checklist, and the `Do NOT touch` block. This is the primary scope signal.
 2. **`vibe-harness/kanban.json`** — check for any task with `status: "in_progress"`. If one exists, that is the active task; continue it instead of starting new work.
 3. **`vibe-harness/decisions.json`** — recent durable decisions that may constrain the work.
 4. **Optional**: if the Board UI server happens to be running already, you can hit `GET http://localhost:4242/api/{project_key}/context` for the same information in one call. Skip this step if the server is not up — do **not** spin it up just to fetch context.
@@ -107,7 +107,7 @@ From these, derive:
 - The `Do NOT touch` list (the scope-guard hook also enforces this — see Phase Management below)
 - Open checklist items
 
-If `docs/CURRENT_PHASE.md` doesn't exist, ask the user how they want to scope the session before creating new tasks.
+If no `CURRENT_PHASE.md` exists anywhere (`private/` / root / `docs/`) but the project already has kanban tasks, the session-start hook nudges you. Run `/vibe-harness phase init` to scaffold it, or ask the user how they want to scope the session before creating new tasks. Don't silently start work without a scope.
 
 ---
 
