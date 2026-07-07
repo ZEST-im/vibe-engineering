@@ -9,7 +9,16 @@ import json
 import os
 import sys
 import signal
-import fcntl
+try:
+    import fcntl
+except ImportError:
+    # Windows has no fcntl. flock becomes a no-op — the atomic .tmp→os.replace
+    # below is the real write guard, and this is a local single-user server.
+    class _FcntlShim:
+        LOCK_EX = LOCK_UN = 0
+        def flock(self, *args, **kwargs):
+            pass
+    fcntl = _FcntlShim()
 import re
 import glob as glob_module
 from datetime import datetime
@@ -17,6 +26,14 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
 import subprocess
+
+# Force UTF-8 console I/O so non-ASCII output (em-dash, Korean) survives on
+# Windows cp949 terminals. No-op where reconfigure is unavailable/unneeded.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
 
 SKILL_DIR = os.path.expanduser("~/.claude/skills/vibe-harness")
 CONFIG_PATH = os.path.join(SKILL_DIR, "projects.json")
@@ -36,13 +53,13 @@ def _git_user():
 
 def load_projects():
     if os.path.exists(CONFIG_PATH):
-        with open(CONFIG_PATH) as f:
+        with open(CONFIG_PATH, encoding="utf-8") as f:
             return json.load(f)
     return {}
 
 def save_projects(projects):
     os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
-    with open(CONFIG_PATH, "w") as f:
+    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(projects, f, indent=2, ensure_ascii=False)
 
 def register_project(key, name, kanban_dir):
@@ -73,7 +90,7 @@ def _read_kanban(kanban_dir):
     kp = _kanban_path(kanban_dir)
     if not os.path.exists(kp):
         return {"version": 1, "next_id": 1, "tasks": []}
-    with open(kp) as f:
+    with open(kp, encoding="utf-8") as f:
         data = json.load(f)
     if "next_id" not in data:
         max_id = max((t.get("id", 0) for t in data.get("tasks", [])), default=0)
@@ -84,7 +101,7 @@ def _write_kanban(kanban_dir, data):
     kp = _kanban_path(kanban_dir)
     os.makedirs(kanban_dir, exist_ok=True)
     tmp = kp + ".tmp"
-    with open(tmp, "w") as f:
+    with open(tmp, "w", encoding="utf-8") as f:
         fcntl.flock(f, fcntl.LOCK_EX)
         json.dump(data, f, indent=2, ensure_ascii=False)
         f.flush()
@@ -100,7 +117,7 @@ def _list_archives(kanban_dir):
     tasks = []
     for fname in sorted(os.listdir(adir)):
         if fname.endswith(".json"):
-            with open(os.path.join(adir, fname)) as f:
+            with open(os.path.join(adir, fname), encoding="utf-8") as f:
                 data = json.load(f)
                 tasks.extend(data.get("tasks", []))
     return tasks
@@ -121,13 +138,13 @@ def _archive_tasks(kanban_dir, tasks_to_archive):
         fpath = os.path.join(adir, f"{month}.json")
         existing = {"tasks": []}
         if os.path.exists(fpath):
-            with open(fpath) as f:
+            with open(fpath, encoding="utf-8") as f:
                 existing = json.load(f)
         existing_ids = {t["id"] for t in existing["tasks"]}
         for t in month_tasks:
             if t["id"] not in existing_ids:
                 existing["tasks"].append(t)
-        with open(fpath, "w") as f:
+        with open(fpath, "w", encoding="utf-8") as f:
             json.dump(existing, f, indent=2, ensure_ascii=False)
 
 def _new_task(data, fields):
@@ -735,14 +752,14 @@ def _read_decisions(kanban_dir):
     p = _decisions_path(kanban_dir)
     if not os.path.exists(p):
         return {"version": 1, "next_id": 1, "decisions": []}
-    with open(p) as f:
+    with open(p, encoding="utf-8") as f:
         return json.load(f)
 
 def _write_decisions(kanban_dir, data):
     p = _decisions_path(kanban_dir)
     os.makedirs(kanban_dir, exist_ok=True)
     tmp = p + ".tmp"
-    with open(tmp, "w") as f:
+    with open(tmp, "w", encoding="utf-8") as f:
         fcntl.flock(f, fcntl.LOCK_EX)
         json.dump(data, f, indent=2, ensure_ascii=False)
         f.flush()
@@ -782,14 +799,14 @@ def _read_runs(kanban_dir):
     p = _runs_path(kanban_dir)
     if not os.path.exists(p):
         return {"version": 1, "runs": []}
-    with open(p) as f:
+    with open(p, encoding="utf-8") as f:
         return json.load(f)
 
 def _write_runs(kanban_dir, data):
     p = _runs_path(kanban_dir)
     os.makedirs(kanban_dir, exist_ok=True)
     tmp = p + ".tmp"
-    with open(tmp, "w") as f:
+    with open(tmp, "w", encoding="utf-8") as f:
         fcntl.flock(f, fcntl.LOCK_EX)
         json.dump(data, f, indent=2, ensure_ascii=False)
         f.flush()

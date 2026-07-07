@@ -1,7 +1,28 @@
 {
   "version": 1,
-  "next_id": 21,
+  "next_id": 22,
   "tasks": [
+    {
+      "id": 21,
+      "title": "server.py 크로스플랫폼 대응 — Windows 지원 (상류 근본 해결)",
+      "description": "Windows에서 setup.py upgrade가 로컬 패치를 덮던 문제를, 상류 코드에 Windows 호환성을 넣어 근본 해결.",
+      "details": "## 배경\nWindows(ARM64)에서 vibe-harness 서버가 macOS/Unix 전용 API에 의존해 로컬 패치가 필요했고, `setup.py upgrade` 시마다 덮였다.\n\n## 변경 (scripts/server.py)\n1. `import fcntl` → try/except ImportError no-op 셰임. Windows엔 fcntl 없음; flock은 로컬 단일사용자라 no-op, `os.replace(tmp→dst)` 원자성이 실제 안전장치.\n2. stdout/stderr `reconfigure(encoding='utf-8')` — em대시·한글이 cp949 콘솔에서 깨지는 것 방지 (env var 불필요, 메모의 환경변수 기동보다 개선).\n3. 파일 open 11곳(읽기 6+쓰기 5)에 `encoding='utf-8'` 명시 — cp949 로케일에서 한글 JSON 읽기/쓰기 디코드 에러 방지 (메모에 없던 잠재 버그).\n\n## 검증\n- py_compile OK\n- fcntl 미존재 환경 import 시뮬레이션 성공 (flock no-op)\n- macOS 회귀: 임시포트 기동 200, em대시 로그 정상\n- 미지정 open 0건\n\n## 효과\nmacOS에선 동작상 no-op(완전 하위호환). Windows에선 upgrade 후 재패치 불필요.",
+      "status": "done",
+      "priority": "high",
+      "category": "infra",
+      "target_date": "",
+      "started_at": "2026-07-07 15:59:27",
+      "completed_at": "2026-07-07 15:59:27",
+      "lines_added": 29,
+      "lines_removed": 12,
+      "created_at": "2026-07-07 15:59:27",
+      "updated_at": "2026-07-07 15:59:27",
+      "position": 0,
+      "phase": "PHASE_PMF03",
+      "review": "",
+      "created_by": "zest.hogun",
+      "assigned_to": ""
+    },
     {
       "id": 20,
       "title": "하네스 강화 완료: 훅 4종 + setup.py + SKILL.md",
