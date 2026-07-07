@@ -1,15 +1,15 @@
 {
-  "name": "vibekanban",
+  "name": "vibe-harness",
   "version": "1.0.0",
-  "description": "Dev progress kanban board for Claude Code. Track tasks, code changes, and work reports with a local web UI — zero dependencies, pure Python.",
+  "description": "Dev progress harness for Claude Code — kanban board, phase management, scope guard, decision log, and real per-agent token/cost tracking. Local web UI, zero dependencies, pure Python.",
   "author": {
     "name": "Hogun Jung",
     "email": "info@zest.im",
     "url": "https://github.com/hoarchi"
   },
-  "homepage": "https://github.com/hoarchi/vibekanban",
-  "repository": "https://github.com/hoarchi/vibekanban",
+  "homepage": "https://github.com/hoarchi/vibe-harness",
+  "repository": "https://github.com/hoarchi/vibe-harness",
   "license": "MIT",
-  "keywords": ["kanban", "progress", "devlog", "tracking", "productivity", "project-management", "task-management"],
+  "keywords": ["kanban", "harness", "phase-management", "progress", "devlog", "tracking", "productivity", "project-management", "task-management", "token-tracking"],
   "skills": "./skills/"
 }
