@@ -216,6 +216,7 @@ Monthly archive files (`vibe-harness/archive/YYYY-MM.json`) are git-tracked. The
 | `/vibe-harness report` | Today's completed task summary |
 | `qq` | Session wrap-up: docs + kanban + no push |
 | `cc` | Full close: docs + kanban + commit + push + deploy |
+| `python3 ~/.claude/skills/vibe-harness/server.py sync` | Push configured remote snapshots now |
 
 ---
 
@@ -247,6 +248,41 @@ Auto-detects:
 | `db/migrations/*.sql` | Raw SQL migrations |
 
 Shows: column types, PK/FK/UQ/NN/DF badges, indexes, and Bezier FK relationship lines between tables.
+
+### Private remote dashboards
+
+Vibe Harness can push read-only snapshots to a private company dashboard after
+tasks, decisions, runs, or archives change. Local APIs remain bound to
+`127.0.0.1`; only the configured snapshot leaves the machine.
+
+Create `~/.claude/skills/vibe-harness/sync.json` with mode `0600`:
+
+```json
+{
+  "enabled": true,
+  "endpoint": "https://zest.im/api/internal/vibe-harness/sync",
+  "secret": "use-a-dedicated-random-upload-secret",
+  "dashboards": {
+    "ax-project": ["impactbook_ai"]
+  }
+}
+```
+
+Each dashboard receives one bundle containing the listed registered projects.
+Writes are debounced for 400 ms. Failed deliveries remain in
+`sync-pending.json` and retry after the next write or server restart.
+
+```bash
+chmod 600 ~/.claude/skills/vibe-harness/sync.json
+python3 ~/.claude/skills/vibe-harness/server.py sync
+```
+
+For a secret-safe interactive setup instead of editing JSON directly:
+
+```bash
+python3 ~/.claude/skills/vibe-harness/server.py configure-sync \
+  https://zest.im/api/internal/vibe-harness/sync ax-project impactbook_ai
+```
 
 ---
 

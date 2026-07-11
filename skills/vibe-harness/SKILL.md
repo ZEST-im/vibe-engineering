@@ -637,3 +637,28 @@ curl -X POST http://localhost:4242/api/{project}/import \
 - `~/.claude/skills/vibe-harness/projects.json` stores the project list used by the server
 - Each project's `vibe-harness/` directory should be git-tracked (kanban.json + decisions.json + archive/)
 - JSON writes — both server and direct edits — should use atomic file replacement (write to `.tmp`, then rename) for safety
+
+## Optional Remote Snapshot Sync
+
+Remote dashboards use an outbound, read-only snapshot publisher. Never expose
+the localhost server or reuse an end-user login token as the upload secret.
+
+Configuration: `~/.claude/skills/vibe-harness/sync.json` (chmod `600`):
+
+```json
+{
+  "enabled": true,
+  "endpoint": "https://example.com/api/internal/vibe-harness/sync",
+  "secret": "dedicated-upload-secret",
+  "dashboards": {"ax-project": ["impactbook_ai"]}
+}
+```
+
+- A write to tasks, decisions, or runs schedules a debounced bundle upload.
+- Archives are included with active tasks.
+- Failed uploads are persisted to `sync-pending.json` and retried.
+- Run `python3 ~/.claude/skills/vibe-harness/server.py sync` for a manual flush.
+- Run `server.py configure-sync <endpoint> <dashboard> <project_key>...` to
+  create the mode-0600 config without placing the secret in shell history.
+- Dashboard access control belongs to the receiving application; the publisher
+  only authenticates with its dedicated bearer secret.
