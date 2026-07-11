@@ -17,6 +17,7 @@ server.log
 private/
 .gstack/
 .rocketride/
+.vc/
 
 # Local secrets and external tool footprints
 .env

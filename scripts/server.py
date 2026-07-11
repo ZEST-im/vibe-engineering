@@ -9,6 +9,9 @@ import json
 import os
 import sys
 import signal
+import hashlib
+import threading
+import getpass
 try:
     import fcntl
 except ImportError:
@@ -24,6 +27,8 @@ import glob as glob_module
 from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
+from urllib import request as urllib_request
+from urllib import error as urllib_error
 
 import subprocess
 
@@ -37,6 +42,11 @@ for _stream in (sys.stdout, sys.stderr):
 
 SKILL_DIR = os.path.expanduser("~/.claude/skills/vibe-harness")
 CONFIG_PATH = os.path.join(SKILL_DIR, "projects.json")
+SYNC_CONFIG_PATH = os.environ.get(
+    "VIBE_HARNESS_SYNC_CONFIG",
+    os.path.join(SKILL_DIR, "sync.json"),
+)
+SYNC_PENDING_PATH = os.path.join(SKILL_DIR, "sync-pending.json")
 
 def _git_user():
     """Get git user.name, cached after first call."""
@@ -108,6 +118,7 @@ def _write_kanban(kanban_dir, data):
         os.fsync(f.fileno())
         fcntl.flock(f, fcntl.LOCK_UN)
     os.replace(tmp, kp)
+    _schedule_remote_sync(kanban_dir)
 
 def _list_archives(kanban_dir):
     """Load all archived tasks."""
@@ -766,6 +777,7 @@ def _write_decisions(kanban_dir, data):
         os.fsync(f.fileno())
         fcntl.flock(f, fcntl.LOCK_UN)
     os.replace(tmp, p)
+    _schedule_remote_sync(kanban_dir)
 
 def _new_decision(data, d):
     dec = {
@@ -813,6 +825,7 @@ def _write_runs(kanban_dir, data):
         os.fsync(f.fileno())
         fcntl.flock(f, fcntl.LOCK_UN)
     os.replace(tmp, p)
+    _schedule_remote_sync(kanban_dir)
 
 def _safe_int(v):
     try:
@@ -986,6 +999,19 @@ def _get_velocity(kanban_dir):
                 daily[cd] += 1
     daily_trend = [{"date": k, "count": v} for k, v in sorted(daily.items())[-30:]]
 
+    # ── Daily token usage (runs.json, last 30 recorded days) ──
+    daily_tokens = defaultdict(int)
+    daily_cost = defaultdict(float)
+    for r in runs:
+        day = str(r.get("ts") or "")[:10]
+        if day:
+            daily_tokens[day] += _safe_int(r.get("tokens"))
+            daily_cost[day] += _run_cost(r)
+    daily_token_trend = [
+        {"date": day, "tokens": daily_tokens[day], "cost_usd": round(daily_cost[day], 4)}
+        for day in sorted(daily_tokens)[-30:]
+    ]
+
     # ── Category token breakdown ──
     cat_tokens = defaultdict(int)
     cat_cost = defaultdict(float)
@@ -1023,6 +1049,7 @@ def _get_velocity(kanban_dir):
     return {
         "phases": phases,
         "daily_trend": daily_trend,
+        "daily_token_trend": daily_token_trend,
         "category_breakdown": category_breakdown,
         "agent_breakdown": agent_breakdown,
         "model_breakdown": model_breakdown,
@@ -1032,6 +1059,237 @@ def _get_velocity(kanban_dir):
         "total_tasks": len(all_tasks),
         "total_done": sum(1 for t in all_tasks if t.get("status") == "done"),
     }
+
+
+# ── Remote dashboard snapshot sync ──────────────────
+
+_sync_lock = threading.Lock()
+_sync_timer = None
+_sync_dirty_dirs = set()
+_mission_watch_interval = 1.0
+
+
+def _load_sync_config():
+    """Load optional remote sync config. Missing/disabled config is a no-op.
+
+    Format:
+      {"enabled": true, "endpoint": "https://.../sync", "secret": "...",
+       "dashboards": {"ax-project": ["zesty-os", "zestim"]}}
+    """
+    if not os.path.exists(SYNC_CONFIG_PATH):
+        return None
+    try:
+        with open(SYNC_CONFIG_PATH, encoding="utf-8") as f:
+            cfg = json.load(f)
+        if not cfg.get("enabled", True):
+            return None
+        if not str(cfg.get("endpoint", "")).startswith(("https://", "http://localhost", "http://127.0.0.1")):
+            return None
+        if not cfg.get("secret") or not isinstance(cfg.get("dashboards"), dict):
+            return None
+        return cfg
+    except (OSError, ValueError, TypeError):
+        return None
+
+
+def _project_key_for_dir(kanban_dir):
+    target = os.path.abspath(kanban_dir)
+    for key, info in load_projects().items():
+        if os.path.abspath(info.get("kanban_dir", "")) == target:
+            return key
+    return None
+
+
+def _snapshot_source(key, info):
+    kanban_dir = info.get("kanban_dir", "")
+    data = _read_kanban(kanban_dir)
+    tasks = data.get("tasks", []) + _list_archives(kanban_dir)
+    tasks.sort(key=lambda t: (t.get("position", 0), str(t.get("id", 0))))
+    decisions = _read_decisions(kanban_dir).get("decisions", [])
+    return {
+        "key": key,
+        "name": info.get("name") or key,
+        "context": _get_context(kanban_dir),
+        "tasks": tasks,
+        "decisions": decisions,
+        "velocity": _get_velocity(kanban_dir),
+        "schema": _get_schema(kanban_dir),
+    }
+
+
+def _build_dashboard_snapshot(dashboard, project_keys):
+    projects = load_projects()
+    sources = []
+    for key in project_keys:
+        info = projects.get(key)
+        if info and os.path.isdir(info.get("kanban_dir", "")):
+            sources.append(_snapshot_source(key, info))
+    body = {
+        "schema_version": 1,
+        "dashboard": dashboard,
+        "generated_at": _now(),
+        "sources": sources,
+    }
+    canonical = json.dumps(body, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    body["revision"] = hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
+    return body
+
+
+def _atomic_json(path, data):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
+
+
+def _read_pending_sync():
+    try:
+        with open(SYNC_PENDING_PATH, encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _post_snapshot(cfg, payload):
+    raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    req = urllib_request.Request(
+        cfg["endpoint"],
+        data=raw,
+        headers={
+            "Authorization": "Bearer " + cfg["secret"],
+            "Content-Type": "application/json",
+            "User-Agent": "Vibe-Harness-Sync/1",
+        },
+        method="POST",
+    )
+    with urllib_request.urlopen(req, timeout=10) as resp:
+        if not 200 <= resp.status < 300:
+            raise RuntimeError("sync HTTP " + str(resp.status))
+
+
+def _sync_worker(dirty_dirs):
+    cfg = _load_sync_config()
+    if not cfg:
+        return
+    changed_keys = {_project_key_for_dir(d) for d in dirty_dirs}
+    changed_keys.discard(None)
+    pending = _read_pending_sync()
+    dashboards = cfg.get("dashboards", {})
+    for dashboard, keys in dashboards.items():
+        if not isinstance(keys, list):
+            continue
+        # Empty dirty set means startup/manual flush. Otherwise only rebuild affected bundles.
+        if changed_keys and not changed_keys.intersection(keys):
+            continue
+        pending[dashboard] = _build_dashboard_snapshot(dashboard, keys)
+
+    completed = []
+    for dashboard, payload in list(pending.items()):
+        try:
+            _post_snapshot(cfg, payload)
+            completed.append(dashboard)
+        except (OSError, urllib_error.URLError, urllib_error.HTTPError, RuntimeError) as exc:
+            print(f"  Sync pending ({dashboard}): {type(exc).__name__}", file=sys.stderr)
+    for dashboard in completed:
+        pending.pop(dashboard, None)
+
+    if pending:
+        _atomic_json(SYNC_PENDING_PATH, pending)
+        try:
+            os.chmod(SYNC_PENDING_PATH, 0o600)
+        except OSError:
+            pass
+    elif os.path.exists(SYNC_PENDING_PATH):
+        try:
+            os.remove(SYNC_PENDING_PATH)
+        except OSError:
+            pass
+
+
+def _run_scheduled_sync():
+    global _sync_timer
+    with _sync_lock:
+        dirty = set(_sync_dirty_dirs)
+        _sync_dirty_dirs.clear()
+        _sync_timer = None
+    _sync_worker(dirty)
+
+
+def _schedule_remote_sync(kanban_dir=None, delay=0.4):
+    """Debounce writes and sync in a daemon thread so local API stays responsive."""
+    global _sync_timer
+    if not _load_sync_config():
+        return
+    with _sync_lock:
+        if kanban_dir:
+            _sync_dirty_dirs.add(os.path.abspath(kanban_dir))
+        if _sync_timer:
+            _sync_timer.cancel()
+        _sync_timer = threading.Timer(delay, _run_scheduled_sync)
+        _sync_timer.daemon = True
+        _sync_timer.start()
+
+
+def _mission_paths(kanban_dir):
+    """Mission files whose contents feed the remote context snapshot."""
+    project_dir = os.path.dirname(os.path.abspath(kanban_dir))
+    return [
+        os.path.join(project_dir, "private", "CURRENT_PHASE.md"),
+        os.path.join(project_dir, "docs", "CURRENT_PHASE.md"),
+        os.path.join(project_dir, "CURRENT_PHASE.md"),
+    ]
+
+
+def _mission_fingerprint(kanban_dir):
+    """Cheap signature that also detects creation, replacement, and deletion."""
+    signature = []
+    for path in _mission_paths(kanban_dir):
+        try:
+            stat = os.stat(path)
+            signature.append((path, stat.st_mtime_ns, stat.st_size))
+        except OSError:
+            signature.append((path, None, None))
+    return tuple(signature)
+
+
+def _watch_mission_files():
+    """Poll configured projects and debounce-sync direct Mission file edits."""
+    previous = {}
+    while True:
+        cfg = _load_sync_config()
+        projects = load_projects()
+        watched_keys = {
+            key
+            for keys in (cfg or {}).get("dashboards", {}).values()
+            if isinstance(keys, list)
+            for key in keys
+        }
+        current = {}
+        for key in watched_keys:
+            info = projects.get(key) or {}
+            kanban_dir = info.get("kanban_dir", "")
+            if not kanban_dir:
+                continue
+            fingerprint = _mission_fingerprint(kanban_dir)
+            current[key] = fingerprint
+            if key in previous and previous[key] != fingerprint:
+                _schedule_remote_sync(kanban_dir)
+        previous = current
+        threading.Event().wait(_mission_watch_interval)
+
+
+def _start_mission_watcher():
+    watcher = threading.Thread(
+        target=_watch_mission_files,
+        name="vibe-harness-mission-watch",
+        daemon=True,
+    )
+    watcher.start()
+    return watcher
 
 
 # ── Handler ─────────────────────────────────────────
@@ -1330,6 +1588,39 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     port = 4242
 
+    if len(sys.argv) > 1 and sys.argv[1] == "configure-sync":
+        if len(sys.argv) < 5:
+            print("Usage: server.py configure-sync <endpoint> <dashboard> <project_key> [project_key...]", file=sys.stderr)
+            raise SystemExit(2)
+        secret = os.environ.get("VIBE_HARNESS_SYNC_SECRET") or getpass.getpass("Upload secret: ")
+        if not secret:
+            print("Upload secret is required", file=sys.stderr)
+            raise SystemExit(2)
+        cfg = {
+            "enabled": True,
+            "endpoint": sys.argv[2],
+            "secret": secret,
+            "dashboards": {sys.argv[3]: sys.argv[4:]},
+        }
+        _atomic_json(SYNC_CONFIG_PATH, cfg)
+        try:
+            os.chmod(SYNC_CONFIG_PATH, 0o600)
+        except OSError:
+            pass
+        print(f"Remote sync configured: {SYNC_CONFIG_PATH}")
+        return
+
+    if len(sys.argv) > 1 and sys.argv[1] == "sync":
+        if not _load_sync_config():
+            print(f"Remote sync is not configured: {SYNC_CONFIG_PATH}", file=sys.stderr)
+            raise SystemExit(2)
+        _sync_worker(set())
+        if os.path.exists(SYNC_PENDING_PATH):
+            print(f"Remote sync failed; pending snapshot: {SYNC_PENDING_PATH}", file=sys.stderr)
+            raise SystemExit(1)
+        print("Remote sync complete")
+        return
+
     if len(sys.argv) > 1 and sys.argv[1] == "register":
         key = sys.argv[2]
         name = sys.argv[3] if len(sys.argv) > 3 else key
@@ -1373,6 +1664,11 @@ def main():
     print(f"Vibe Harness v5 — http://localhost:{port}/kanban")
     print(f"  Projects: {', '.join(projects.keys()) if projects else '(none)'}")
     print(f"  Storage: JSON (git-friendly)")
+    if _load_sync_config():
+        print(f"  Remote sync: enabled ({SYNC_CONFIG_PATH})")
+        _schedule_remote_sync(delay=0.1)
+        _start_mission_watcher()
+        print("  Mission watch: enabled (1s polling)")
     print(f"  Ctrl+C to stop")
     sys.stdout.flush()
     server.serve_forever()
