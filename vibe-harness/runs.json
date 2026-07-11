@@ -1,4 +1,33 @@
 {
   "version": 1,
-  "runs": []
+  "runs": [
+    {
+      "task_id": null,
+      "agent": "claude",
+      "model": "claude-opus-4-8",
+      "tokens": 91056417,
+      "input_tokens": 66630,
+      "output_tokens": 553209,
+      "cache_read_tokens": 86381909,
+      "cache_write_tokens": 4054669,
+      "time_seconds": null,
+      "commit": "030afa5",
+      "session_id": "71a08bd7-b829-4333-9a42-c0ddf7b39df1",
+      "ts": "2026-07-07T16:30:21"
+    },
+    {
+      "task_id": null,
+      "agent": "claude",
+      "model": "claude-fable-5",
+      "tokens": 777489,
+      "input_tokens": 13932,
+      "output_tokens": 10187,
+      "cache_read_tokens": 701354,
+      "cache_write_tokens": 52016,
+      "time_seconds": null,
+      "commit": "030afa5",
+      "session_id": "7d886a6b-c069-40df-add2-3eae529b8efa",
+      "ts": "2026-07-10T18:56:48"
+    }
+  ]
 }

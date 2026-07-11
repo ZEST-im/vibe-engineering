@@ -92,6 +92,34 @@ You can skip setup entirely if you only want to edit the JSON files directly —
 
 These commands are convenience wrappers. They ultimately read and write the same JSON files an agent would edit directly.
 
+## Shorthand Commands (user types these directly)
+
+Three two-letter shorthands cover the daily rhythm — sync at session start (`ss`), wrap up at day end (`qq`), ship when ready (`cc`). When the user types one of these as a bare message, run the corresponding procedure.
+
+### `ss` — sync & status
+
+Check this repo's remote and pull everything, branches included:
+
+1. `git fetch --all --prune --tags` — refresh remote branches/tags, prune deleted ones.
+2. Fast-forward pull the current branch. Fast-forward other local tracking branches too (`git fetch origin <branch>:<branch>`). Never auto-merge a diverged branch — report it instead.
+3. Report: current branch + ahead/behind vs remote, remote branch list (flag unmerged ones), uncommitted files (`git status`), and a summary of newly pulled commits if any.
+4. If the pull changed harness code (`scripts/`), check whether the installed copies (`~/.claude/skills/vibe-harness/`) and any running server need updating, and tell the user.
+
+### `qq` — daily wrap-up (no commit)
+
+1. Print kanban summary (today's done, in-progress, tomorrow's tasks) — derived from kanban.json.
+2. Update any in-progress task's `details` with an interim report; write `details` on done tasks that lack them.
+3. Update phase docs only when warranted: `PHASES.md` on phase completion, `CURRENT_PHASE.md` on scope / Known Issues change.
+4. **Code review** on uncommitted + unpushed changes (see Code Review section).
+5. No commit, no push — `qq` is documentation only. Do NOT touch PROGRESS.md — kanban replaces it.
+
+### `cc` — commit + push (+ deploy check)
+
+1. Everything `qq` does (skip whatever is already clean).
+2. `git add` + `git commit` — code and its related docs (kanban.json included) go in ONE commit, never split.
+3. `git push origin main`.
+4. If the project has CI/CD wired to push, check build/deploy status after pushing and report it. Avoid docs-only pushes on CI/CD-triggering repos.
+
 ## Session Start (Claude should follow)
 
 At the start of a session, establish current mission context by reading the project files in this order. **Do not call the API and do not start the server just to do this.**
@@ -266,10 +294,7 @@ Prefer **actual** usage: if you logged a run in `runs.json`, set `tokens_used` t
 
 ### On `qq` (daily wrap-up)
 
-1. Print kanban summary (today's done, in-progress, tomorrow's tasks) — derived from kanban.json.
-2. Update any in-progress task's `details` with an interim report.
-3. **Code review** on uncommitted + unpushed changes (see Code Review section).
-4. Do NOT touch PROGRESS.md — kanban replaces it.
+See **Shorthand Commands** above — `ss` / `qq` / `cc` procedures are defined there.
 
 ---
 

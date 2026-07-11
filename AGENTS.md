@@ -30,6 +30,11 @@ If this project is not yet registered:
 python3 ~/.claude/skills/vibe-harness/server.py register vibe-harness "Vibe Harness" "$(pwd)/vibe-harness"
 ```
 
+When the user types `ss` (sync & status):
+1. `git fetch --all --prune --tags`
+2. Fast-forward pull the current branch; fast-forward other local tracking branches (`git fetch origin <branch>:<branch>`). Never auto-merge a diverged branch — report it.
+3. Report: ahead/behind vs remote, remote branch list, uncommitted files, newly pulled commits.
+
 ---
 
 ## Scope Rules
