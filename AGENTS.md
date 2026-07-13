@@ -83,9 +83,15 @@ curl -X PUT http://localhost:4242/api/vibe-harness/tasks/<id> \
     "status": "done",
     "lines_added": <N>,
     "lines_removed": <N>,
+    "created_by": "<git config user.name>",
+    "assigned_to": "<git config user.name>",
     "details": "## Changes\n- file: what changed\n\n## Decisions\n- why X over Y"
   }'
 ```
+
+`created_by`/`assigned_to` are ALWAYS required — also when a task is recorded
+directly as `done` in one step. Use the **human** user name (`git config user.name`),
+never an agent name (`codex`, `claude`) — agent attribution goes in `runs.json`.
 
 ---
 
