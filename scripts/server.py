@@ -25,6 +25,9 @@ except ImportError:
 import re
 import glob as glob_module
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
+KST = ZoneInfo("Asia/Seoul")
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 from urllib import request as urllib_request
@@ -82,7 +85,27 @@ def register_project(key, name, kanban_dir):
 # ── JSON Storage ───────────────────────────────────
 
 def _now():
-    return datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+    # KST-aware ISO (e.g. 2026-07-13T09:00:00+09:00). datetime.now(KST) yields the
+    # correct Seoul wall-clock on ANY host (local KST Mac or a UTC cloud runner), so
+    # date buckets never drift a day just because a run was recorded off-KST.
+    return datetime.now(KST).isoformat(timespec="seconds")
+
+
+def _kst_ymd(ts):
+    """KST calendar date (YYYY-MM-DD) for an ISO timestamp.
+    tz-aware timestamps are converted to Asia/Seoul; naive legacy timestamps
+    (ambiguous source tz — some are UTC cloud runs, some KST local) are taken
+    as-is to avoid mis-shifting them the wrong way."""
+    if not ts:
+        return ""
+    s = str(ts)
+    try:
+        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+    except ValueError:
+        return s[:10]
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(KST)
+    return dt.strftime("%Y-%m-%d")
 
 def _kanban_path(kanban_dir):
     return os.path.join(kanban_dir, "kanban.json")
@@ -971,9 +994,9 @@ def _get_velocity(kanban_dir):
         phase_map[ph]["total"] += 1
         if t.get("status") == "done":
             phase_map[ph]["done"] += 1
-            cd = t.get("completed_at") or t.get("updated_at") or ""
+            cd = _kst_ymd(t.get("completed_at") or t.get("updated_at") or "")
             if cd:
-                phase_map[ph]["dates"].append(cd[:10])
+                phase_map[ph]["dates"].append(cd)
         phase_map[ph]["tokens"] += task_tokens(t)
         phase_map[ph]["cost"] += task_cost(t)
 
@@ -994,7 +1017,7 @@ def _get_velocity(kanban_dir):
     daily = defaultdict(int)
     for t in all_tasks:
         if t.get("status") == "done":
-            cd = (t.get("completed_at") or t.get("updated_at") or "")[:10]
+            cd = _kst_ymd(t.get("completed_at") or t.get("updated_at") or "")
             if cd:
                 daily[cd] += 1
     daily_trend = [{"date": k, "count": v} for k, v in sorted(daily.items())[-30:]]
@@ -1003,7 +1026,7 @@ def _get_velocity(kanban_dir):
     daily_tokens = defaultdict(int)
     daily_cost = defaultdict(float)
     for r in runs:
-        day = str(r.get("ts") or "")[:10]
+        day = _kst_ymd(r.get("ts") or "")
         if day:
             daily_tokens[day] += _safe_int(r.get("tokens"))
             daily_cost[day] += _run_cost(r)

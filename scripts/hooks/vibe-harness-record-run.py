@@ -33,8 +33,11 @@ SERVER = "http://localhost:4242"
 
 
 def _now():
+    # KST-aware ISO (…+09:00). datetime.now(KST) is correct on any host, so runs
+    # recorded from a UTC cloud runner don't land in the wrong day's bucket.
     from datetime import datetime
-    return datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+    from zoneinfo import ZoneInfo
+    return datetime.now(ZoneInfo("Asia/Seoul")).isoformat(timespec="seconds")
 
 
 def _git(args, cwd):
