@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "next_id": 32,
+  "next_id": 33,
   "tasks": [
     {
       "id": 21,
@@ -661,6 +661,27 @@
       "review": "",
       "created_by": "hoarchi",
       "assigned_to": "hoarchi"
+    },
+    {
+      "id": 32,
+      "title": "담당자 필드 필수 규칙 추가 — done 직행 기록 시 created_by/assigned_to 강제",
+      "description": "",
+      "details": "impactbook 담당자 누락 사고(빈값 60건·에이전트명 오기록 20건) 재발 방지. SKILL.md: ①직접 편집 규칙에 'Owner fields ALWAYS required' 항목 — 사람 필드에 human 이름만(git config user.name), 에이전트명 금지(runs.json agent로 귀속), done 직행 기록 시 assigned_to 명시 ②Multi-User 자동기록 규칙에 3·4번 항목 추가. AGENTS.md: 완료 curl 예시에 created_by/assigned_to 포함 + 규칙 명문화. 설치본 동기화 완료.",
+      "status": "done",
+      "priority": "medium",
+      "category": "docs",
+      "target_date": "",
+      "started_at": "2026-07-13T14:20:00+09:00",
+      "completed_at": "2026-07-13T14:20:00+09:00",
+      "lines_added": 12,
+      "lines_removed": 3,
+      "tokens_used": 0,
+      "created_by": "hogun",
+      "assigned_to": "hogun",
+      "created_at": "2026-07-13T14:20:00+09:00",
+      "updated_at": "2026-07-13T14:20:00+09:00",
+      "position": 0,
+      "phase": "PHASE_PMF04"
     }
   ]
 }

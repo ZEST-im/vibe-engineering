@@ -185,7 +185,8 @@ The default path for an agent is to read and edit `vibe-harness/kanban.json` and
   - `updated_at`: bump on every field change.
   - `started_at`: set when status first transitions to `in_progress`. Leave alone on subsequent transitions back into `in_progress` unless you're explicitly restarting.
   - `completed_at`: set when status transitions to `done`. Clear it if a done task is reopened.
-- **Required fields on creation**: `id`, `title`, `status`, `category`, `created_at`, `updated_at`. Everything else can default to empty/0/null.
+- **Required fields on creation**: `id`, `title`, `status`, `category`, `created_at`, `updated_at`, `created_by`. Everything else can default to empty/0/null.
+- **Owner fields are ALWAYS required — including direct-to-done records**: `created_by` and `assigned_to` hold the **human** user (`git config user.name`), never an agent name (`claude`, `codex`, …) — agent attribution lives in `runs.json` `agent`. When a task is recorded retroactively as `done` in one step (wrap-up style), the start-transition trigger never fires, so set `assigned_to` explicitly at that moment. An unassigned done task is a recording bug.
 - **On completion (`status: "done"`)**: also record:
   - `lines_added`, `lines_removed` — from `git diff --numstat` for files changed in this task.
   - `details` — work report: changed files, key decisions, follow-ups.
@@ -506,8 +507,10 @@ Vibe-Harness uses JSON files for storage — fully git-friendly.
 
 1. On task creation → set `created_by` to `git config user.name`
 2. On start → set `assigned_to` to current user
-3. On `in_progress` enforcement → only move **your own** prior in_progress tasks back to `todo`, never someone else's
-4. Periodically archive done tasks (`/vibe-harness archive`) to keep kanban.json small
+3. **On direct-to-done recording** (task created retroactively as `done`) → set BOTH `created_by` and `assigned_to`; the start trigger never fires for these
+4. Human fields hold human names only — never write agent names (`claude`, `codex`) into `created_by`/`assigned_to`; agents are attributed via `runs.json` `agent`
+5. On `in_progress` enforcement → only move **your own** prior in_progress tasks back to `todo`, never someone else's
+6. Periodically archive done tasks (`/vibe-harness archive`) to keep kanban.json small
 
 ---
 
