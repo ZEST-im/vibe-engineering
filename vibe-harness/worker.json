@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "lease_ttl_seconds": 120,
+  "heartbeat_seconds": 30,
+  "max_attempts": 2,
+  "approval": {
+    "default": "required",
+    "auto_complete_categories": ["docs", "test"],
+    "always_require_categories": ["database", "security", "deploy"]
+  },
+  "test_gate": {
+    "commands": [
+      {
+        "argv": ["python3", "-m", "unittest", "discover", "-s", "tests"],
+        "timeout_seconds": 300
+      }
+    ]
+  },
+  "adapters": {}
+}

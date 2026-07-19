@@ -75,7 +75,7 @@ python3 scripts/setup.py
 
 This does four things:
 
-1. Copies `server.py`, `kanban.html`, `SKILL.md` → `~/.claude/skills/vibe-harness/`
+1. Copies `server.py`, `vibe_runtime.py`, `worker.py`, `kanban.html`, `SKILL.md` → `~/.claude/skills/vibe-harness/`
 2. Installs a macOS LaunchAgent — server auto-starts on login at port 4242
 3. Registers a code review hook in `~/.claude/settings.json`
 4. Migrates old project registry if upgrading from a prior version
@@ -100,7 +100,7 @@ python3 ~/.claude/skills/vibe-harness/server.py register my_project "My Project"
 python3 ~/.claude/skills/vibe-harness/setup.py upgrade
 ```
 
-Downloads the latest `server.py`, `kanban.html`, `SKILL.md`, and `setup.py` itself from GitHub, then restarts the server. No repo pull needed.
+Downloads the latest server, Worker runtime, UI, skill, and setup files from GitHub, then restarts the server. No repo pull needed.
 
 **First time upgrading from an older install?**
 
@@ -187,18 +187,24 @@ Monthly archive files (`vibe-harness/archive/YYYY-MM.json`) are git-tracked. The
 ~/.claude/skills/vibe-harness/
   SKILL.md           ← Claude reads this to know the commands
   server.py          ← HTTP server: API + static serving
+  vibe_runtime.py    ← atomic lease, policy, credentials, test gate primitives
+  worker.py          ← local polling Worker + isolated Git worktree execution
   kanban.html        ← Single-file vanilla JS UI
   projects.json      ← Project registry (which boards exist)
   server.log         ← Server stdout
 
 {project}/vibe-harness/
   kanban.json              ← Active tasks
+  worker.json              ← Tracked Worker/test/approval policy
+  runtime.json             ← Ignored current leases and executions
+  runs.json                ← Append-only terminal run usage/history
   archive/
     2026-03.json           ← Monthly archives (git-tracked)
     2026-04.json
 
 ~/Library/LaunchAgents/com.vibe-harness.server.plist   ← Auto-start
 ~/.claude/hooks/vibe-harness-review.sh                 ← Review hook
+~/.claude/skills/vibe-harness/runtime-locks/            ← Atomic per-project locks
 ```
 
 ---
@@ -217,6 +223,51 @@ Monthly archive files (`vibe-harness/archive/YYYY-MM.json`) are git-tracked. The
 | `qq` | Session wrap-up: docs + kanban + no push |
 | `cc` | Full close: docs + kanban + commit + push + deploy |
 | `python3 ~/.claude/skills/vibe-harness/server.py sync` | Push configured remote snapshots now |
+
+---
+
+## Managed Worker Runtime
+
+Vibe Harness can optionally claim `todo` tasks and run a configured agent in an
+isolated Git worktree. This layer is opt-in: installing it does not start an
+agent or execute a command.
+
+1. Add `vibe-harness/worker.json` using [the Worker protocol](docs/WORKER_PROTOCOL.md).
+2. Configure a real, shell-free adapter argv and test-gate commands.
+3. Start one Worker:
+
+```bash
+python3 ~/.claude/skills/vibe-harness/worker.py impactbook_ai \
+  --project-root "$PWD" --agent codex
+```
+
+Run one specific task once:
+
+```bash
+python3 ~/.claude/skills/vibe-harness/worker.py impactbook_ai \
+  --project-root "$PWD" --agent codex --task-id 243 --once
+```
+
+The Worker creates a unique `run_id`, claims one atomic lease, sends heartbeats,
+and submits the resulting worktree to the server. The server—not the model—runs
+the configured test gate. A managed task cannot become `done` unless that gate
+passes. Failed runs return to `todo` until `max_attempts` is exhausted, then move
+to `review`. Categories requiring human approval also stop in `review`.
+
+Runtime API:
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/{project}/runtime` | Sanitized active leases, runs, and policy |
+| `POST /api/{project}/worker/claim` | Atomic todo claim |
+| `POST /api/{project}/worker/heartbeat` | Extend lease |
+| `POST /api/{project}/worker/complete` | Execute test gate and finish |
+| `POST /api/{project}/worker/fail` | Record failure and retry/review |
+| `POST /api/{project}/runtime/action` | Approve, reject, retry, or cancel |
+
+Lease tokens are stored only as hashes and never included in snapshots. Remote
+approval uses five-second authenticated polling over the existing sync endpoint;
+the localhost API remains private and no WebSocket/SSE is used.
 
 ---
 

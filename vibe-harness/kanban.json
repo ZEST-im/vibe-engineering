@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "next_id": 33,
+  "next_id": 34,
   "tasks": [
     {
       "id": 21,
@@ -682,6 +682,28 @@
       "updated_at": "2026-07-13T14:20:00+09:00",
       "position": 0,
       "phase": "PHASE_PMF04"
+    },
+    {
+      "id": 33,
+      "title": "Thin agent execution layer 구현",
+      "description": "atomic lease·worker·test gate·retry/review·zest.im 승인까지 end-to-end 구현",
+      "details": "## Changes\n- scripts/vibe_runtime.py: hashed lease credentials, cross-process atomic runtime state, safe argv test gate, policy loading\n- scripts/server.py: atomic claim/heartbeat/expiry, run_id terminal append, retry/review/approval state machine, managed done guard, runtime snapshot and remote command polling\n- scripts/worker.py: polling Worker, isolated Git worktree, heartbeat, adapter execution and Git change evidence\n- tests/test_runtime.py: concurrency, recovery, gate, approval, HTTP and real CLI E2E 12 cases\n- zestim: Runtime tab, admin action API, authenticated command queue, concurrency-safe GCS/local JSON updates\n- docs/setup/skill: Worker protocol, policy, installation and safety rules\n\n## Decisions\n- Kanban/Phase/Decision remain authoritative; runtime.json holds ephemeral execution control only\n- runs.json remains append-only with one terminal record per run_id\n- server executes tests itself; agent claims are never trusted\n- remote approval uses authenticated 5s polling, not WebSocket/SSE\n- project lock files live outside repositories\n\n## Verification\n- Python unittest 12/12 PASS\n- real Worker CLI + isolated Git worktree + server test gate E2E PASS\n- concurrent claim exactly 1 success PASS\n- lease expiry recovery and retry exhaustion to review PASS\n- failed test gate done transitions: 0 PASS\n- invalid/member/admin HTTP auth: 401/403/auth-pass PASS\n- 10 concurrent zest commands persisted 10 unique ids PASS\n- Next.js production build, py_compile, diff-check PASS\n- installed live Runtime API + reaper + remote approval poller verified",
+      "status": "done",
+      "priority": "high",
+      "category": "backend",
+      "target_date": "",
+      "started_at": "2026-07-18T19:09:22+09:00",
+      "completed_at": "2026-07-18T19:34:48+09:00",
+      "lines_added": 1608,
+      "lines_removed": 21,
+      "tokens_used": 0,
+      "created_at": "2026-07-18T19:09:16+09:00",
+      "updated_at": "2026-07-18T19:34:48+09:00",
+      "position": 0,
+      "phase": "PHASE_PMF05",
+      "review": "",
+      "created_by": "hoarchi",
+      "assigned_to": "hoarchi"
     }
   ]
 }
