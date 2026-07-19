@@ -28,12 +28,18 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 KST = ZoneInfo("Asia/Seoul")
-from http.server import HTTPServer, BaseHTTPRequestHandler
-from urllib.parse import urlparse, parse_qs
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
+from urllib.parse import urlparse, parse_qs, urlencode
 from urllib import request as urllib_request
 from urllib import error as urllib_error
 
 import subprocess
+
+from vibe_runtime import (
+    approval_required, expires_at, load_policy, new_identity, parse_time,
+    read_runtime, run_test_gate, runtime_lock, sanitized_runtime, utc_now,
+    valid_token, write_runtime,
+)
 
 # Force UTF-8 console I/O so non-ASCII output (em-dash, Korean) survives on
 # Windows cp949 terminals. No-op where reconfigure is unavailable/unneeded.
@@ -213,7 +219,8 @@ def _new_task(data, fields):
 
 TASK_FIELDS = ("title", "description", "details", "status", "priority", "category",
                "target_date", "started_at", "completed_at", "lines_added", "lines_removed",
-               "tokens_used", "position", "phase", "review", "created_by", "assigned_to")
+               "tokens_used", "position", "phase", "review", "created_by", "assigned_to",
+               "execution_managed", "active_run_id", "last_run_id", "execution_attempts")
 
 def _update_task(task, fields):
     """Update task fields in place."""
@@ -878,6 +885,14 @@ def _new_run(data, r):
         "session_id": (r.get("session_id") or "").strip(),
         "ts": (r.get("ts") or "").strip() or _now(),
     }
+    # Additive execution-runtime fields. Existing fields and records stay intact.
+    for key in (
+        "run_id", "lease_id", "worker_id", "attempt", "status", "started_at",
+        "finished_at", "branch", "tests", "failure_reason", "approval",
+        "changes",
+    ):
+        if key in r:
+            run[key] = r.get(key)
     data.setdefault("runs", []).append(run)
     return data, run
 
@@ -1084,6 +1099,356 @@ def _get_velocity(kanban_dir):
     }
 
 
+# ── Thin agent execution runtime ───────────────────
+
+def _runtime_task(data, task_id):
+    return next((task for task in data.get("tasks", []) if task.get("id") == task_id), None)
+
+
+def _terminal_run_exists(kanban_dir, run_id):
+    return any(run.get("run_id") == run_id for run in _read_runs(kanban_dir).get("runs", []))
+
+
+def _append_terminal_run(kanban_dir, execution, payload=None):
+    """Append exactly one terminal record for a managed execution."""
+    run_id = execution.get("run_id")
+    if not run_id or _terminal_run_exists(kanban_dir, run_id):
+        return None
+    payload = payload or {}
+    fields = {
+        "run_id": run_id,
+        "lease_id": execution.get("lease_id"),
+        "task_id": execution.get("task_id"),
+        "worker_id": execution.get("worker_id"),
+        "agent": payload.get("agent") or execution.get("agent") or "worker",
+        "model": payload.get("model", ""),
+        "attempt": execution.get("attempt", 1),
+        "status": execution.get("status"),
+        "started_at": execution.get("started_at"),
+        "finished_at": execution.get("finished_at") or utc_now(),
+        "tokens": payload.get("tokens", 0),
+        "input_tokens": payload.get("input_tokens"),
+        "output_tokens": payload.get("output_tokens"),
+        "cache_read_tokens": payload.get("cache_read_tokens"),
+        "cache_write_tokens": payload.get("cache_write_tokens"),
+        "time_seconds": payload.get("time_seconds"),
+        "commit": payload.get("commit", ""),
+        "branch": payload.get("branch", ""),
+        "changes": payload.get("changes"),
+        "session_id": payload.get("session_id", ""),
+        "tests": execution.get("tests"),
+        "failure_reason": execution.get("failure_reason"),
+        "approval": execution.get("approval"),
+        "ts": execution.get("finished_at") or utc_now(),
+    }
+    runs = _read_runs(kanban_dir)
+    runs, run = _new_run(runs, fields)
+    _write_runs(kanban_dir, runs)
+    _sync_task_tokens(kanban_dir, execution.get("task_id"), runs.get("runs", []))
+    return run
+
+
+def _failure_status(policy, attempt):
+    return "todo" if int(attempt or 1) < int(policy.get("max_attempts", 2)) else "review"
+
+
+def _expire_runtime_locked(kanban_dir, runtime, tasks, policy, now=None):
+    """Expire stale leases. Caller must hold runtime_lock."""
+    now_dt = parse_time(now or utc_now())
+    changed = False
+    for lease in runtime.get("leases", {}).values():
+        expiry = parse_time(lease.get("expires_at"))
+        if lease.get("status") != "active" or not expiry or not now_dt or expiry > now_dt:
+            continue
+        lease["status"] = "expired"
+        lease["expired_at"] = utc_now()
+        execution = runtime.get("executions", {}).get(lease.get("run_id"))
+        if execution and execution.get("status") == "running":
+            execution["status"] = "expired"
+            execution["finished_at"] = utc_now()
+            execution["failure_reason"] = "lease_expired"
+            task = _runtime_task(tasks, execution.get("task_id"))
+            if task and task.get("active_run_id") == execution.get("run_id"):
+                destination = _failure_status(policy, execution.get("attempt"))
+                _update_task(task, {
+                    "status": destination,
+                    "active_run_id": "",
+                    "last_run_id": execution.get("run_id"),
+                    "review": "Lease expired; human review required" if destination == "review" else "",
+                })
+            _append_terminal_run(kanban_dir, execution)
+        changed = True
+    return changed
+
+
+def _runtime_view(kanban_dir):
+    with runtime_lock(kanban_dir):
+        runtime = read_runtime(kanban_dir)
+        tasks = _read_kanban(kanban_dir)
+        policy = load_policy(kanban_dir)
+        if _expire_runtime_locked(kanban_dir, runtime, tasks, policy):
+            write_runtime(kanban_dir, runtime)
+            _write_kanban(kanban_dir, tasks)
+        return sanitized_runtime(runtime, policy)
+
+
+def _runtime_claim(kanban_dir, request_data):
+    worker_id = str(request_data.get("worker_id") or "").strip()
+    agent = str(request_data.get("agent") or "").strip()
+    requested_id = request_data.get("task_id")
+    if not worker_id or not agent:
+        return None, "worker_id and agent required", 400
+    with runtime_lock(kanban_dir):
+        runtime = read_runtime(kanban_dir)
+        tasks = _read_kanban(kanban_dir)
+        policy = load_policy(kanban_dir)
+        _expire_runtime_locked(kanban_dir, runtime, tasks, policy)
+        candidates = [task for task in tasks.get("tasks", []) if task.get("status") == "todo"]
+        if requested_id is not None:
+            candidates = [task for task in candidates if str(task.get("id")) == str(requested_id)]
+        candidates.sort(key=lambda task: (
+            {"high": 0, "medium": 1, "low": 2}.get(task.get("priority"), 1),
+            task.get("position", 0), task.get("id", 0),
+        ))
+        active_task_ids = {
+            lease.get("task_id") for lease in runtime.get("leases", {}).values()
+            if lease.get("status") == "active"
+        }
+        task = next((item for item in candidates if item.get("id") not in active_task_ids), None)
+        if not task:
+            write_runtime(kanban_dir, runtime)
+            _write_kanban(kanban_dir, tasks)
+            return None, "no claimable task", 409
+        attempt = 1 + max(
+            [int(item.get("attempt", 0)) for item in runtime.get("executions", {}).values() if item.get("task_id") == task.get("id")]
+            or [0]
+        )
+        identity = new_identity()
+        now = utc_now()
+        lease = {
+            "lease_id": identity["lease_id"],
+            "run_id": identity["run_id"],
+            "task_id": task.get("id"),
+            "worker_id": worker_id,
+            "token_hash": identity["token_hash"],
+            "status": "active",
+            "claimed_at": now,
+            "heartbeat_at": now,
+            "expires_at": expires_at(policy.get("lease_ttl_seconds", 120)),
+        }
+        execution = {
+            "run_id": identity["run_id"],
+            "lease_id": identity["lease_id"],
+            "task_id": task.get("id"),
+            "worker_id": worker_id,
+            "agent": agent,
+            "attempt": attempt,
+            "status": "running",
+            "started_at": now,
+            "tests": None,
+            "approval": "pending" if approval_required(policy, task.get("category")) else "not_required",
+        }
+        runtime.setdefault("leases", {})[identity["lease_id"]] = lease
+        runtime.setdefault("executions", {})[identity["run_id"]] = execution
+        _update_task(task, {
+            "status": "in_progress",
+            "execution_managed": True,
+            "active_run_id": identity["run_id"],
+            "last_run_id": identity["run_id"],
+            "execution_attempts": attempt,
+            "review": "",
+        })
+        write_runtime(kanban_dir, runtime)
+        _write_kanban(kanban_dir, tasks)
+        context = _get_context(kanban_dir)
+        adapter = policy.get("adapters", {}).get(agent)
+        response = {
+            "run_id": identity["run_id"],
+            "lease_id": identity["lease_id"],
+            "lease_token": identity["lease_token"],
+            "lease": {key: value for key, value in lease.items() if key != "token_hash"},
+            "execution": execution,
+            "task": task,
+            "context": context,
+            "adapter": adapter,
+            "heartbeat_seconds": policy.get("heartbeat_seconds", 30),
+        }
+        return response, None, 201
+
+
+def _runtime_credentials(runtime, data):
+    lease = runtime.get("leases", {}).get(str(data.get("lease_id") or ""))
+    run_id = str(data.get("run_id") or "")
+    execution = runtime.get("executions", {}).get(run_id)
+    if not lease or lease.get("run_id") != run_id or not execution:
+        return None, None, "run or lease not found", 404
+    if not valid_token(lease, data.get("lease_token")):
+        return None, None, "invalid lease token", 403
+    return lease, execution, None, 200
+
+
+def _runtime_heartbeat(kanban_dir, data):
+    with runtime_lock(kanban_dir):
+        runtime = read_runtime(kanban_dir)
+        policy = load_policy(kanban_dir)
+        lease, execution, error, status = _runtime_credentials(runtime, data)
+        if error:
+            return None, error, status
+        if lease.get("status") != "active" or execution.get("status") != "running":
+            return None, "lease is not active", 409
+        lease["heartbeat_at"] = utc_now()
+        lease["expires_at"] = expires_at(policy.get("lease_ttl_seconds", 120))
+        write_runtime(kanban_dir, runtime)
+        return {key: value for key, value in lease.items() if key != "token_hash"}, None, 200
+
+
+def _execution_workdir(kanban_dir, candidate):
+    """Accept the project root or a Git worktree sharing the same common dir."""
+    project_dir = os.path.dirname(os.path.abspath(kanban_dir))
+    if not candidate:
+        return project_dir
+    candidate = os.path.realpath(str(candidate))
+    if not os.path.isdir(candidate):
+        return None
+    try:
+        def common(path):
+            raw = subprocess.check_output(
+                ["git", "-C", path, "rev-parse", "--git-common-dir"],
+                stderr=subprocess.DEVNULL,
+                text=True,
+            ).strip()
+            return os.path.realpath(os.path.join(path, raw))
+        return candidate if common(candidate) == common(project_dir) else None
+    except (OSError, subprocess.CalledProcessError):
+        return candidate if candidate == os.path.realpath(project_dir) else None
+
+
+def _runtime_finish(kanban_dir, data, outcome):
+    with runtime_lock(kanban_dir):
+        runtime = read_runtime(kanban_dir)
+        tasks = _read_kanban(kanban_dir)
+        policy = load_policy(kanban_dir)
+        lease, execution, error, status = _runtime_credentials(runtime, data)
+        if error:
+            return None, error, status
+        if execution.get("status") != "running":
+            return {"execution": execution, "task": _runtime_task(tasks, execution.get("task_id"))}, None, 200
+        task = _runtime_task(tasks, execution.get("task_id"))
+        if not task or task.get("active_run_id") != execution.get("run_id"):
+            return None, "task is no longer owned by this run", 409
+        for key in ("branch", "commit", "changes", "time_seconds"):
+            if key in data:
+                execution[key] = data.get(key)
+        if outcome == "complete":
+            workdir = _execution_workdir(kanban_dir, data.get("worktree_path"))
+            if not workdir:
+                return None, "worktree_path is not part of the registered Git repository", 400
+            execution["worktree_path"] = workdir
+            gate = run_test_gate(kanban_dir, policy, workdir=workdir)
+            execution["tests"] = gate
+            passed = bool(gate.get("passed"))
+            if passed:
+                needs_approval = approval_required(policy, task.get("category"))
+                execution["status"] = "awaiting_approval" if needs_approval else "passed"
+                execution["approval"] = "pending" if needs_approval else "not_required"
+                destination = "review" if needs_approval else "done"
+                review = "Worker tests passed; awaiting approval" if needs_approval else ""
+            else:
+                execution["status"] = "test_failed"
+                execution["failure_reason"] = "test_gate_" + str(gate.get("status", "failed"))
+                destination = _failure_status(policy, execution.get("attempt"))
+                review = "Test gate failed after final attempt" if destination == "review" else ""
+        else:
+            execution["status"] = "failed"
+            execution["failure_reason"] = str(data.get("failure_reason") or "agent_failed")[:1000]
+            destination = _failure_status(policy, execution.get("attempt"))
+            review = "Worker failed after final attempt" if destination == "review" else ""
+        now = utc_now()
+        execution["finished_at"] = now
+        lease["status"] = "released"
+        lease["released_at"] = now
+        _update_task(task, {
+            "status": destination,
+            "active_run_id": "",
+            "last_run_id": execution.get("run_id"),
+            "review": review,
+        })
+        write_runtime(kanban_dir, runtime)
+        _write_kanban(kanban_dir, tasks)
+        _append_terminal_run(kanban_dir, execution, data)
+        return {"execution": execution, "task": task}, None, 200
+
+
+def _runtime_action(kanban_dir, data):
+    action = str(data.get("action") or "").lower()
+    run_id = str(data.get("run_id") or "")
+    command_id = str(data.get("command_id") or "")
+    if action not in ("approve", "reject", "retry", "cancel") or not run_id:
+        return None, "action and run_id required", 400
+    with runtime_lock(kanban_dir):
+        runtime = read_runtime(kanban_dir)
+        if command_id and command_id in runtime.get("applied_commands", []):
+            return {"idempotent": True, "run_id": run_id, "action": action}, None, 200
+        execution = runtime.get("executions", {}).get(run_id)
+        if not execution:
+            return None, "run not found", 404
+        tasks = _read_kanban(kanban_dir)
+        task = _runtime_task(tasks, execution.get("task_id"))
+        if not task or task.get("last_run_id") != run_id:
+            return None, "run is not current for task", 409
+        if action == "approve":
+            if execution.get("status") != "awaiting_approval" or not execution.get("tests", {}).get("passed"):
+                return None, "only a test-passed awaiting run can be approved", 409
+            execution["status"] = "approved"
+            execution["approval"] = "approved"
+            execution["approved_at"] = utc_now()
+            _update_task(task, {"status": "done", "review": ""})
+        elif action in ("reject", "retry"):
+            if task.get("status") not in ("review", "todo"):
+                return None, "task is not reviewable", 409
+            execution["approval"] = "rejected" if action == "reject" else "retry_requested"
+            execution["status"] = "rejected" if action == "reject" else "retry_requested"
+            _update_task(task, {"status": "todo", "active_run_id": "", "review": str(data.get("reason") or "")[:1000]})
+        else:
+            execution["status"] = "cancelled"
+            execution["approval"] = "cancelled"
+            _update_task(task, {"status": "backlog", "active_run_id": "", "review": str(data.get("reason") or "")[:1000]})
+        if command_id:
+            applied = runtime.setdefault("applied_commands", [])
+            applied.append(command_id)
+            runtime["applied_commands"] = applied[-1000:]
+        write_runtime(kanban_dir, runtime)
+        _write_kanban(kanban_dir, tasks)
+        return {"execution": execution, "task": task, "action": action}, None, 200
+
+
+def _managed_done_allowed(kanban_dir, task):
+    if not task.get("execution_managed"):
+        return True
+    runtime = read_runtime(kanban_dir)
+    execution = runtime.get("executions", {}).get(task.get("last_run_id"))
+    return bool(execution and execution.get("status") in ("passed", "approved") and execution.get("tests", {}).get("passed"))
+
+
+def _runtime_reaper():
+    while True:
+        for info in load_projects().values():
+            kanban_dir = info.get("kanban_dir", "")
+            if not kanban_dir:
+                continue
+            try:
+                _runtime_view(kanban_dir)
+            except Exception as exc:
+                print(f"  Runtime reaper warning: {type(exc).__name__}", file=sys.stderr)
+        threading.Event().wait(5)
+
+
+def _start_runtime_reaper():
+    thread = threading.Thread(target=_runtime_reaper, name="vibe-harness-runtime-reaper", daemon=True)
+    thread.start()
+    return thread
+
+
 # ── Remote dashboard snapshot sync ──────────────────
 
 _sync_lock = threading.Lock()
@@ -1137,6 +1502,7 @@ def _snapshot_source(key, info):
         "decisions": decisions,
         "velocity": _get_velocity(kanban_dir),
         "schema": _get_schema(kanban_dir),
+        "runtime": _runtime_view(kanban_dir),
     }
 
 
@@ -1192,6 +1558,85 @@ def _post_snapshot(cfg, payload):
     with urllib_request.urlopen(req, timeout=10) as resp:
         if not 200 <= resp.status < 300:
             raise RuntimeError("sync HTTP " + str(resp.status))
+
+
+def _remote_request(cfg, method, query=None, payload=None):
+    url = cfg["endpoint"]
+    if query:
+        url += ("&" if "?" in url else "?") + urlencode(query)
+    raw = json.dumps(payload, ensure_ascii=False).encode("utf-8") if payload is not None else None
+    req = urllib_request.Request(
+        url,
+        data=raw,
+        headers={
+            "Authorization": "Bearer " + cfg["secret"],
+            "Content-Type": "application/json",
+            "User-Agent": "Vibe-Harness-Sync/1",
+        },
+        method=method,
+    )
+    with urllib_request.urlopen(req, timeout=10) as resp:
+        if not 200 <= resp.status < 300:
+            raise RuntimeError("sync HTTP " + str(resp.status))
+        body = resp.read()
+        return json.loads(body.decode("utf-8")) if body else {}
+
+
+def _poll_remote_commands_once():
+    cfg = _load_sync_config()
+    if not cfg:
+        return 0
+    projects = load_projects()
+    applied_total = 0
+    for dashboard, keys in cfg.get("dashboards", {}).items():
+        try:
+            body = _remote_request(cfg, "GET", query={"dashboard": dashboard})
+        except (OSError, ValueError, urllib_error.URLError, urllib_error.HTTPError, RuntimeError):
+            continue
+        commands = body.get("commands", []) if isinstance(body, dict) else []
+        acknowledged = []
+        for command in commands:
+            if not isinstance(command, dict) or command.get("source_key") not in keys:
+                continue
+            info = projects.get(command.get("source_key")) or {}
+            kanban_dir = info.get("kanban_dir", "")
+            if not kanban_dir:
+                continue
+            result, error, status = _runtime_action(kanban_dir, {
+                "command_id": command.get("id"),
+                "run_id": command.get("run_id"),
+                "action": command.get("action"),
+                "reason": command.get("reason", ""),
+            })
+            # A different host may own this source/run. Never acknowledge 404/409:
+            # the host holding the matching runtime must be the one to consume it.
+            # Only success/idempotency or a structurally invalid command is final.
+            if not error or status == 400:
+                acknowledged.append(command.get("id"))
+                if result and not result.get("idempotent"):
+                    applied_total += 1
+        acknowledged = [item for item in acknowledged if item]
+        if acknowledged:
+            try:
+                _remote_request(cfg, "DELETE", payload={"dashboard": dashboard, "command_ids": acknowledged})
+            except (OSError, ValueError, urllib_error.URLError, urllib_error.HTTPError, RuntimeError):
+                pass
+    return applied_total
+
+
+def _remote_command_poller():
+    while True:
+        try:
+            _poll_remote_commands_once()
+        except Exception as exc:
+            print(f"  Remote command poll warning: {type(exc).__name__}", file=sys.stderr)
+        threading.Event().wait(5)
+
+
+def _start_remote_command_poller():
+    thread = threading.Thread(target=_remote_command_poller, name="vibe-harness-command-poll", daemon=True)
+    thread.start()
+    return thread
 
 
 def _sync_worker(dirty_dirs):
@@ -1441,6 +1886,9 @@ class Handler(BaseHTTPRequestHandler):
                     runs = [r for r in runs if str(r.get("task_id")) == str(tid)]
                 return self._json(runs)
 
+            if rest == ["runtime"]:
+                return self._json(_runtime_view(kanban_dir))
+
         self.send_response(404)
         self.end_headers()
 
@@ -1532,6 +1980,23 @@ class Handler(BaseHTTPRequestHandler):
                 _sync_task_tokens(kanban_dir, run.get("task_id"), data["runs"])
                 return self._json(run, 201)
 
+            if rest == ["worker", "claim"]:
+                result, error, status = _runtime_claim(kanban_dir, self._body())
+                return self._json(result if not error else {"error": error}, status)
+
+            if rest == ["worker", "heartbeat"]:
+                result, error, status = _runtime_heartbeat(kanban_dir, self._body())
+                return self._json(result if not error else {"error": error}, status)
+
+            if rest in (["worker", "complete"], ["worker", "fail"]):
+                outcome = "complete" if rest[-1] == "complete" else "fail"
+                result, error, status = _runtime_finish(kanban_dir, self._body(), outcome)
+                return self._json(result if not error else {"error": error}, status)
+
+            if rest == ["runtime", "action"]:
+                result, error, status = _runtime_action(kanban_dir, self._body())
+                return self._json(result if not error else {"error": error}, status)
+
             if rest == ["archive"]:
                 # POST to archive = archive done tasks
                 data = _read_kanban(kanban_dir)
@@ -1562,6 +2027,8 @@ class Handler(BaseHTTPRequestHandler):
                 task = next((t for t in data["tasks"] if t["id"] == tid), None)
                 if not task:
                     return self._json({"error": "not found"}, 404)
+                if d.get("status") == "done" and not _managed_done_allowed(kanban_dir, task):
+                    return self._json({"error": "managed task requires a passed test gate and approval"}, 409)
                 _update_task(task, d)
                 _write_kanban(kanban_dir, data)
                 return self._json(task)
@@ -1676,7 +2143,7 @@ def main():
         if kdir and os.path.exists(os.path.dirname(kdir)):
             init_kanban(kdir)
 
-    server = HTTPServer(("127.0.0.1", port), Handler)
+    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
 
     def shutdown(sig, frame):
         server.shutdown()
@@ -1692,6 +2159,10 @@ def main():
         _schedule_remote_sync(delay=0.1)
         _start_mission_watcher()
         print("  Mission watch: enabled (1s polling)")
+        _start_remote_command_poller()
+        print("  Remote approvals: enabled (5s polling)")
+    _start_runtime_reaper()
+    print("  Worker runtime: enabled (5s lease reaper)")
     print(f"  Ctrl+C to stop")
     sys.stdout.flush()
     server.serve_forever()
