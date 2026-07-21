@@ -1082,8 +1082,18 @@ def _get_velocity(kanban_dir):
         for k, v in sorted(model_tok.items(), key=lambda x: -x[1])
     ]
 
-    total_tokens = sum(task_tokens(t) for t in all_tasks)
-    total_cost = sum(task_cost(t) for t in all_tasks)
+    # 토큰 집계 소스가 프로젝트마다 다름:
+    #  - task 기반(tokens_used, git 공유·누적): 예 impactbook = 114M (여러 머신 run에서 파생)
+    #  - run 기반(runs.json, 머신 로컬): 예 codebook 63M (run이 task 미연결이라 tokens_used엔 없음)
+    # 단순 합산하면 impactbook처럼 둘 다 채워진 경우 이중집계됨 → 더 완전한 쪽(max)을 사용.
+    runs_total = sum(_safe_int(r.get("tokens")) for r in runs)
+    runs_cost = sum(_run_cost(r) for r in runs)
+    tasks_total = sum(task_tokens(t) for t in all_tasks)
+    tasks_cost = sum(task_cost(t) for t in all_tasks)
+    if runs_total >= tasks_total:
+        total_tokens, total_cost = runs_total, runs_cost
+    else:
+        total_tokens, total_cost = tasks_total, tasks_cost
     return {
         "phases": phases,
         "daily_trend": daily_trend,
