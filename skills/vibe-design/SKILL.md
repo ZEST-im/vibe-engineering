@@ -12,13 +12,38 @@ the user approved it.
 
 ## What this skill is and is not
 
-**This skill owns two things:** the *ordering rule* (nothing gets implemented before the
-screen has been seen and approved) and the *artifact format* (self-contained HTML on
-disk).
+**This skill owns three things:** the *ordering rule* (nothing gets implemented before the
+screen has been seen and approved), the *artifact format* (self-contained HTML on disk),
+and *where the design language comes from*.
 
-**It does not own aesthetics.** For visual direction — typography, color, layout,
-avoiding templated defaults — use the `frontend-design` skill and follow it. Do not
-reinvent design principles here.
+That third one is the difference between a usable mockup and AI slop.
+
+## Do not invent a design language
+
+Generated design looks generic for a specific reason: **the model invents a color ramp, a
+type scale, and a spacing rhythm from nothing on every run.** Invented-from-nothing
+converges on the average — that is what "AI slop" is.
+
+The fix is not to try harder. It is to **start from a design system that already exists**,
+take its token layer, and then make one deliberate move that belongs to this product.
+
+1. **Pick a system** from `references/design-systems.md` — chosen by what the product is,
+   not by taste. Public service, dense admin tool, and Korean consumer product each point
+   somewhere different.
+2. **Fetch its tokens** and read the actual values. Do not describe a system from memory;
+   the catalog lists exact URLs that were checked.
+3. **Take the scale layer, map your own semantics.** A borrowed brand ramp is the other
+   company's brand. Their gray scale is reusable; their primary is not.
+4. **Make one move that is this product's.** A material, a place, an instrument from the
+   product's own world — and spend your boldness only there. In a system for elderly
+   community centres, the status indicator became a heated floor, because the product is
+   about whether a floor is warm.
+
+If the fetch fails or you are offline, say so and fall back to Radix-style reasoning —
+12 steps with defined jobs — rather than picking colors freehand.
+
+**Restraint:** everything except the one deliberate move stays quiet. If two things are
+shouting, neither is a signature.
 
 ## Two audiences is the normal case
 
@@ -99,6 +124,25 @@ Then confirm these with the user, one question per message:
   other. Divergence between them is the bug this skill catches earliest.
 - **Real content, not lorem ipsum.** Use the actual product's words from
   `01_philosophy.md`. Placeholder text hides the fact that the real copy does not fit.
+- **Draw the states, not just the happy path.** For every screen that loads or submits
+  anything, show what it looks like **empty, loading, failed, and full**. These are where
+  implementations actually break, and a mockup that skips them has not done its job.
+  A list with three rows tells you nothing about the same list with three hundred.
+
+## Leave the tokens behind
+
+The HTML is the artifact, but it is not the handoff. At the top of the file, record the
+token block you actually used — palette, type stack, spacing, radii — as CSS custom
+properties in one `:root`, and note which system they came from.
+
+```css
+/* Tokens — derived from Radix Colors (MIT), fetched 2026-08-15.
+   Product move: ondol floor as the status surface. */
+:root { --bg: …; --fg: …; --accent: …; }
+```
+
+Two reasons. The implementer needs the values, not screenshots of them. And the next
+round of screens must reuse the same tokens or the product drifts apart.
 
 ## Show it
 
@@ -131,7 +175,10 @@ back to whatever invoked this.
 | "I'll build the component and design it as I go" | That is the failure this skill exists to prevent. |
 | "The user described it clearly, they don't need to see it" | Descriptions and screens diverge. Show it anyway. |
 | "Ten screens in one file is more efficient" | Five is the cap *per group*. More means split the round. |
-| "I'll pick the colors and typography myself" | Load `frontend-design` and follow it. |
+| "I'll pick the colors and typography myself" | That is how slop happens. Start from a real system in the catalog. |
+| "I'll describe that design system from memory" | Fetch it. The catalog has checked URLs and licenses. |
+| "The happy path is enough to approve" | Empty, loading, and error states are where implementations break. Draw them. |
+| "I'll make several things distinctive" | Spend boldness once. Two signatures is none. |
 | "There's only one user group here" | There are usually two. Ask again before believing it. |
 | "The second group just needs a simpler version of the main screen" | It is a different surface, not a subset. Shrinking the dashboard never produces the form. |
 | "Both groups can share the five screens" | Then both get half a product. Five per group. |

@@ -77,18 +77,32 @@ HOOK_IDS = {entry["_id"] for _, _, entry in HOOKS}
 HOOK_HELPERS = ["vibe-harness-record-run.py"]
 
 
+# 스킬 디렉토리를 복사할 때 따라가면 안 되는 것들
+SKILL_COPY_IGNORE = shutil.ignore_patterns(
+    "__pycache__", "*.pyc", "*.bak", ".DS_Store", ".git",
+)
+
+
 def copy_skill_files():
-    """각 skills/<name>/SKILL.md 를 ~/.claude/skills/<name>/ 로 복사"""
+    """skills/<name>/ 전체를 ~/.claude/skills/<name>/ 로 복사.
+
+    스킬은 SKILL.md 외에 references/ 같은 부속 파일을 가질 수 있으므로
+    디렉토리째 옮긴다. 단 빌드 찌꺼기와 백업은 제외한다.
+    """
     for name in SKILLS:
-        src = os.path.join(SRC, "..", "skills", name, "SKILL.md")
-        if not os.path.exists(src):
+        src_dir = os.path.join(SRC, "..", "skills", name)
+        if not os.path.exists(os.path.join(src_dir, "SKILL.md")):
             print(f"  SKIP {name} (SKILL.md not found)")
             continue
         dest_dir = os.path.join(SKILLS_ROOT, name)
         os.makedirs(dest_dir, exist_ok=True)
-        dst = os.path.join(dest_dir, "SKILL.md")
-        shutil.copy2(src, dst)
-        print(f"  COPIED {name}/SKILL.md → {dst}")
+        shutil.copytree(src_dir, dest_dir, dirs_exist_ok=True,
+                        ignore=SKILL_COPY_IGNORE)
+        # 원본 기준으로 센다. 대상 기준으로 세면 vibe-harness 처럼
+        # server.py·로그가 함께 사는 디렉토리에서 숫자가 거짓말을 한다.
+        copied = sum(len(files) for _, _, files in os.walk(src_dir))
+        suffix = f" (+{copied - 1} support files)" if copied > 1 else ""
+        print(f"  COPIED {name}/SKILL.md{suffix} → {dest_dir}")
 
 
 def remove_added_skills():
