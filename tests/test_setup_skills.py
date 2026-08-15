@@ -52,6 +52,32 @@ class CopySkillFilesTest(unittest.TestCase):
             path = os.path.join(ROOT, "skills", name, "SKILL.md")
             self.assertTrue(os.path.exists(path), "skills/" + name + "/SKILL.md 없음")
 
+    def test_copies_supporting_files_not_just_skill_md(self):
+        """스킬이 references/ 같은 부속 파일을 가질 수 있어야 한다."""
+        ref_dir = os.path.join(self.repo_skills, "vibe-design", "references")
+        os.makedirs(ref_dir)
+        with open(os.path.join(ref_dir, "design-systems.md"), "w") as fh:
+            fh.write("# catalog\n")
+
+        setup.copy_skill_files()
+
+        self.assertTrue(os.path.exists(
+            os.path.join(self.skills_root, "vibe-design", "references", "design-systems.md")))
+
+    def test_does_not_copy_pycache_or_backups(self):
+        d = os.path.join(self.repo_skills, "vibe-design", "__pycache__")
+        os.makedirs(d)
+        with open(os.path.join(d, "junk.pyc"), "w") as fh:
+            fh.write("x")
+        with open(os.path.join(self.repo_skills, "vibe-design", "SKILL.md.bak"), "w") as fh:
+            fh.write("old")
+
+        setup.copy_skill_files()
+
+        dest = os.path.join(self.skills_root, "vibe-design")
+        self.assertFalse(os.path.exists(os.path.join(dest, "__pycache__")))
+        self.assertFalse(os.path.exists(os.path.join(dest, "SKILL.md.bak")))
+
     def test_review_skill_is_installed(self):
         setup.copy_skill_files()
 

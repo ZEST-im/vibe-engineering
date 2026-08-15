@@ -77,6 +77,15 @@ class SkillCrossReferenceTest(unittest.TestCase):
                     self.assertIn(ref, existing,
                                   name + " 가 없는 스킬 " + ref + " 를 참조함")
 
+    def test_referenced_support_files_exist(self):
+        """SKILL.md 가 가리키는 부속 파일이 실재해야 한다."""
+        ref_re = re.compile(r"`(references/[A-Za-z0-9_./-]+)`")
+        for name in skill_dirs():
+            for rel in set(ref_re.findall(read_skill(name))):
+                path = os.path.join(SKILLS_DIR, name, rel)
+                self.assertTrue(os.path.exists(path),
+                                name + " 가 없는 파일 " + rel + " 을 참조함")
+
     def test_skills_are_documented_in_readme(self):
         """스킬을 추가하고 README 갱신을 잊는 것을 막는다."""
         with open(os.path.join(ROOT, "README.md"), encoding="utf-8") as fh:

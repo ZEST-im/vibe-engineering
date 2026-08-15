@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "next_id": 44,
+  "next_id": 45,
   "tasks": [
     {
       "id": 21,
@@ -909,6 +909,27 @@
       "lines_removed": 11,
       "created_at": "2026-08-15T20:00:00+09:00",
       "updated_at": "2026-08-15T20:35:00+09:00",
+      "position": 0,
+      "phase": "PHASE_PMF06",
+      "review": "",
+      "created_by": "hogun",
+      "assigned_to": "hogun"
+    },
+    {
+      "id": 44,
+      "title": "vibe-design 재정의 — AI 슬롭 대응, 디자인 시스템 카탈로그",
+      "description": "미학을 외부 스킬에 위임하던 것을 끊고, 검증된 디자인 시스템에서 출발하도록 재정의",
+      "details": "## 문제\nZHEMS 실주행 후 사용자 진단: \"AI 슬롭이 심하다\".\n원인은 모델이 매번 색 램프·타입 스케일·간격 리듬을 처음부터 발명한다는 것.\n발명은 평균으로 수렴하고 그게 슬롭이다.\n\n추가로 구조적 구멍이 있었다 — vibe-design 이 미학 판단을 frontend-design 에 위임했는데,\n그건 claude-plugins-official 플러그인이라 우리 사용자에게 없을 수 있다.\n없으면 이 스킬에는 \"self-contained HTML 을 만들어라\" 외에 지침이 0이다.\n\n## 조사 (2026-08-15 실측)\n링크 생존과 라이선스를 저장소에서 직접 확인. 기억으로 쓰지 않음.\n- MIT 확인: Radix Colors ★1647, Open Props ★5494, Tailwind ★97221,\n  GOV.UK Frontend ★1440, Primer Primitives ★400, Catppuccin\n- Apache-2.0: Carbon ★9356, **daangn/seed-design ★1045**\n- NOASSERTION(자동분류 실패, 개별 확인 필요): USWDS, Polaris\n- 실제 토큰 파일을 받아 형식 확인 — Radix 는 12단계 램프, Open Props 29KB,\n  Primer 121KB, Polaris 28KB, Spectrum JSON 2469키\n\n## 한국 시스템 — 실측 결과\n- **SEED(당근)만 실재.** @seed-design/stylesheet global.css 51KB 에 실제 hex 74개.\n  @seed-design/design-token 은 var() 참조만 담고 값이 없어 stylesheet 쪽이 정답.\n- 토스: toss/tds 없음. 3rd-party 클론(★0~20)뿐. 공개 토큰 없음\n- KRDS: 사이트는 200이나 JS 렌더링이라 원본 HTML 로 토큰 유무 판단 불가 — 단정하지 않음\n- ZEST UI: private repo, \"사내 전용 GitHub Packages\". 카탈로그에 internal 로만 표시하고\n  디자인 언어는 공개하지 않음\n- getdesign.md 는 유료 상품이라 콘텐츠를 담지 않고 참조 안내만\n\n## Changes\n- skills/vibe-design/references/design-systems.md (119줄) 신설 — 검증된 카탈로그.\n  중립 토큰 / 제품·관리 / 공공·접근성 / 팔레트 / 한국 5개 군, 제품 성격별 선택 표,\n  한글 타이포그래피 주의(행간 1.6~1.7, 굵기 단계 거침, 헤딩 자간 음수, 이탤릭 없음)\n- skills/vibe-design/SKILL.md — frontend-design 의존 제거.\n  \"디자인 언어를 발명하지 않는다\" 4단계: 제품에 맞는 시스템 선택 → 토큰 실측 →\n  scale 층만 가져오고 semantic 은 우리가 매핑 → 제품 고유의 한 수.\n  오프라인 폴백 명시. 과감함은 한 곳에만.\n- 상태 커버리지 규칙 — 빈/로딩/실패/가득 참을 그리게 함. 구현이 깨지는 건 거기다\n- 토큰 핸드오프 규칙 — HTML 상단에 :root 토큰 블록과 출처를 남긴다\n- scripts/setup.py: SKILL.md 한 파일 복사 → 디렉토리 복사(copytree).\n  __pycache__·*.bak 제외. 복사 수를 원본 기준으로 세도록 수정\n  (대상 기준이면 vibe-harness 처럼 server.py·로그가 함께 사는 곳에서 숫자가 거짓말)\n- tests: 부속 파일 복사 2케이스, SKILL.md 가 참조하는 references/ 파일 실재 1케이스\n\n## Verification\n- 54 tests OK, ruff All checks passed\n- 신규 테스트 3건 모두 위반 주입으로 검출 확인\n- 설치본에 references/design-systems.md 실제 반영 확인\n\n## Follow-up\n- 네이버·토스 가이드는 토큰 패키지가 아니라 가이드 사이트라 DESIGN.md 를 우리가 작성해야 함\n- ZEST UI DESIGN.md 공개 여부는 사업 판단으로 보류",
+      "status": "done",
+      "priority": "high",
+      "category": "docs",
+      "target_date": "",
+      "started_at": "2026-08-15T21:00:00+09:00",
+      "completed_at": "2026-08-15T22:10:00+09:00",
+      "lines_added": 221,
+      "lines_removed": 18,
+      "created_at": "2026-08-15T21:00:00+09:00",
+      "updated_at": "2026-08-15T22:10:00+09:00",
       "position": 0,
       "phase": "PHASE_PMF06",
       "review": "",
