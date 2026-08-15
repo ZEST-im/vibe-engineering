@@ -149,6 +149,23 @@ def _write_kanban(kanban_dir, data):
     os.replace(tmp, kp)
     _schedule_remote_sync(kanban_dir)
 
+def _task_digest(task):
+    """세션 시작 컨텍스트용 요약. details 를 뺀 최소 필드만 남긴다.
+
+    details 는 태스크당 수천 자라 컨텍스트 응답의 절반 이상을 차지했다.
+    전문이 필요하면 개별 태스크를 조회한다 — 늘 필요한 것은 아니다.
+    """
+    return {
+        "id": task.get("id"),
+        "title": task.get("title"),
+        "category": task.get("category"),
+        "phase": task.get("phase"),
+        "completed_at": task.get("completed_at"),
+        "lines_added": task.get("lines_added"),
+        "lines_removed": task.get("lines_removed"),
+    }
+
+
 def _list_archives(kanban_dir):
     """Load all archived tasks."""
     adir = _archive_dir(kanban_dir)
@@ -702,7 +719,9 @@ def _get_context(kanban_dir):
         },
         "do_not_touch": do_not_touch,
         "in_progress": in_progress,
-        "recent_done": all_done[:3],
+        # 세션 시작 컨텍스트에는 제목만 싣는다. details 는 태스크당 수천 자라
+        # 요약 응답의 절반 이상을 차지했다. 필요하면 /api/{key}/tasks/{id} 로 개별 조회.
+        "recent_done": [_task_digest(t) for t in all_done[:3]],
         "stats": stats,
     }
 

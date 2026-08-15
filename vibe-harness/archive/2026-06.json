@@ -1,0 +1,26 @@
+{
+  "tasks": [
+    {
+      "id": 1,
+      "title": "runs.json 토큰 기록 기능 — 스키마 + 서버 통합 (PMF02)",
+      "description": "",
+      "details": "runs.json append-only 로그(agent-agnostic) 스키마 + SKILL.md 규칙(commit 94a58ac), server.py /runs API·agent/model 단가맵·velocity 집계·tokens_used 자동동기화 + kanban.html Stats 에이전트 패널(commit 59675cc). 라이브 서버 재시작·검증 완료.",
+      "status": "done",
+      "priority": "medium",
+      "category": "backend",
+      "target_date": "",
+      "started_at": "",
+      "completed_at": "",
+      "lines_added": 242,
+      "lines_removed": 14,
+      "tokens_used": 0,
+      "created_at": "2026-06-20T19:25:58",
+      "updated_at": "2026-06-20T19:25:58",
+      "position": 0,
+      "phase": "PHASE_PMF02",
+      "review": "",
+      "created_by": "hoarchi",
+      "assigned_to": ""
+    }
+  ]
+}

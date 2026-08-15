@@ -8,6 +8,19 @@ user-invocable: true
 
 Track development progress as a kanban board while coding with Claude Code.
 
+## References — load only when you need them
+
+This file holds the rules you work by. Everything you *look up* lives beside it, so a
+session does not pay for reference material it never opens.
+
+| File | Open it when |
+|---|---|
+| `references/task-schema.md` | Writing or editing a task by hand — field list, required fields on `done`, status values |
+| `references/api.md` | Calling the local HTTP API, or explaining the Board UI |
+| `references/setup.md` | Installing on a new machine or registering a project |
+| `references/worker-runtime.md` | Running the managed worker (lease, heartbeat, test gate) |
+| `references/remote-sync.md` | Wiring a project's snapshot to a central dashboard |
+
 ## Source of Truth
 
 **The source of truth is the JSON files under each project's `vibe-harness/` directory:**
@@ -32,26 +45,6 @@ This matters because:
 5. **Work reports**: `details` field stores per-task reports (changed files, decisions).
 6. **Git-friendly**: JSON storage — diffs, merges, and code review all work naturally.
 7. **Archive**: Done tasks archived to monthly files, always visible in dashboard.
-
-## Setup (First Time)
-
-After installing the plugin, run the setup script to copy server files (only needed if you want the Board UI / auto-start):
-
-```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/setup.py
-```
-
-This will:
-1. Copy `server.py`, `kanban.html`, `SKILL.md` to `~/.claude/skills/vibe-harness/`
-2. Install a macOS LaunchAgent (`com.vibe-harness.server`) that auto-starts the server on login
-3. Register a code review hook in `~/.claude/settings.json`
-
-To uninstall auto-start:
-```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/setup.py uninstall
-```
-
-You can skip setup entirely if you only want to edit the JSON files directly — the kanban data still lives in `{project}/vibe-harness/kanban.json` regardless.
 
 ## File Locations
 
@@ -112,8 +105,11 @@ Check this repo's remote and pull everything, branches included:
 2. Update any in-progress task's `details` with an interim report; write `details` on done tasks that lack them.
 3. Update phase docs only when warranted: `PHASES.md` on phase completion, `CURRENT_PHASE.md` on scope / Known Issues change.
 4. **Code review** on uncommitted + unpushed changes (see Code Review section).
-5. Update `docs/PROGRESS.md` — concise phase-level completion items only. It is an external-sharing snapshot, not a daily log; the day-to-day record stays in `kanban.json`.
-6. No commit, no push — `qq` is documentation only.
+5. **Archive if `kanban.json` has grown** — more than ~30 done tasks or above ~50KB. See
+   "Keeping context cheap". Archiving is a routine; skipping it is how a project ends up
+   paying six figures of tokens to answer "what am I working on".
+6. Update `docs/PROGRESS.md` — concise phase-level completion items only. It is an external-sharing snapshot, not a daily log; the day-to-day record stays in `kanban.json`.
+7. No commit, no push — `qq` is documentation only.
 
 ### `cc` — commit + push (+ deploy check)
 
@@ -122,15 +118,64 @@ Check this repo's remote and pull everything, branches included:
 3. `git push origin main`.
 4. If the project has CI/CD wired to push, check build/deploy status after pushing and report it. Avoid docs-only pushes on CI/CD-triggering repos.
 
+## Keeping context cheap
+
+A harness that costs thousands of tokens to consult is a harness people stop consulting.
+Four rules, learned by measuring rather than guessing:
+
+**1. Measure before optimizing.** Find where the tokens actually go before changing
+anything. Measured across 15 projects, `kanban.json` alone accounted for ~946,000 tokens
+of session-start cost — one project spent 154,000 tokens just to answer "what am I
+working on". That number decided what to fix; intuition would have pointed elsewhere.
+
+**2. Split growing records into hot and archived.** Task history grows without limit but
+only the recent edge affects the next decision. Done tasks belong in
+`archive/YYYY-MM.json` — still visible on the board and counted in `stats`, but no longer
+loaded into every session.
+
+**3. Read a summary; fetch the full record only when the reasoning matters.** A task's
+`details` runs to thousands of characters. Titles and change counts answer almost every
+session-start question; open the full report when a specific past decision is actually in
+question.
+
+**4. Rules live in `SKILL.md`; lookups live in `references/`.** If it is something you
+consult while doing a particular job — a field list, an API shape, install steps — it does
+not belong in the file loaded on every invocation.
+
+### Archiving is a routine, not a migration
+
+**This is the rule most often missed.** Of the projects measured, several had an
+`archive/` directory *and* over 200 done tasks still sitting in `kanban.json` — archived
+once, then left to refill.
+
+Archive whenever done tasks accumulate — during `qq` is the natural moment. A practical
+trigger: **more than ~30 done tasks in `kanban.json`, or the file above ~50KB.** Run
+`/vibe-harness archive` and the month's work moves out in one step.
+
+After archiving, confirm `next_id` still exceeds every archived id. Reusing an id that
+only exists in an archive is silent corruption — the board looks fine and two tasks share
+a number.
+
 ## Session Start (Claude should follow)
 
-At the start of a session, establish current mission context by reading the project files in this order. **Do not call the API and do not start the server just to do this.**
+At the start of a session, establish current mission context. **Load a summary, not the archive.** A project's task history grows without limit; reading it whole costs thousands of tokens every session and almost none of it changes what you do next.
 
-1. **`CURRENT_PHASE.md`** (if present — checked in `private/`, then root, then `docs/`) — current phase name, scope, `Done when` checklist, and the `Do NOT touch` block. This is the primary scope signal.
-2. **`vibe-harness/kanban.json`** — check for any task with `status: "in_progress"`. If one exists, that is the active task; continue it instead of starting new work.
+**Preferred — one call, if the server is already running:**
+
+```
+GET http://localhost:4242/api/{project_key}/context
+```
+
+Returns phase, scope, checklist, `Do NOT touch`, `in_progress`, recent completions, and stats. Recent completions carry titles and change counts, **not** their full reports — fetch an individual task only when you actually need its reasoning. **Do not start the server just for this**; if it is not up, use the fallback.
+
+**Fallback — read files directly:**
+
+1. **`CURRENT_PHASE.md`** (checked in `private/`, then root, then `docs/`) — phase name, scope, `Done when`, and the `Do NOT touch` block. This is the primary scope signal.
+2. **`vibe-harness/kanban.json`** — the active `in_progress` task, if any. Done tasks live in `vibe-harness/archive/YYYY-MM.json`; **do not read the archives at session start.** Open one only when a specific past decision is in question.
 3. **`vibe-harness/decisions.json`** — recent durable decisions that may constrain the work.
 4. **`docs/planning/01_philosophy.md`** (if present) — the project's north star, written by the `vibe-planning` skill. Its principles and the "who we are not for" section are decision constraints; when a task conflicts with them, say so rather than quietly picking a side.
-5. **Optional**: if the Board UI server happens to be running already, you can hit `GET http://localhost:4242/api/{project_key}/context` for the same information in one call. Skip this step if the server is not up — do **not** spin it up just to fetch context.
+
+**Keep `kanban.json` small.** Run `/vibe-harness archive` when done tasks accumulate. The board still shows them — archives are read by the dashboard and by `stats` — but they stop being loaded into every session.
 
 From these, derive:
 - Current Phase name and scope
@@ -139,166 +184,6 @@ From these, derive:
 - Open checklist items
 
 If no `CURRENT_PHASE.md` exists anywhere (`private/` / root / `docs/`) but the project already has kanban tasks, the session-start hook nudges you. Run `/vibe-harness phase init` to scaffold it, or ask the user how they want to scope the session before creating new tasks. Don't silently start work without a scope.
-
----
-
-## Recording Work — Direct JSON Editing (default path)
-
-The default path for an agent is to read and edit `vibe-harness/kanban.json` and `vibe-harness/decisions.json` directly. The commands and API are conveniences over the same edits.
-
-### kanban.json shape
-
-```json
-{
-  "version": 1,
-  "next_id": 7,
-  "tasks": [
-    {
-      "id": 6,
-      "title": "Add scope-guard hook",
-      "description": "Block edits outside CURRENT_PHASE Do NOT touch list",
-      "details": "",
-      "status": "in_progress",
-      "priority": "medium",
-      "category": "infra",
-      "phase": "PHASE_MVP02",
-      "target_date": null,
-      "started_at": "2026-05-21T10:14:00",
-      "completed_at": null,
-      "lines_added": 0,
-      "lines_removed": 0,
-      "tokens_used": 0,
-      "position": 0,
-      "created_by": "hoarchi",
-      "assigned_to": "hoarchi",
-      "created_at": "2026-05-21T10:12:00",
-      "updated_at": "2026-05-21T10:14:00"
-    }
-  ]
-}
-```
-
-### Rules when editing kanban.json directly
-
-- **`next_id` consistency**: When creating a new task, use the current `next_id` as the new task's `id`, then increment `next_id` by 1. Never reuse an id; never let two tasks share an id.
-- **`status` enum**: One of `backlog | todo | in_progress | review | done`. Nothing else.
-- **One `in_progress` at a time** (per user): Before moving a task to `in_progress`, scan tasks and move any other `in_progress` task **owned by the same user** back to `todo`. Do not touch other users' tasks.
-- **Timestamps** (ISO-8601, seconds precision is fine):
-  - `created_at`: set on creation, never modified.
-  - `updated_at`: bump on every field change.
-  - `started_at`: set when status first transitions to `in_progress`. Leave alone on subsequent transitions back into `in_progress` unless you're explicitly restarting.
-  - `completed_at`: set when status transitions to `done`. Clear it if a done task is reopened.
-- **Required fields on creation**: `id`, `title`, `status`, `category`, `created_at`, `updated_at`, `created_by`. Everything else can default to empty/0/null.
-- **Owner fields are ALWAYS required — including direct-to-done records**: `created_by` and `assigned_to` hold the **human** user (`git config user.name`), never an agent name (`claude`, `codex`, …) — agent attribution lives in `runs.json` `agent`. When a task is recorded retroactively as `done` in one step (wrap-up style), the start-transition trigger never fires, so set `assigned_to` explicitly at that moment. An unassigned done task is a recording bug.
-- **On completion (`status: "done"`)**: also record:
-  - `lines_added`, `lines_removed` — from `git diff --numstat` for files changed in this task.
-  - `details` — work report: changed files, key decisions, follow-ups.
-  - `tokens_used` — sum of this task's runs in `runs.json` if logged, else a rough integer estimate (see Token Estimation below).
-  - **Append a run to `runs.json`** — `{agent, model, tokens, time_seconds, commit, ts}` for the agent that did the work (see runs.json section). Agent-agnostic: record it whether the work was done by Codex, Claude, Gemini, or any other agent.
-  - Any verification notes (tests run, manual checks) belong in `details`.
-- **Atomic writes**: Write to `kanban.json.tmp` first, then rename over `kanban.json`. The server does this; agents editing directly should do the same to avoid leaving the file half-written.
-- **Don't reorder the file just to reorder it.** Append new tasks; sort only via `position` if needed.
-
-### decisions.json shape and rules
-
-```json
-{
-  "version": 1,
-  "next_id": 3,
-  "decisions": [
-    {
-      "id": 2,
-      "title": "...",
-      "why": "...",
-      "revisit": "...",
-      "task_id": 6,
-      "phase": "PHASE_MVP02",
-      "tags": [],
-      "created_at": "2026-05-21T10:30:00",
-      "updated_at": "2026-05-21T10:30:00"
-    }
-  ]
-}
-```
-
-Record a decision in `decisions.json` (not in a task's `details`) when the choice is **durable** — it will outlive the task and affect future work. Rule of thumb: would a future agent reading the codebase six months from now need to know *why* this was done? If yes, it's a decision.
-
-- Same `next_id` / `id` discipline as kanban.json.
-- `task_id` links back to the kanban task that spawned the decision (nullable).
-- `revisit` should describe a concrete condition that would make this decision worth re-opening.
-
-### runs.json shape and rules (agent run usage log)
-
-Append-only log of **who ran what, at what cost**. Agent-agnostic — any tool (Codex, Claude Code, Gemini, Cursor, …) records into the same file. `kanban.json` stays a status board; per-run usage lives here so a single task can accumulate multiple runs from different agents without overwriting.
-
-```json
-{
-  "version": 1,
-  "runs": [
-    {
-      "task_id": 6,
-      "agent": "claude",
-      "model": "claude-opus-4-8",
-      "tokens": 4628627,
-      "input_tokens": 46438,
-      "output_tokens": 79449,
-      "cache_read_tokens": 4111339,
-      "cache_write_tokens": 391401,
-      "time_seconds": null,
-      "commit": "59675cc",
-      "session_id": "d87cee14-...",
-      "ts": "2026-06-20T14:02:00"
-    }
-  ]
-}
-```
-
-- **Append-only.** Add a run object; never edit or delete existing entries. No `next_id` — entries are not addressed by id.
-- **Required per run**: `agent` (free string: `codex` / `claude` / `gemini` / …), `tokens` (integer), `ts` (ISO-8601).
-- **Optional**: `task_id` (links to a kanban task, nullable for ad-hoc runs), `model` (specific model id), token breakdown (`input_tokens` / `output_tokens` / `cache_read_tokens` / `cache_write_tokens`, else `null`), `time_seconds`, `commit` (git short SHA), `session_id` (for idempotent auto-collection).
-- **`agent` is the recording dimension** — cost rates differ per agent/model, so always set it. Don't assume Claude.
-- **Token breakdown drives accurate cost.** Claude runs are cache-dominated (cache reads cost ~10% of input), so a flat sum overstates cost ~7×. When the breakdown is present, cost is computed per-component (`COMPONENT_RATES` in server.py); otherwise it falls back to a blended flat rate on `tokens` (fine for Codex/Gemini single-number usage).
-- **Atomic writes**: same `.tmp` + rename discipline as kanban.json.
-- **Relationship to `tokens_used`**: when a task has runs logged here, set the task's `kanban.json` `tokens_used` to the **sum of that task's runs**. If no run is logged, `tokens_used` falls back to a rough estimate.
-
-#### Auto-collection (PHASE_PMF03) — preferred over manual estimates
-
-Real usage is captured automatically; you rarely set `tokens_used` by hand anymore.
-
-- **Claude Code**: the `SessionEnd` hook (`vibe-harness-token-collector.sh`) parses the session transcript, sums real usage, and records one run via the shared recorder. Idempotent by `session_id`.
-- **Codex / Gemini / any agent**: call the shared recorder directly with the agent's reported usage:
-  ```bash
-  python3 ~/.claude/hooks/vibe-harness-record-run.py \
-    --agent codex --model gpt-5-codex --tokens 297469 \
-    --time-seconds 737 --cwd "$PWD"
-  ```
-- The recorder resolves the project (cwd → git root → `projects.json`), the current `in_progress` task, and the git commit automatically; posts to the server if up, else appends to `runs.json` directly.
-
-**Server path (optional convenience):** if `localhost:4242` is running:
-- `GET  /api/{project}/runs` — list runs (`?task_id=N` to filter).
-- `POST /api/{project}/runs` — append a run (`agent` required; breakdown/`session_id`/`commit`/etc. optional). Appends to `runs.json` **and** auto-syncs the linked task's `tokens_used`.
-- The 📊 Stats tab shows per-agent and per-model token + cost breakdown.
-
-Editing `runs.json` directly stays the canonical path — the server and recorder are just wrappers.
-
-### When the user requests work
-
-1. If a matching task isn't in kanban → create one as `todo` (or `in_progress` if starting immediately).
-2. On start → set `status: "in_progress"`, set `started_at`, bump `updated_at`. Move any prior `in_progress` task owned by the current user back to `todo`.
-3. On completion → record stats + details, set `status: "done"`, set `completed_at`, bump `updated_at`.
-
-### Token estimation (for `tokens_used` on completion)
-
-Prefer **actual** usage: if you logged a run in `runs.json`, set `tokens_used` to the sum of that task's runs. Estimate only as a fallback when no real number is available — accuracy within 2× is acceptable.
-
-- Tool calls (Read/Edit/Bash) ≈ 2K–5K each
-- Diff lines ≈ 10–20 tokens each
-- Conversation turns ≈ 800 tokens each
-- Quick bands: tiny (≤5 tool calls, <30 diff lines) ≈ 20K; small ≈ 50K; medium ≈ 150K; large (>30 tool calls) ≈ 400K
-
-### On `qq` (daily wrap-up)
-
-See **Shorthand Commands** above — `ss` / `qq` / `cc` procedures are defined there.
 
 ---
 
@@ -461,23 +346,6 @@ The `/vibe-harness phase check` and `/vibe-harness phase done` commands automate
 | PMF   | Feature-level | Light      | Feature flags + metrics |
 | SCALE | Full         | Yes         | Full    |
 
-## Web UI Features
-
-The Board UI is served by the optional local server. When it's running:
-
-- **Project tabs**: Switch between projects in header (URL hash persisted)
-- **Kanban view**: 4 active columns (Backlog, To Do, In Progress, Review) — drag & drop
-- **List view**: Spreadsheet-style table, all tasks (including Done) with inline editing
-- **Done zone**: 3 tabs — by Date / Category / Phase grouping (includes archived tasks)
-- **Detail panel**: Right slide-in, shows report, schedule, code change stats
-- **Dark/Light mode**: Toggle button + localStorage persistence
-- **Target date**: D-day countdown, overdue=red, soon=orange
-- **Code changes**: +/- bar graph
-- **Drop to Done**: Drag card to Done zone to auto-complete
-- **Keyboard**: `n`=new task, `Esc`=close
-- **Auto-refresh**: 5 seconds
-- **Mission / Log / Stats tabs**: visual surface of the same data in kanban.json + decisions.json
-
 ## Multi-User Rules
 
 Vibe-Engineering uses JSON files for storage — fully git-friendly.
@@ -517,126 +385,6 @@ Vibe-Engineering uses JSON files for storage — fully git-friendly.
 
 ---
 
-## Optional Local API
-
-The server at `localhost:4242` provides an HTTP API that reads and writes the same JSON files described above. Use it when:
-
-- The server happens to be running already and an API call is shorter than a JSON edit.
-- You want the Board UI to reflect a change immediately without a page refresh.
-- A teammate is using the UI concurrently and you want their view to update via the auto-refresh poll.
-
-Do **not** start the server just to use the API. If the server is down, edit the JSON directly.
-
-### Start (only when you actually want the Board UI)
-
-```bash
-# Check if server is already running
-lsof -ti:4242
-
-# Start server only (for already-registered projects)
-python3 ~/.claude/skills/vibe-harness/server.py serve 4242 &
-
-# Start server with auto-registration (legacy db_path also works)
-python3 ~/.claude/skills/vibe-harness/server.py "$(pwd)/vibe-harness" 4242 "ProjectName" &
-
-# Register a project against an already-running server
-python3 ~/.claude/skills/vibe-harness/server.py register <project_key> <display_name> <kanban_dir>
-```
-
-### Stop
-```bash
-lsof -ti:4242 | xargs kill 2>/dev/null
-```
-
-### Project List
-```bash
-curl http://localhost:4242/api/projects
-```
-
-### Register Project
-```bash
-curl -X POST http://localhost:4242/api/projects \
-  -H 'Content-Type: application/json' \
-  -d '{"key":"my_project","name":"My Project","kanban_dir":"/path/to/vibe-harness"}'
-```
-
-### Task API
-```bash
-# List (returns active + archived tasks)
-curl http://localhost:4242/api/{project_key}/tasks
-
-# Create
-curl -X POST http://localhost:4242/api/{project_key}/tasks \
-  -H 'Content-Type: application/json' \
-  -d '{"title":"Task","status":"todo","priority":"high"}'
-
-# Update
-curl -X PUT http://localhost:4242/api/{project_key}/tasks/{id} \
-  -H 'Content-Type: application/json' \
-  -d '{"status":"done","lines_added":150}'
-
-# Bulk create
-curl -X POST http://localhost:4242/api/{project_key}/tasks/bulk \
-  -H 'Content-Type: application/json' \
-  -d '{"tasks":[{"title":"Task 1","status":"done"},{"title":"Task 2","status":"todo"}]}'
-
-# Archive done tasks to monthly files
-curl -X POST http://localhost:4242/api/{project_key}/archive
-```
-
-### Decision Log API
-```bash
-# List decisions
-curl http://localhost:4242/api/{project_key}/decisions
-
-# Record a decision
-curl -X POST http://localhost:4242/api/{project_key}/decisions \
-  -H 'Content-Type: application/json' \
-  -d '{"title":"SQLite WAL 유지","why":"동시 사용자 3명 이하면 충분","revisit":"동시 접속 10명 초과 시","phase":"PHASE_PMF01"}'
-```
-
-### Context / Velocity / Phase-Check API
-```bash
-# Same data as reading docs/CURRENT_PHASE.md + kanban.json, packaged for the UI
-curl http://localhost:4242/api/{project_key}/context
-
-# Phase burndown, daily trend, category token breakdown, cost estimate
-curl http://localhost:4242/api/{project_key}/velocity
-
-# Automated phase completion pre-check
-curl http://localhost:4242/api/{project_key}/phase-check
-
-# Agent run usage log (append-only, agent-agnostic)
-curl http://localhost:4242/api/{project_key}/runs              # list (optionally ?task_id=N)
-curl -X POST http://localhost:4242/api/{project_key}/runs \
-  -H 'Content-Type: application/json' \
-  -d '{"task_id":6,"agent":"codex","model":"gpt-5-codex","tokens":297469,"time_seconds":737,"commit":"017b446"}'
-  # appends to runs.json AND syncs the task's tokens_used to the sum of its runs
-```
-
-### Export / Import API
-```bash
-# Export all tasks (active + archived) to JSON
-curl http://localhost:4242/api/{project}/export > vibe-harness/kanban-export.json
-
-# Import with merge (keeps newer version by updated_at)
-curl -X POST http://localhost:4242/api/{project}/import \
-  -H 'Content-Type: application/json' \
-  -d @vibe-harness/kanban-export.json
-
-# Import with replace (overwrite all tasks)
-curl -X POST http://localhost:4242/api/{project}/import \
-  -H 'Content-Type: application/json' \
-  -d '{"mode":"replace","tasks":[...]}'
-```
-
-### Merge Strategy
-
-| Mode | Behavior |
-|------|----------|
-| `merge` (default) | New tasks inserted. Existing tasks (same id): keep whichever has newer `updated_at` |
-| `replace` | Delete all existing tasks, insert imported tasks |
-
 ## Notes
 
 - Single optional server serves all projects (port 4242, localhost only)
@@ -644,54 +392,3 @@ curl -X POST http://localhost:4242/api/{project}/import \
 - Each project's `vibe-harness/` directory should be git-tracked (kanban.json + decisions.json + archive/)
 - JSON writes — both server and direct edits — should use atomic file replacement (write to `.tmp`, then rename) for safety
 
-## Optional Remote Snapshot Sync
-
-Remote dashboards use an outbound, read-only snapshot publisher. Never expose
-the localhost server or reuse an end-user login token as the upload secret.
-
-Configuration: `~/.claude/skills/vibe-harness/sync.json` (chmod `600`):
-
-```json
-{
-  "enabled": true,
-  "endpoint": "https://example.com/api/internal/vibe-harness/sync",
-  "secret": "dedicated-upload-secret",
-  "dashboards": {"ax-project": ["impactbook_ai"]}
-}
-```
-
-- A write to tasks, decisions, or runs schedules a debounced bundle upload.
-- Archives are included with active tasks.
-- Failed uploads are persisted to `sync-pending.json` and retried.
-- Run `python3 ~/.claude/skills/vibe-harness/server.py sync` for a manual flush.
-- Run `server.py configure-sync <endpoint> <dashboard> <project_key>...` to
-  create the mode-0600 config without placing the secret in shell history.
-- Dashboard access control belongs to the receiving application; the publisher
-  only authenticates with its dedicated bearer secret.
-
-## Managed Worker Runtime (Optional)
-
-The Worker runtime is opt-in. Never start a Worker merely because `worker.py`
-exists. Start it only when the user explicitly requests managed execution.
-
-Source-of-truth rules:
-
-- `kanban.json`, `CURRENT_PHASE.md`, and `decisions.json` remain authoritative.
-- `runtime.json` is ephemeral and ignored by Git; cross-process locks live under
-  `~/.claude/skills/vibe-harness/runtime-locks/` outside project repositories.
-- `runs.json` remains append-only; one terminal record per `run_id`.
-- A managed task may become `done` only after the server-run test gate passes.
-- Never trust an agent-provided claim that tests passed.
-- Never expose lease tokens in logs, snapshots, task details, or chat output.
-
-Start a Worker:
-
-```bash
-python3 ~/.claude/skills/vibe-harness/worker.py <project_key> \
-  --project-root "$(pwd)" --agent codex
-```
-
-Project policy lives at `vibe-harness/worker.json`. Adapter and test commands
-must be argv arrays; the runtime never executes them through a shell. Each run
-uses an isolated Git worktree. See `docs/WORKER_PROTOCOL.md` in the repository
-for the API, state machine, retry, lease, and approval contracts.
