@@ -104,6 +104,7 @@ Check this repo's remote and pull everything, branches included:
 2. Fast-forward pull the current branch. Fast-forward other local tracking branches too (`git fetch origin <branch>:<branch>`). Never auto-merge a diverged branch — report it instead.
 3. Report: current branch + ahead/behind vs remote, remote branch list (flag unmerged ones), uncommitted files (`git status`), and a summary of newly pulled commits if any.
 4. If the pull changed harness code (`scripts/`), check whether the installed copies (`~/.claude/skills/vibe-harness/`) and any running server need updating, and tell the user.
+5. **Daily review pass** — run the `vibe-review` skill in daily mode over the work since the previous session, and report it as part of `ss`. If nothing has landed since the last pass, say so in one line and move on; that is what keeps repeated `ss` calls cheap. This is the session-start ritual that makes yesterday's gap between claim and reality visible before new work starts.
 
 ### `qq` — daily wrap-up (no commit)
 

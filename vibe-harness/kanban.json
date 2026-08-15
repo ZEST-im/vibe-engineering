@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "next_id": 40,
+  "next_id": 41,
   "tasks": [
     {
       "id": 21,
@@ -825,6 +825,27 @@
       "lines_removed": 6,
       "created_at": "2026-08-15T16:30:00+09:00",
       "updated_at": "2026-08-15T17:20:00+09:00",
+      "position": 0,
+      "phase": "PHASE_PMF06",
+      "review": "",
+      "created_by": "hogun",
+      "assigned_to": "hogun"
+    },
+    {
+      "id": 40,
+      "title": "vibe-review 객관성 강화 + ss 배선 + 첫 리뷰 실행",
+      "description": "zesty-os weekly_developer_review 루브릭을 확인해 객관성 장치를 일반화 이식하고, 이 레포에 첫 주간 리뷰를 실행",
+      "details": "## 배경\n초판 vibe-review 는 looom_ai 산출물에서 9축을 역산해 만든 것이었다. 사용자가\nzesty-os/src/playbooks/weekly_developer_review/ 에 원본 루브릭이 있다고 알려줘 확인.\nSCORE_KEYS 9축은 역산이 정확히 맞았으나, 채점 규칙이 훨씬 정밀했고 초판 리뷰가 두 군데를 위반했다.\n\n## 이식한 것 (구조만, 공개 가능하게 일반화)\n- 절대평가 앵커 1~10 — \"5에서 가감하지 말고 산출물이 충족한 가장 높은 앵커를 고른다\"\n- 종합은 평균하지 않으며 7+/8+/9+ 게이트 조건을 가진다\n- **활동량·파일 수·커밋 형식은 점수 근거가 아니다** (탐색용)\n- **미확인은 0이 아니다** — unverified 로 적는다\n- AI 활용 정의 구분 — 개발에 AI 도구를 얼마나 썼는가이지, 제품에 AI 기능이 있는가가 아니다.\n  AI 기능 구현 난이도는 architecture/implementation 소관\n- AI 활용/통제 밴드 정의 (1-2 / 3-4 / 5-6 / 7-8 / 9-10)\n- score_evidence — 축마다 anchor·confidence·supports·concerns·unknowns 를 아티팩트 참조로\n- source_coverage — git/tests/ci/docs/deployment 를 observed/unverified/missing 로\n- comprehension_checks — 보지 않고 설명·재현·수정할 수 있는가. AI 비중 높은 작업의 가장 날카로운 탐침\n\n## 이식하지 않은 것\n- PUBLIC_KEYS/PRIVATE_KEYS 분리 — 셀프 리뷰에서는 총평을 나눌 이유가 없다 (사용자 판단)\n- experience_estimate — 타인 평가용 항목이라 셀프 리뷰 스킬에서 제외\n- ZEST 내부 문구는 옮기지 않고 구조만 일반화\n\n## ss 배선\nvibe-harness SKILL.md 의 ss 절차 5단계로 일간 리뷰 추가.\n직전 리뷰 이후 새 커밋이 없으면 한 줄로 끝내게 해서 별도 상태 파일 없이 반복 호출을 억제.\n\n## 첫 리뷰 실행 (2026-W33, 이 레포)\n종합 5/10. 증거는 직접 실행으로 수집(31 tests 실제 실행, CI·린터 부재 확인).\n- P1 제품 본체(skills/ 1,390줄) 검증 테스트 0 — 기존 테스트는 설치 배선만 봄\n- P2 CI 없음, 린터 없음. 31개 테스트가 사람 기억에 의존\n- P3 e2e 검증 산출물이 gitignore 라 주장만 남고 증거 없음\n- P4 AI 활용 8 / 통제 3 — 검증이 대화 안에서만 일어나 반복 불가\n- P5 오늘 만든 qq 의 PROGRESS.md 규칙이 이 레포에선 무동작\n\n## 재채점\n루브릭 확인 후 초판을 교정 — git_change_management 8→6 (커밋 형식을 근거로 씀),\nai_utilization 10→8 (telemetry 앵커 미충족). 재채점 사실을 문서에 고지.\n\n## Verification\n- 31 tests OK\n- 리뷰 HTML 외부 참조 0건, 다크모드 대응, history.json 스키마 유효",
+      "status": "done",
+      "priority": "high",
+      "category": "docs",
+      "target_date": "",
+      "started_at": "2026-08-15T17:30:00+09:00",
+      "completed_at": "2026-08-15T18:40:00+09:00",
+      "lines_added": 268,
+      "lines_removed": 14,
+      "created_at": "2026-08-15T17:30:00+09:00",
+      "updated_at": "2026-08-15T18:40:00+09:00",
       "position": 0,
       "phase": "PHASE_PMF06",
       "review": "",
