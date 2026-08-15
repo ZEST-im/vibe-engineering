@@ -96,6 +96,19 @@ def copy_skill_files():
             continue
         dest_dir = os.path.join(SKILLS_ROOT, name)
         os.makedirs(dest_dir, exist_ok=True)
+
+        # 부속 파일은 레포와 동기화한다. copytree 는 덮어쓰기만 하므로,
+        # 레포에서 지운 문서가 설치본에 남아 "레포에 없는 지침"이 되는 것을 막는다.
+        # 스킬 디렉토리 최상위는 지우지 않는다 — vibe-harness 는 server.py·
+        # projects.json·로그가 같은 자리에 살기 때문이다.
+        for sub in os.listdir(src_dir):
+            src_sub = os.path.join(src_dir, sub)
+            if not os.path.isdir(src_sub) or sub in ("__pycache__",):
+                continue
+            stale = os.path.join(dest_dir, sub)
+            if os.path.isdir(stale):
+                shutil.rmtree(stale)
+
         shutil.copytree(src_dir, dest_dir, dirs_exist_ok=True,
                         ignore=SKILL_COPY_IGNORE)
         # 원본 기준으로 센다. 대상 기준으로 세면 vibe-harness 처럼

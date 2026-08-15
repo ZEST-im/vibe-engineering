@@ -61,14 +61,12 @@ Verified 2026-08-15. **Most Korean design systems do not publish tokens.**
 | System | Status | Notes |
 |---|---|---|
 | **SEED** (당근) | ✅ Apache-2.0, ★1045 | The only Korean system found with open, extractable token values |
-| **NAVER Pay** | 📄 guideline site | `developers.pay.naver.com/design` — reachable, but a guideline page, not a token package |
-| **Toss** | 📄 guideline site | `developers-apps-in-toss.toss.im/design` — reachable. `toss/tds` does not exist; third-party clones are unofficial |
 | **KRDS** (정부) | ❓ unverified | `krds.go.kr` responds, but the page is JS-rendered so a raw fetch shows no tokens or downloads. Do not claim it has them |
-| **ZEST UI** | 🔒 internal | `@zest-im/ui` — private package. Language documented in `zest-ui.md` |
+| **ZEST UI** | ✅ documented | Cool-gray surfaces, single accent, large radii — see `zest-ui.md`. Free to use |
 
-**NAVER Pay and Toss are not design systems.** They are partner rulebooks with usage
-restrictions — see `kr-platform-guides.md`. Read them when integrating with those
-platforms, never as a visual starting point.
+Several large Korean products publish only brand or partner guidelines — logo usage,
+integration rules — rather than tokens. Those are worth reading when you integrate with
+a platform, but they are not a visual starting point and are not listed here.
 
 ### SEED (당근) — the one that works
 
@@ -116,8 +114,7 @@ Let the product decide, not taste.
 | Dense internal tooling, tables, many states | Primer or Carbon |
 | Commerce or merchant-facing admin | Polaris |
 | Korean consumer product | SEED scale layer + Korean typography checks |
-| A ZEST product | `zest-ui.md` — the house language |
-| Inside Naver Pay or the Toss app | Catalog for the look, `kr-platform-guides.md` for the rules |
+| Korean product wanting quiet surfaces and one accent | `zest-ui.md` |
 | Nothing decided yet | Radix Colors + Open Props |
 
 Then **make one deliberate move that belongs to this product and nothing else** — a
