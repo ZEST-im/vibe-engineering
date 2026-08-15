@@ -30,28 +30,31 @@ its token layer, and then make one deliberate move that belongs to this product.
 ### Ask where the starting point comes from — first, before anything else
 
 This question decides everything downstream, so ask it before the three-second message,
-before screens, before tone. Offer three paths and say what each one can actually deliver:
+before screens, before tone. **There are two paths, and both end in real values.**
 
-| Path | What you get | Accuracy |
-|---|---|---|
-| **A. Catalog** | A system from `references/design-systems.md`, picked by what the product is | Exact — real token files, checked licenses |
-| **B. A link** | You fetch the page and read its actual CSS | Exact for color and type; layout still your call |
-| **C. A screenshot** | You read the image and derive a palette and structure | **Approximate.** Say so out loud |
+| Path | What you get |
+|---|---|
+| **A. Catalog** *(default)* | A system from `references/design-systems.md`, picked by what the product is. Real token files, checked licenses |
+| **A′. House system** | If the org has one — e.g. `references/zest-ui.md` — start there and skip the catalog |
+| **B. A link** | You fetch the page and read its actual CSS |
 
-If the user has no preference, recommend **A** and pick by product type, not taste.
+**Prefer A.** The catalog entries are token sets built to be reused, with licenses already
+checked. A link gives you one site's finished decisions, which are tuned to that site's
+brand and not necessarily coherent as a system.
 
 **Path B — a link.** Fetch the page and pull real values rather than eyeballing it:
 custom properties in `:root`, the `font-family` stack, and the colors that actually
 repeat. Tell the user which values you extracted and which you inferred.
 
-**Path C — a screenshot.** Read the image, name the palette, spacing rhythm, and type
-character you see. **State plainly that these are approximations** — you cannot recover
-exact hex or the type stack from a picture, and pretending otherwise produces a design
-nobody can reproduce. Ask for the link too if one exists.
+Take *direction* — density, warmth, rhythm, structure. Do not reproduce someone's
+product. Their logo, brand color, and distinctive layout are theirs. If the request is
+effectively "clone this site", say so and offer the direction instead.
 
-**Boundary for B and C:** take *direction* — density, warmth, rhythm, structure. Do not
-reproduce someone's product. Their logo, brand color, and distinctive layout are theirs.
-If the request is effectively "clone this site", say so and offer the direction instead.
+**Do not work from a screenshot.** You cannot recover exact hex values or a type stack
+from an image, and an approximation that looks precise is worse than no starting point —
+nobody can reproduce it, and the drift shows up in implementation. If the user has only a
+screenshot, ask for the URL; if there is none, use the catalog and treat the image as
+tone reference only, saying that is what you are doing.
 
 ### Then, whichever path
 
@@ -62,6 +65,11 @@ If the request is effectively "clone this site", say so and offer the direction 
    product's own world — and spend your boldness only there. In a system for elderly
    community centres, the status indicator became a heated floor, because the product is
    about whether a floor is warm.
+
+**If the product ships inside another company's platform** (a Naver Pay integration, an
+Apps-in-Toss mini-app), read `references/kr-platform-guides.md` first. Those platforms
+impose hard requirements — asset specs, clear space, brand-separation rules — that
+override design preference, and one of them requires partner status to use at all.
 
 If the fetch fails or you are offline, say so and fall back to Radix-style reasoning —
 12 steps with defined jobs — rather than picking colors freehand.
@@ -118,7 +126,7 @@ Read what already exists, in this order — skip what is absent:
 
 Then confirm these with the user, one question per message:
 
-1. **Where does the design language start?** — catalog / link / screenshot (see above).
+1. **Where does the design language start?** — catalog (default) or a link (see above).
    Ask this first; it changes every answer that follows.
 2. What must a visitor understand within three seconds of the landing page?
 3. **Which user groups are in this round?** Name them and their axes (above). If the
@@ -203,7 +211,7 @@ back to whatever invoked this.
 | "Ten screens in one file is more efficient" | Five is the cap *per group*. More means split the round. |
 | "I'll pick the colors and typography myself" | That is how slop happens. Start from a real system in the catalog. |
 | "I'll describe that design system from memory" | Fetch it. The catalog has checked URLs and licenses. |
-| "They sent a screenshot, I'll state the hex codes" | You cannot recover exact values from a picture. Say they are approximations. |
+| "They only have a screenshot, I'll work from that" | Ask for the URL. If there is none, use the catalog and treat the image as tone only. |
 | "They sent a link, so I'll match it closely" | Take direction, not their product. Logo, brand color, and distinctive layout are theirs. |
 | "The happy path is enough to approve" | Empty, loading, and error states are where implementations break. Draw them. |
 | "I'll make several things distinctive" | Spend boldness once. Two signatures is none. |
