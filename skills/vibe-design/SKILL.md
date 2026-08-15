@@ -24,17 +24,41 @@ Generated design looks generic for a specific reason: **the model invents a colo
 type scale, and a spacing rhythm from nothing on every run.** Invented-from-nothing
 converges on the average — that is what "AI slop" is.
 
-The fix is not to try harder. It is to **start from a design system that already exists**,
-take its token layer, and then make one deliberate move that belongs to this product.
+The fix is not to try harder. It is to **start from something that already exists**, take
+its token layer, and then make one deliberate move that belongs to this product.
 
-1. **Pick a system** from `references/design-systems.md` — chosen by what the product is,
-   not by taste. Public service, dense admin tool, and Korean consumer product each point
-   somewhere different.
-2. **Fetch its tokens** and read the actual values. Do not describe a system from memory;
-   the catalog lists exact URLs that were checked.
-3. **Take the scale layer, map your own semantics.** A borrowed brand ramp is the other
+### Ask where the starting point comes from — first, before anything else
+
+This question decides everything downstream, so ask it before the three-second message,
+before screens, before tone. Offer three paths and say what each one can actually deliver:
+
+| Path | What you get | Accuracy |
+|---|---|---|
+| **A. Catalog** | A system from `references/design-systems.md`, picked by what the product is | Exact — real token files, checked licenses |
+| **B. A link** | You fetch the page and read its actual CSS | Exact for color and type; layout still your call |
+| **C. A screenshot** | You read the image and derive a palette and structure | **Approximate.** Say so out loud |
+
+If the user has no preference, recommend **A** and pick by product type, not taste.
+
+**Path B — a link.** Fetch the page and pull real values rather than eyeballing it:
+custom properties in `:root`, the `font-family` stack, and the colors that actually
+repeat. Tell the user which values you extracted and which you inferred.
+
+**Path C — a screenshot.** Read the image, name the palette, spacing rhythm, and type
+character you see. **State plainly that these are approximations** — you cannot recover
+exact hex or the type stack from a picture, and pretending otherwise produces a design
+nobody can reproduce. Ask for the link too if one exists.
+
+**Boundary for B and C:** take *direction* — density, warmth, rhythm, structure. Do not
+reproduce someone's product. Their logo, brand color, and distinctive layout are theirs.
+If the request is effectively "clone this site", say so and offer the direction instead.
+
+### Then, whichever path
+
+1. **Read the actual values.** Do not describe a design system or a site from memory.
+2. **Take the scale layer, map your own semantics.** A borrowed brand ramp is the other
    company's brand. Their gray scale is reusable; their primary is not.
-4. **Make one move that is this product's.** A material, a place, an instrument from the
+3. **Make one move that is this product's.** A material, a place, an instrument from the
    product's own world — and spend your boldness only there. In a system for elderly
    community centres, the status indicator became a heated floor, because the product is
    about whether a floor is warm.
@@ -94,12 +118,14 @@ Read what already exists, in this order — skip what is absent:
 
 Then confirm these with the user, one question per message:
 
-1. What must a visitor understand within three seconds of the landing page?
-2. **Which user groups are in this round?** Name them and their axes (above). If the
+1. **Where does the design language start?** — catalog / link / screenshot (see above).
+   Ask this first; it changes every answer that follows.
+2. What must a visitor understand within three seconds of the landing page?
+3. **Which user groups are in this round?** Name them and their axes (above). If the
    answer is one, ask once more — a second group is usually hiding behind a feature
    nobody called a screen.
-3. Which screens are in this round, **per group**? (five maximum per group)
-4. Tone — where does this sit on trust / speed / expertise / warmth? Ask whether the
+4. Which screens are in this round, **per group**? (five maximum per group)
+5. Tone — where does this sit on trust / speed / expertise / warmth? Ask whether the
    tone differs by group; an outward-facing landing and an internal readout often want
    opposite things.
 
@@ -177,6 +203,8 @@ back to whatever invoked this.
 | "Ten screens in one file is more efficient" | Five is the cap *per group*. More means split the round. |
 | "I'll pick the colors and typography myself" | That is how slop happens. Start from a real system in the catalog. |
 | "I'll describe that design system from memory" | Fetch it. The catalog has checked URLs and licenses. |
+| "They sent a screenshot, I'll state the hex codes" | You cannot recover exact values from a picture. Say they are approximations. |
+| "They sent a link, so I'll match it closely" | Take direction, not their product. Logo, brand color, and distinctive layout are theirs. |
 | "The happy path is enough to approve" | Empty, loading, and error states are where implementations break. Draw them. |
 | "I'll make several things distinctive" | Spend boldness once. Two signatures is none. |
 | "There's only one user group here" | There are usually two. Ask again before believing it. |
