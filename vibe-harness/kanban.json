@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "next_id": 48,
+  "next_id": 49,
   "tasks": [
     {
       "id": 47,
@@ -22,6 +22,25 @@
       "review": "",
       "created_by": "hogun",
       "assigned_to": "hogun"
+    },
+    {
+      "id": 48,
+      "title": "아카이브 루틴 9개 프로젝트 전개 — 일반화 근거 확보",
+      "description": "PMF07 에서 만든 컨텍스트 경제 루틴을 다른 프로젝트에 적용해 절감이 재현되는지 확인",
+      "status": "done",
+      "priority": "medium",
+      "category": "infra",
+      "phase": "PHASE_PMF07",
+      "created_at": "2026-08-16T00:35:00+09:00",
+      "updated_at": "2026-08-16T00:35:00+09:00",
+      "started_at": "2026-08-15T19:10:00+09:00",
+      "completed_at": "2026-08-16T00:35:00+09:00",
+      "position": 0,
+      "lines_added": 0,
+      "lines_removed": 0,
+      "created_by": "hogun",
+      "assigned_to": "hogun",
+      "details": "## 배경\nPMF08 의 선행 조건 — \"한 레포의 결과만으로 스킬을 만들면 오늘 한 일을 일반화한 척하는\n문서가 된다\". 그래서 아카이브 루틴을 실제로 다른 프로젝트에 돌려봤다.\n\n## 실행\n독립 프로젝트 8곳 + impactbook_ai 1곳 = 9곳.\n로직은 새로 짜지 않고 server.py 의 `_archive_tasks` 를 그대로 import 해서 돌렸다.\n다시 구현하면 서버와 조용히 갈라진다.\n\nimpactbook_ai (오늘 마지막, worktree 전부 정리된 뒤 본체에서만):\n- kanban.json 477,445B -> 85,038B (-82%)\n- hot 273건 -> 41건, 아카이브 163 -> 395건\n- 총 436건 무손실. 서버 /api/tasks 가 여전히 436건 반환. next_id 434 유지\n\nworktree 가 열려 있는 동안은 하지 않았다. kanban.json 은 모든 브랜치가 건드리는\ngit 추적 파일이라, 한 브랜치에서 아카이브하면 delete-vs-keep 충돌이 크게 난다.\n머지 직후·새 브랜치 분기 전이 유일하게 싼 타이밍이다.\n\n## 현재 상태 (12개 프로젝트 실측)\n- hot(kanban.json) 205,517B ≈ 66,296 tok — 세션 시작에 읽히는 양\n- archive/*.json 2,121,403B ≈ 684,324 tok — 디스크에 있지만 세션 시작에 안 읽힘\n비율이 1:10 이다. 아카이브의 값어치는 지운 것이 아니라 **안 읽는 것**에 있다.\n\n## 부수 정리\nprojects.json 에서 죽은 등록 3건 제거 (15 -> 12).\nworktree 는 사라지고 빈 껍데기 디렉토리만 남아 있었다.\n백업 ~/.claude/skills/vibe-harness/projects.json.bak-20260815\n\n## 도중에 잡은 결함 2건 (PMF08 후보)\n1. **직접 편집 경로에 원자성이 없다**\n   측정 중 impactbook kanban.json 이 109,409B 로 parse 실패했다가 곧 86,718B 정상이 됐다.\n   손상이 아니라 동시 쓰기 중 부분 읽기였다.\n   server.py `_write_kanban` 은 tmp + fsync + os.replace 로 원자적이다. 그런데\n   **CLAUDE.md 가 규정한 기본 경로는 \"에이전트가 kanban.json 을 직접 편집\"** 이고\n   이쪽은 truncate-then-write 라 원자성이 없다. 규약이 지정한 주 경로가 서버 경로보다\n   약하다. impactbook 의 id 409/410 중복도 같은 뿌리로 보인다 — 직접 편집은 잠금이\n   없어 전체 파일 last-writer-wins 다.\n2. **/context 가 in_progress 만 원문으로 내보낸다**\n   recent_done 은 _task_digest 를 거치는데 in_progress 는 details 전량이다.\n   impactbook 은 in_progress 6건이라 /context 36KB 중 20,899B 가 여기였다.\n   in_progress 1건 규율이 지켜지면 문제없는 설계지만, 규율이 깨지면 절감분을 도로 까먹는다.\n   다만 in_progress details 는 세션 시작에 실제로 필요한 정보라 단순 절삭은 반대 방향이다."
     }
   ]
 }
