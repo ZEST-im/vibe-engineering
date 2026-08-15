@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>2026-W33 개발자 리뷰 — hoarchi</title>
+<style>
+:root{--bg:#f3f6f4;--card:#fff;--line:#d8e1db;--text:#17221c;--dim:#5d6e64;--green:#118c6b;--amber:#b46d0d;--red:#b83b62;--mono:ui-monospace,SFMono-Regular,Menlo,monospace}
+@media(prefers-color-scheme:dark){:root{--bg:#111614;--card:#1a211d;--line:#2b3531;--text:#e6ece9;--dim:#94a49b;--green:#4fb894;--amber:#d69a3f;--red:#e0798f}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans KR",sans-serif;line-height:1.65}
+.wrap{max-width:980px;margin:auto;padding:56px 24px 90px}
+h1{font-size:42px;line-height:1.15;margin:8px 0 12px}h2{margin-top:46px;font-size:24px}h3{margin-top:0;font-size:18px}
+.eyebrow,.meta{font:12px var(--mono);color:var(--dim)}.eyebrow{color:var(--green);letter-spacing:.14em}
+.lede{font-size:18px;color:var(--dim);max-width:75ch}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:28px 0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:15px;padding:22px}
+.metric b{display:block;font:700 30px var(--mono);color:var(--green)}.metric span{font-size:12px;color:var(--dim)}
+table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line)}
+th,td{padding:12px;border-bottom:1px solid var(--line);text-align:left}th{font-size:12px;color:var(--dim)}
+.score{font:700 18px var(--mono)}.up{color:var(--green)}.same{color:var(--amber)}.down{color:var(--red)}
+.priority{border-left:4px solid var(--amber);margin:12px 0}.critical{border-left-color:var(--red)}.good{border-left-color:var(--green)}
+code{font-family:var(--mono);font-size:.92em}li{margin:7px 0}
+.evidence{font:12px var(--mono);color:var(--dim)}
+.verdict{border-top:4px solid var(--green);font-size:16px}
+footer{margin-top:50px;text-align:center;color:var(--dim);font:11px var(--mono)}
+@media(max-width:720px){.grid{grid-template-columns:repeat(2,1fr)}h1{font-size:32px}.wrap{padding:36px 18px 60px}}
+</style>
+</head>
+<body><main class="wrap">
+<p class="eyebrow">VIBE-ENGINEERING · WEEKLY REVIEW</p>
+<h1>hoarchi · 2026-W33</h1>
+<p class="meta">@hoarchi · 2026-08-10–2026-08-16 · 대상 ref: <code>origin/main</code> · 첫 리뷰</p>
+<p class="lede">한 주에 스킬 3종을 새로 만들고 리브랜딩까지 끝냈다. 변경 관리와 결함 발견은 강하다. 그러나 <strong>이번 주에 만든 제품 본체(<code>skills/</code> 704줄)를 검증하는 테스트가 하나도 없고</strong>, 31개 테스트를 자동으로 돌리는 장치도 없다. 품질이 전적으로 사람의 기억에 의존하는 상태다.</p>
+
+<div class="grid">
+  <div class="card metric"><b>11</b><span>커밋</span></div>
+  <div class="card metric"><b>+1,325</b><span>순증 라인</span></div>
+  <div class="card metric"><b>26</b><span>변경 파일</span></div>
+  <div class="card metric"><b>5/10</b><span>종합 평가</span></div>
+</div>
+
+<section>
+<h2>1. 평가</h2>
+<p class="meta">첫 리뷰이므로 비교 대상이 없다. 다음 주부터 증감이 표시된다.<br>
+초판 발행 후 절대평가 앵커 기준으로 재채점 — 변경관리 8→6, AI 활용 10→8.
+활동량·커밋 형식을 점수 근거로 삼은 것과, telemetry 앵커를 충족하지 않고 최고점을 준 것이 이유다.</p>
+<h3 style="margin-top:26px">근거 관측 범위</h3>
+<table style="margin-bottom:22px">
+<thead><tr><th>소스</th><th>상태</th><th>비고</th></tr></thead>
+<tbody>
+<tr><td>git</td><td class="up">observed</td><td>주간 커밋 11건 전량 판독</td></tr>
+<tr><td>tests</td><td class="up">observed</td><td>직접 실행 — 31 runs, 0 failures</td></tr>
+<tr><td>docs</td><td class="up">observed</td><td>PHASES·CURRENT_PHASE·kanban 갱신됨</td></tr>
+<tr><td>ci</td><td class="down">missing</td><td>설정 파일 자체가 없음</td></tr>
+<tr><td>deployment</td><td class="same">unverified</td><td>배포 산출물을 가리킬 수 없음</td></tr>
+</tbody>
+</table>
+<p class="meta">확인하지 못한 것은 낮은 점수가 아니라 <code>unverified</code> 로 적는다.
+못 봐서 깎는 것은 과대평가만큼이나 부정직하다.</p>
+<table>
+<thead><tr><th>축</th><th>점수</th><th>근거</th></tr></thead>
+<tbody>
+<tr><td>종합</td><td class="score">5</td><td>산출은 많으나 검증 구조가 없다</td></tr>
+<tr><td>요구사항</td><td class="score">7</td><td>PHASES·CURRENT_PHASE·kanban 이 실제로 갱신되고 Do NOT touch 가 작동</td></tr>
+<tr><td>아키텍처</td><td class="score">7</td><td>스킬 4종의 책임 분리가 명확. vibe-design 이 미학을 frontend-design 에 위임한 것은 옳은 경계</td></tr>
+<tr><td>구현</td><td class="score">6</td><td>setup.py 다중 스킬 설치는 3경로 모두 배선됨. 스킬 본문은 실행되지 않는 산문이라 구현 품질을 측정할 수단이 없다</td></tr>
+<tr><td>테스트</td><td class="score">3</td><td><strong>이번 주 skills/ 704줄 추가, 그에 대한 테스트 0줄</strong></td></tr>
+<tr><td>변경관리</td><td class="score">6</td><td>커밋 11건 중 9건이 본문에 검증 결과를 남겨 재현 경로가 있다. 다만 delivery 설정 변경 커밋 0 — 변경이 배포까지 이어지지 않는다</td></tr>
+<tr><td>운영</td><td class="score">1</td><td><strong>CI 없음. 린터 없음. 자동 실행되는 것이 하나도 없다</strong></td></tr>
+<tr><td>AI 활용 강도</td><td class="score">8</td><td>Co-Authored-By 7/11, runs.json 3세션. 개발 전반의 중심 도구이나 계획·검증까지 연결된 telemetry 는 없어 9–10 앵커 미충족</td></tr>
+<tr><td>AI 통제 역량</td><td class="score">3</td><td>검증이 대화 안에서만 일어나고 레포에 흔적이 없다</td></tr>
+</tbody>
+</table>
+</section>
+
+<section>
+<h2>2. 잘된 부분</h2>
+<div class="card good">
+<h3>회귀를 TDD로 잡았다</h3>
+<p><code>cbc29a8</code> — reconcile 이 <code>runs.json</code> 을 통째로 덮어써 기존 run 과 <code>version</code> 필드가 사라지던 문제를, 실패하는 테스트를 먼저 쓰고 고쳤다. 실패 로그가 실제 버그를 재현했다(<code>KeyError: 'version'</code>). 커밋 전 보안 셀프리뷰에서 같은 유실 경로를 하나 더 찾아 함께 막았다.</p>
+</div>
+<div class="card good">
+<h3>리브랜딩에서 무엇을 바꾸면 안 되는지 먼저 셌다</h3>
+<p><code>dfee7cc</code> — 브랜드 표기 46건을 바꾸면서 경로·식별자 75건은 의도적으로 남기고, 변경 후 그 75건이 온전한지 검증했다. <code>setup.py</code> 의 <code>REPO_URL</code> 을 같이 고치지 않았으면 원격 설치가 조용히 끊길 자리였다.</p>
+</div>
+<div class="card good">
+<h3>스킬 결함을 실주행으로 12건 잡았다</h3>
+<p>가상 프로젝트로 vibe-planning 을 1~6단계 완주하며 결함을 찾아 반영했다. 특히 제품명이 질문 범위를 가두는 문제(<code>monitoring</code> 이라는 이름 때문에 나머지 기능을 4단계까지 못 물음)와, 에이전트가 지어낸 원칙을 사용자 승인만으로 확정 처리하던 문제는 실주행 없이는 발견되지 않았을 종류다.</p>
+</div>
+</section>
+
+<section>
+<h2>3. 안 된 부분</h2>
+
+<div class="card critical">
+<h3>P1 · 제품 본체가 검증 대상 밖에 있다</h3>
+<p>이 레포의 제품은 <code>skills/*/SKILL.md</code> 1,390줄이다. 이번 주에만 704줄이 추가됐다.
+그런데 <strong>스킬 내용을 검증하는 테스트는 0개</strong>다. <code>tests/test_setup_skills.py</code> 5개 케이스는 전부 <em>설치 배선</em>만 본다 — 파일이 복사되는가, 언인스톨이 보존하는가.</p>
+<p>즉 SKILL.md 에 무엇이 적혀 있든 테스트는 통과한다. 상호참조가 깨져도, frontmatter 가 잘못돼도, 분량 상한을 어겨도 아무도 모른다. 이번 주에 그 값들을 손으로 <code>grep</code> 해서 확인했지만 그 확인은 재현되지 않는다.</p>
+</div>
+
+<div class="card critical">
+<h3>P2 · CI 가 없다</h3>
+<ul>
+<li><code>.github/workflows</code> 없음. <code>cloudbuild.yaml</code> 없음. 어떤 CI 설정도 없다.</li>
+<li>31개 테스트는 <strong>사람이 기억해서 칠 때만</strong> 돌아간다.</li>
+<li>린터 설정이 없고 <code>ruff·flake8·pylint·mypy·bandit</code> 어느 것도 설치되어 있지 않다. 이번 주 품질 검사는 <code>py_compile</code> 이 전부였다 — 문법 오류만 잡는다.</li>
+<li>이번 주 11개 커밋 중 배포·CI 설정을 건드린 커밋은 <strong>0개</strong>다.</li>
+</ul>
+<p>공개 레포에 <code>setup.py</code> 로 원격 설치를 제공하면서, 그 <code>setup.py</code> 가 푸시 시점에 검증되지 않는다.</p>
+</div>
+
+<div class="card priority">
+<h3>P3 · 검증 결과가 레포에 남지 않는다</h3>
+<p>kanban task 38 은 "e2e 1~6단계 완주, 산출물 17개, Do NOT touch 배선 검증"을 기록한다.
+그러나 <code>test_temp/</code> 는 <code>.gitignore</code> 에 있어 <strong>git 추적 파일 0개</strong>다.</p>
+<p>레포만 읽는 사람에게 이 주장은 확인할 방법이 없다. 검증했다는 기록은 있고 검증물은 없다.
+검증 산출물을 커밋에서 빼기로 한 판단 자체는 합리적이지만, 그 결과로 <strong>주장만 남고 증거가 사라진 상태</strong>는 그대로다.</p>
+</div>
+
+<div class="card priority">
+<h3>P4 · AI 활용 8, 통제 3</h3>
+<p>11개 커밋 중 7개가 AI 공동저자다. 산출량은 이 격차 때문에 나온 것이고 그 자체는 문제가 아니다.
+문제는 검증이 <strong>전부 대화 안에서만</strong> 일어났다는 것이다.</p>
+<p>이번 주 확인 작업 — 경로 75건 보존, 분량 상한, 외부 참조 0건, frontmatter 일치, 상호참조 유효성 —
+은 모두 일회성 셸 명령이었고 어디에도 저장되지 않았다. 다음 주에 같은 것을 확인하려면 처음부터 다시 짜야 한다.
+<strong>확인을 했다는 사실과 확인이 반복 가능하다는 것은 다르다.</strong></p>
+</div>
+
+<div class="card priority">
+<h3>P5 · 오늘 만든 규칙이 이 레포에서 무동작이다</h3>
+<p><code>6620f3f</code> 는 <code>qq</code> 절차에 "<code>docs/PROGRESS.md</code> 를 갱신한다"를 추가했다.
+그런데 <strong>이 레포에는 <code>docs/PROGRESS.md</code> 가 없다.</strong>
+자기 레포에서 한 번도 실행되지 않는 규칙을 공개 스킬에 넣었다.</p>
+</div>
+</section>
+
+<section>
+<h2>4. 완성도</h2>
+<table>
+<thead><tr><th>영역</th><th>상태</th><th>비고</th></tr></thead>
+<tbody>
+<tr><td>스킬 4종</td><td>작성 완료</td><td>vibe-planning 만 실주행 검증. design·review 는 미검증</td></tr>
+<tr><td>설치 배선</td><td>완료</td><td>로컬·원격·언인스톨 3경로, 테스트 있음</td></tr>
+<tr><td>vibe-review</td><td>이번이 첫 실행</td><td>일간 모드는 아직 한 번도 안 돌았다</td></tr>
+<tr><td>CI·품질 게이트</td><td>없음</td><td>0%</td></tr>
+</tbody>
+</table>
+<p>도구로서는 동작하지만, <strong>스스로를 검증하는 제품이 스스로를 검증하지 않는다</strong>는 모순이 남아 있다.</p>
+</section>
+
+<section>
+<h2>5. 다음 주 완료 조건</h2>
+<ol>
+<li><code>skills/</code> 를 검증하는 테스트를 추가한다 — frontmatter 가 디렉토리명과 일치하는가, 스킬 간 상호참조가 실재하는가, 각 스킬이 선언한 분량 상한을 지키는가. 이번 주에 손으로 <code>grep</code> 한 것들을 테스트로 옮기면 된다.</li>
+<li>루트에 CI 를 만들고 <code>python3 -m unittest discover -s tests</code> 를 필수 체크로 실행한다.</li>
+<li>린터 하나를 골라 설정하고 CI 에 넣는다. 무설정 상태에서는 <code>py_compile</code> 이상을 잡을 수 없다.</li>
+<li><code>vibe-review</code> 일간 모드를 실제로 한 번 돌린다. 주간만 돌려보고 일간을 미검증으로 두면 <code>ss</code> 에 배선한 것이 첫 실행에서 깨진다.</li>
+<li><code>docs/PROGRESS.md</code> 를 만들거나, <code>qq</code> 절차에서 그 항목을 조건부로 바꾼다. 규칙과 레포가 어긋난 상태를 다음 주로 넘기지 않는다.</li>
+</ol>
+</section>
+
+<section>
+<h2>6. 이해도 확인</h2>
+<p class="meta">보지 않고 답할 수 있어야 한다. AI 비중이 높은 작업에서 이것이 가장 날카로운 탐침이다 —
+설명하지 못하는 코드는 테스트가 아무리 초록이어도 소유한 코드가 아니다.</p>
+<table>
+<thead><tr><th>질문</th><th>통과 조건</th></tr></thead>
+<tbody>
+<tr><td><code>copy_skill_files</code> 가 레포에 없는 스킬을 만나면 어떻게 동작하며, 왜 그렇게 정했는가</td>
+    <td>SKIP 후 계속 진행 / 부분 배포 상태에서도 설치가 깨지지 않게 하려는 의도</td></tr>
+<tr><td><code>merge_runs</code> 는 <code>session_id</code> 가 같은 run 의 <code>ts</code> 를 왜 갱신하지 않는가</td>
+    <td>일자별 velocity 집계가 소급 변경되는 것을 막기 위함</td></tr>
+</tbody>
+</table>
+</section>
+
+<section class="card verdict">
+<h2>종합 판정</h2>
+<p><strong>결함을 찾아내는 능력은 확인됐다.</strong> reconcile 유실 버그, 리브랜딩의 REPO_URL 함정, 스킬의 제품명 프레임 문제 — 모두 지나치기 쉬운 것들을 잡았다. 커밋 이력에 결정 근거가 남아 6개월 뒤에도 읽힌다.</p>
+<p>그러나 <strong>이 주의 품질은 재현되지 않는다.</strong> 검증은 전부 사람이 그때 기억해서 친 명령이었고, 제품 본체는 테스트 밖에 있으며, 자동으로 돌아가는 것이 하나도 없다. 지금 상태에서 다른 사람이 이 레포에 기여하면 무엇이 깨졌는지 알 방법이 없다.</p>
+<p><strong>공개 배포 중인 도구로서는 운영 준비가 안 됐다.</strong> 코드를 쓰는 능력이 아니라, 쓴 것이 계속 동작함을 보장하는 장치가 다음 과제다.</p>
+</section>
+
+<section>
+<h2>검증 근거</h2>
+<ul class="evidence">
+<li>Git: 11 commits, +1,394/-69, 26 files, ai_attributed 7/11</li>
+<li>경로별: scripts 9 · skills 4 · docs 3 · tests 2 · 기타 8</li>
+<li>skills/ +704/-8 · tests/ +343/-0</li>
+<li>테스트 실제 실행: 31 runs, 0 failures (python3 -m unittest discover -s tests)</li>
+<li>py_compile: 9 files OK</li>
+<li>린터: ruff·flake8·pylint·mypy·bandit 전부 미설치, 설정 파일 없음</li>
+<li>CI: .github/workflows·cloudbuild.yaml·.gitlab-ci.yml·Jenkinsfile 전부 없음</li>
+<li>delivery 설정 변경 커밋: 0</li>
+<li>git 추적 test_temp 파일: 0</li>
+<li>스킬 상호참조: 깨진 것 0 · frontmatter name 일치 4/4</li>
+<li>재채점: git_change_management 8→6, ai_utilization 10→8 (절대평가 앵커 적용)</li>
+</ul>
+</section>
+
+<footer>vibe-engineering weekly review · hoarchi · origin/main · 2026-W33</footer>
+</main></body></html>

@@ -56,6 +56,11 @@ Four rules keep the review honest:
 
 Scope is **the current repo**. Do not widen it without being asked.
 
+Daily mode is wired into the `ss` (sync & status) ritual in the `vibe-harness` skill, so
+it runs at session start without being asked for. **If nothing has landed since the last
+pass, say so in one line and stop** — that is what keeps repeated `ss` calls cheap and
+removes any need to track when the last review happened.
+
 The output path is a default, not a requirement — if the repo already has a place for
 this kind of document, use it and stay consistent. What matters is that all weeks for one
 person live in one directory beside one `history.json`, because the review is a series.
@@ -116,6 +121,23 @@ Then collect from git for the week: commit count, additions, deletions, files to
 how many touched test paths, how many touched migration or delivery config, and how many
 were AI co-authored.
 
+### Record what you could and could not observe
+
+Before scoring, state the coverage of each evidence source as
+`observed` / `unverified` / `missing`:
+
+| Source | `observed` means |
+|---|---|
+| `git` | Commit history for the period was readable |
+| `tests` | You ran the suite and saw the result |
+| `ci` | A pipeline actually executed this week |
+| `docs` | Requirements or design docs exist for what shipped |
+| `deployment` | Something was actually released and you can point at it |
+
+**A missing source lowers confidence, not the score.** Scoring low because you could not
+look is as dishonest as scoring high. Say `unverified` and move on — and note it as a
+finding if the gap is the project's own fault.
+
 ### Score nine axes, 1–10
 
 | Axis | `history.json` key | What it measures |
@@ -127,12 +149,68 @@ were AI co-authored.
 | Testing | `testing` | Coverage relative to what shipped this week |
 | Change management | `git_change_management` | Are commits reviewable and purposeful |
 | Operations | `operations` | CI, deploy, migrations, rollback, storage |
-| **AI utilization** | `ai_utilization` | How much was produced with AI |
-| **AI supervision** | `ai_supervision` | How much of it a human actually verified |
+| **AI utilization** | `ai_utilization` | How heavily AI tools were used to produce the work |
+| **AI supervision** | `ai_supervision` | How much of that output a human actually verified |
 
-**Keep the last two separate.** They are the axes that make this review worth running in
-an AI-heavy workflow. High utilization with low supervision is the specific failure mode
-this catches, and collapsing them into "productivity" hides it.
+**Keep the last two separate.** High utilization with low supervision is the specific
+failure mode this catches, and collapsing them into "productivity" hides it.
+
+### Absolute anchors — pick, do not adjust
+
+Score against fixed anchors. **Do not start at 5 and nudge.** Choose the highest anchor
+the artifacts actually satisfy.
+
+| | Anchor |
+|---|---|
+| 1–2 | Broken or unsafe; a critical path fails |
+| 3–4 | Materially incomplete; key integration, boundaries, or verification missing |
+| 5 | Main path works, with important gaps |
+| 6 | Consistent within scope, basic verification present |
+| 7 | Traceable, integrated, reviewed, boundaries verified |
+| 8 | Operationally ready for its scope; safe to deliver |
+| 9 | Complex outcome completed exceptionally; observable and recoverable |
+| 10 | Every relevant claim independently verified; raises the team's repeatable standard |
+
+**Overall is not an average.** It has its own gates: 7+ requires traceable integrated
+outcomes and verified boundaries; 8+ requires operational readiness for the scope; 9+
+requires every critical axis at 7 or above with no unresolved critical risk.
+
+Two rules that keep scores honest:
+
+- **Activity is not evidence.** Commit count, lines changed, files touched, and commit
+  message format are for finding things to look at. They are *not* grounds for a score.
+  A tidy commit history proves the history is tidy, nothing more.
+- **Unverified is not zero.** If you could not establish something, it is unknown — say
+  so. Do not score it as absent.
+
+**AI utilization means how much the work was produced using AI tools.** It does not mean
+the product contains AI features. Difficulty of building an AI feature belongs to
+architecture and implementation, never here.
+
+| Band | AI utilization | AI supervision |
+|---|---|---|
+| 1–2 | Small explicit assists | Accepted without verification |
+| 3–4 | Several limited tasks | Some checking, critical boundaries missed |
+| 5–6 | Regular use on major units of work | Main paths verified |
+| 7–8 | Central tool across most of the work | Assumptions challenged, boundaries tested, corrections recorded |
+| 9–10 | Fully instrumented across planning, building, verifying, iterating | Systematic, adversarial, independently reproducible |
+
+### Every score cites artifacts
+
+For each axis record what moved it, and cite the artifact — a commit, a path, a command
+output. **A score you cannot attach an artifact to is an opinion, and opinions are what
+this review exists to remove.**
+
+```
+testing  score 3  anchor "3–4: materially incomplete"  confidence high
+  supports: tests/test_setup_skills.py — install wiring covered by 5 cases
+  concerns: skills/ +704 lines this week with 0 tests covering content
+  unknowns: no coverage tooling configured, so real coverage is unmeasured
+```
+
+Anything in `unknowns` must also appear in `source_coverage` as `unverified`.
+Being explicit about what you did not check is the difference between a review and a
+verdict.
 
 ### Structure of the review
 
@@ -146,8 +224,13 @@ this catches, and collapsing them into "productivity" hides it.
    requirements, and roughly what stage the product is at.
 7. **Next week's completion conditions** — numbered, concrete, verifiable. Not "improve
    testing" but "root CI runs test, lint, build as required checks".
-8. **Verdict** — what this person can and cannot be trusted with independently.
-9. **Evidence** — the raw numbers from the commands you ran.
+8. **Comprehension checks** — two or three questions that ask you to explain, reproduce,
+   or modify something shipped this week, *without looking it up*. In an AI-heavy
+   workflow this is the sharpest available probe: code you cannot explain is code you do
+   not own, however green the tests are. Write the question and what a passing answer
+   would contain.
+9. **Verdict** — what can and cannot be trusted to run unattended.
+10. **Evidence** — the raw numbers from the commands you ran, and the coverage table.
 
 ### `history.json`
 
@@ -162,9 +245,14 @@ Append to `docs/developer-reviews/<handle>/history.json`:
     "scores": { "overall": 6, "requirements": 8, "architecture": 8, "implementation": 7,
                 "testing": 5, "git_change_management": 5, "operations": 2,
                 "ai_utilization": 9, "ai_supervision": 4 },
+    "score_evidence": { "testing": { "anchor": "3-4", "confidence": "high",
+                                     "supports": [], "concerns": [], "unknowns": [] } },
+    "source_coverage": { "git": "observed", "tests": "observed", "ci": "missing",
+                         "docs": "observed", "deployment": "unverified" },
     "verdict": "",
-    "priorities": [{ "category": "", "status": "new|repeated",
-                     "consecutive_weeks": 1, "severity": "critical|high|medium" }],
+    "priorities": [{ "category": "", "dimension": "testing", "status": "new|repeated",
+                     "consecutive_weeks": 1, "severity": "critical|high|medium",
+                     "actions": ["measurable action"] }],
     "git": { "commits": 0, "additions": 0, "deletions": 0, "net_lines": 0,
              "files_touched": 0, "test_files_touched": 0,
              "migration_files_touched": 0, "delivery_files_touched": 0,
@@ -195,7 +283,11 @@ destroys that.
 | "The report says the suite is green" | Run it. This is the finding that justifies the whole review. |
 | "I co-wrote this, so I know it's fine" | That is the bias. Judge the artifact. |
 | "Same issue as last week, no need to repeat it" | Repeats escalate. Say the week count out loud. |
-| "Lots of code shipped, so it was a good week" | With no tests touched, that is a finding. Check the ratio. |
+| "Lots of code shipped, so it was a good week" | Activity is not evidence. It tells you where to look, not what to score. |
+| "The commits are clean, so change management is strong" | That proves the history is tidy. Cite what the commits made safe. |
 | "AI wrote most of it, that's efficiency" | Utilization without supervision is the failure mode. Score them apart. |
+| "The product has AI features, so utilization is high" | Utilization is about tools used to build. Feature difficulty belongs to architecture. |
+| "I couldn't check CI, so operations is a 1" | Unverified is not zero. Say `unverified` and score what you saw. |
+| "I'll start at 5 and adjust" | Pick the highest anchor the artifacts satisfy. Nudging from the middle hides the reasoning. |
 | "A daily score would show the trend" | One day is noise. Daily mode finds claim-versus-reality gaps, not trends. |
 | "This is harsh for a self-review" | Being readable is not the goal. Being true is. |
