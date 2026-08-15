@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "next_id": 34,
+  "next_id": 35,
   "tasks": [
     {
       "id": 21,
@@ -704,6 +704,27 @@
       "review": "",
       "created_by": "hoarchi",
       "assigned_to": "hoarchi"
+    },
+    {
+      "id": 34,
+      "title": "reconcile_runs append-only 회귀 수정",
+      "description": "reconcile이 runs.json을 통째로 덮어써 기존 run·version 필드가 유실되던 문제 수정",
+      "details": "## Problem\n`reconcile_runs.reconcile()` 이 `json.dump({\"runs\": runs})` 로 파일을 통째로 덮어써서\nCURRENT_PHASE 의 \"runs.json append-only 불변성\" 규칙을 위반했다.\n- 최상위 `version: 1` 필드 소실\n- transcript 가 남지 않은 세션의 run 통째로 소실 (opus-4-8 / 71a08bd7 건)\n- 훅이 기록한 `commit`, `time_seconds` 가 빈 값으로 덮임\n\n## Changes\n- scripts/reconcile_runs.py: `merge_runs()` / `_load_runs()` 추가, reconcile 이 덮어쓰기 대신 병합\n  - 기존 run 삭제 금지, 기존 필드 제거 금지, 순서 유지\n  - session_id 매칭 시 토큰/비용만 max() 로 상향 (훅이 세션 도중 기록해 과소집계된 경우 보정)\n  - transcript 에만 있는 세션은 ts 순으로 append\n  - indent=1 → 2 로 server.py 와 통일 (매 실행마다 전체 파일 재포맷되던 diff 노이즈 제거)\n- scripts/reconcile_runs.py: 손상 파일 가드 — runs.json 파싱 실패 시 덮어쓰지 않고 SystemExit\n  (커밋 전 보안 셀프 리뷰에서 발견. 광범위 except가 파싱 실패를 \"빈 파일\"로 삼켜 기존 run 전체\n   유실 → 방금 고친 유실 버그의 두 번째 입구였음)\n- scripts/reconcile_runs.py: --all 은 한 프로젝트 실패해도 나머지 계속 처리 후 비정상 종료\n- tests/test_reconcile.py: 신규 14 케이스 (병합 규칙 9 + write 경로 2 + 손상 가드 2 + --all 복원력 1)\n\n## Decisions\n- 매칭된 run 의 `ts` 는 기존 값 유지 — transcript mtime 으로 덮으면 과거 기록이 이동해\n  velocity 일자별 집계가 소급 변경된다. append-only 취지상 최초 기록 시각을 신뢰.\n- 매칭된 run 에 `source: transcript-reconcile` 을 붙이지 않음 — 훅이 기록한 run 의 출처를\n  바꾸는 셈이라 신규 append 건에만 부여.\n- `--push` 페이로드는 기존대로 재구성 run 만 전송 (중앙은 session_id dedup) — 동작 변경 최소화.\n\n## Verification\n- python3 -m unittest discover -s tests → 26 tests OK (기존 12 + 신규 14)\n- 실제 프로젝트 재실행 후 runs.json diff 가 순수 additive 임을 확인\n  (opus-4-8 run 무변경, fable-5 는 토큰 상향 + cost_usd 추가, 이번 세션 run append)\n- 재실행 멱등성 확인: 2회차는 \"기존 3건 유지 + 신규 0건\"\n\n## Follow-up\n- runs.json.bak 은 .gitignore `*.bak` 로 이미 제외됨 — 조치 불필요",
+      "status": "done",
+      "priority": "high",
+      "category": "backend",
+      "target_date": "",
+      "started_at": "2026-08-15T10:45:00+09:00",
+      "completed_at": "2026-08-15T11:20:00+09:00",
+      "lines_added": 335,
+      "lines_removed": 3,
+      "created_at": "2026-08-15T10:45:00+09:00",
+      "updated_at": "2026-08-15T11:20:00+09:00",
+      "position": 0,
+      "phase": "PHASE_PMF05",
+      "review": "",
+      "created_by": "hogun",
+      "assigned_to": "hogun"
     }
   ]
 }
