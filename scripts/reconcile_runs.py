@@ -115,6 +115,62 @@ def build_runs(transcripts):
     return runs
 
 
+# 매칭된 run에서 "더 완전한 쪽"을 고를 수치 필드 (server.py velocity 집계와 같은 max 규칙)
+MERGE_MAX_FIELDS = ("tokens", "input_tokens", "output_tokens",
+                    "cache_read_tokens", "cache_write_tokens", "cost_usd")
+
+
+def merge_runs(existing, new_runs):
+    """기존 runs.json에 재구성한 run을 append-only로 합친다.
+
+    기존 run은 삭제하지 않고 필드도 지우지 않는다. session_id가 같으면 토큰/비용만
+    더 큰 값으로 올리고(훅이 세션 도중 기록해 과소집계된 경우 보정), 나머지 필드는
+    기존 값을 유지한다. transcript에만 있는 세션은 뒤에 추가한다.
+    """
+    merged = dict(existing or {})
+    merged.setdefault("version", 1)
+    kept = [dict(r) for r in merged.get("runs") or []]
+
+    by_sid = {}
+    for run in kept:
+        sid = run.get("session_id")
+        if sid:
+            by_sid.setdefault(sid, run)
+
+    appended = []
+    for new in new_runs:
+        sid = new.get("session_id")
+        old = by_sid.get(sid) if sid else None
+        if old is None:
+            appended.append(dict(new))
+            continue
+        for field in MERGE_MAX_FIELDS:
+            nv = new.get(field)
+            if nv is None:
+                continue
+            ov = old.get(field)
+            old[field] = nv if ov is None else max(ov, nv)
+
+    appended.sort(key=lambda r: r.get("ts") or "")
+    merged["runs"] = kept + appended
+    return merged
+
+
+def _load_runs(path):
+    """기존 runs.json 로드. 없으면 {} — 단, 읽거나 파싱하지 못하면 예외를 올린다.
+
+    파싱 실패를 "빈 파일"로 삼키면 기존 run 전체가 사라진 채 덮어써진다. append-only
+    보장을 위해 이 경우엔 쓰지 않고 중단해야 한다.
+    """
+    if not os.path.exists(path):
+        return {}
+    with open(path) as fh:
+        doc = json.load(fh)
+    if not isinstance(doc, dict):
+        raise ValueError("최상위가 JSON object가 아님")
+    return doc
+
+
 def _push_central(project, runs):
     """중앙 저장소(zestim)로 runs 전송. sync.json의 endpoint/secret 재사용."""
     try:
@@ -153,11 +209,18 @@ def reconcile(project, kanban_dir, transcripts, dry_run=False, push=False):
         print("  재구성할 run 없음 — skip")
         return
     rp = os.path.join(kanban_dir, "runs.json")
+    try:
+        existing = _load_runs(rp)
+    except Exception as exc:
+        raise SystemExit(f"  runs.json 파싱 실패 — 덮어쓰지 않고 중단: {rp} ({exc})")
+    before = len(existing.get("runs") or [])
     if os.path.exists(rp):
         shutil.copy2(rp, rp + ".bak")
+    merged = merge_runs(existing, runs)
     with open(rp, "w") as fh:
-        json.dump({"runs": runs}, fh, ensure_ascii=False, indent=1)
-    print(f"  로컬 기록: {rp}")
+        json.dump(merged, fh, ensure_ascii=False, indent=2)
+    added = len(merged["runs"]) - before
+    print(f"  로컬 기록: {rp} (기존 {before}건 유지 + 신규 {added}건)")
     if push:
         res = _push_central(project, runs)
         print(f"  중앙 전송: {res}")
@@ -174,6 +237,7 @@ def main():
     a = ap.parse_args()
 
     if a.all:
+        failed = []
         for key, meta in _projects().items():
             kd = meta.get("kanban_dir") if isinstance(meta, dict) else meta
             if not kd:
@@ -181,7 +245,14 @@ def main():
             td = _transcript_dir(os.path.dirname(os.path.abspath(kd)))
             if not os.path.isdir(td) or not glob.glob(td + "/*.jsonl"):
                 continue
-            reconcile(key, kd, td, dry_run=a.dry_run, push=a.push)
+            # 한 프로젝트가 실패해도 나머지는 계속 — 단, 마지막에 비정상 종료로 알린다
+            try:
+                reconcile(key, kd, td, dry_run=a.dry_run, push=a.push)
+            except SystemExit as exc:
+                print(f"[{key}] 건너뜀: {exc}")
+                failed.append(key)
+        if failed:
+            raise SystemExit("실패한 프로젝트: " + ", ".join(failed))
         return
 
     kd = a.kanban_dir or (_kanban_dir_for(a.project) if a.project else None)
