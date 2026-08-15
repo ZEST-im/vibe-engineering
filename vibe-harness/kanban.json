@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "next_id": 38,
+  "next_id": 39,
   "tasks": [
     {
       "id": 21,
@@ -783,6 +783,27 @@
       "lines_removed": 54,
       "created_at": "2026-08-15T13:00:00+09:00",
       "updated_at": "2026-08-15T14:10:00+09:00",
+      "position": 0,
+      "phase": "PHASE_PMF06",
+      "review": "",
+      "created_by": "hogun",
+      "assigned_to": "hogun"
+    },
+    {
+      "id": 38,
+      "title": "vibe-planning 5·6단계 보강 — 인프라 walkthrough·버전·스캐폴딩",
+      "description": "ZHEMS e2e 를 1~6단계 완주하며 드러난 결함 4건 추가 수정",
+      "details": "## 배경\nZHEMS(살핌마루) e2e 를 1~6단계까지 완주. 5단계에서 스킬이 두 번 뒤집혔고,\n6단계 스캐폴딩까지 실제로 생성해 배선을 검증했다.\n\n## 추가 수정 4건\n1. 5단계 = 인프라 walkthrough — 결함: 프레임워크 메뉴만 던져 \"poll\"이 됨.\n   1차 과교정(\"메뉴 내밀지 마라\") 후 사용자 정정으로 최종 형태 확정:\n   **11항목 인프라 체크리스트**(백엔드/프론트/DB/데이터취득/파일저장소/클라우드/인증/\n   백그라운드/빌드배포/모니터링/비용)를 \"무엇인가 / 틀리면 뭐가 깨지는가\"와 함께 제시하고,\n   사용자가 안 꺼냈다고 건너뛰지 말 것을 명시. 개발자가 아니면 결정 존재 자체를 모른다는 것이\n   이 단계의 핵심 전제.\n2. 버전 표기 의무화 — 모든 기술은 버전과 함께 기록. 기억으로 쓰지 말고 확인,\n   확인 못하면 `to verify`. docs/STACK.md 를 스캐폴딩 산출물에 추가.\n3. 재개 무효화 규칙 — 단계 N 재실행 시 N+1 이후 산출물을 먼저 삭제.\n   (실제로 1단계 재실행 때 02~04가 거짓이 된 사고)\n4. \"필요 없어도 파일은 만든다\" — 미정이면 미정이라고 적힌 파일을 남긴다.\n   이름 있는 빈 파일은 결정이 대기 중임을 알리지만, 없는 파일은 아무것도 안 알린다.\n\n## e2e 검증 결과 (ZHEMS)\n- 산출물 17개 생성 (기획 5 + 스캐폴딩 12)\n- **Do NOT touch 배선 검증**: 2단계 out-of-scope 3건이 CURRENT_PHASE 로 전달됨(✓),\n  \"아직 결정 안 한 것\" 2건은 0건 유입(✓). 이 구분이 실제로 작동함\n- authorship rule 효과: 원칙 후보 4개 중 2개만 사용자가 주장 → 에이전트 저작 2개 폐기\n- 5단계 결과: 인프라 결정 17행 = 확정 10 · 잠정 4 · 미결 3\n- CSAP(공공 클라우드 보안인증) 같은 도메인 제약이 walkthrough 에서 드러남 — 사용자가\n  \"이런게 이 스킬의 가치를 올린다\"고 확인\n\n## Verification\n- 29 tests OK\n- vibe-planning 356줄, vibe-design 137줄\n- test_temp/ 는 gitignore — 검증 산출물은 커밋에 미포함\n\n## Follow-up\n- vibe-review 스킬 (주간 + 매일 첫 세션 전날 리뷰) 미착수",
+      "status": "done",
+      "priority": "high",
+      "category": "docs",
+      "target_date": "",
+      "started_at": "2026-08-15T14:30:00+09:00",
+      "completed_at": "2026-08-15T16:20:00+09:00",
+      "lines_added": 83,
+      "lines_removed": 8,
+      "created_at": "2026-08-15T14:30:00+09:00",
+      "updated_at": "2026-08-15T16:20:00+09:00",
       "position": 0,
       "phase": "PHASE_PMF06",
       "review": "",

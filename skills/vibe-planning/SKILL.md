@@ -62,6 +62,13 @@ There is no state file. On invocation, list `docs/planning/` and start at the fi
 stage whose artifact is missing. Say which stage you are resuming at before asking
 anything. If the directory does not exist, start at stage 1.
 
+**Redoing a stage invalidates every stage after it.** File presence means "this stage is
+settled", so a stale downstream artifact reads as settled when it is now false. Before
+reworking stage N, delete the artifacts for N+1 onward and tell the user which ones you
+removed. Never edit a downstream document to patch over a changed north star — the
+questions that produced it were asked under the old premise, so it has to be re-asked,
+not repaired.
+
 ## Size caps
 
 | Stage | Questions | Artifact | Cap |
@@ -213,15 +220,67 @@ them in a browser and approved.
 
 ## Stage 5 — Technical decisions
 
-1. What stack does the team already run well?
-2. What technical constraint does this product make unavoidable?
-3. What is the source of truth for the data, and where does it live?
-4. Who deploys and operates it, how?
-5. Which decision here is the most expensive to reverse?
+**This is the stage where the person you are helping is most likely to be out of their
+depth, and it is where this skill is worth the most.** Someone who is not an
+infrastructure engineer does not know which decisions exist. They cannot ask about
+authentication infrastructure or object storage if nobody told them those are choices.
+Your job is to name every decision, explain what it does in one line, say what breaks if
+it is wrong — and then decide it together.
 
-Output `05_tech_decisions.md`: a decision table (`Decision | Choice | Why | Reversal
-cost`), an ASCII architecture sketch, and open questions. Spend the care on the
-expensive-to-reverse rows; note the cheap ones and move on.
+**Walk the checklist. Do not skip an item because the user did not raise it** — not
+raising it is the symptom you are treating.
+
+| Decision | What it is | What goes wrong |
+|---|---|---|
+| Backend language & framework | What the server is written in | Wrong pick and the team cannot maintain it |
+| Frontend approach | Server-rendered, SPA, or native | Decides how much frontend work exists at all |
+| Database | Where records live | Hardest thing to migrate later |
+| Data acquisition | How external data arrives — devices, APIs, uploads, polling vs push | Silent gaps nobody notices |
+| File & media storage | Where photos and documents go | Filling the app server's disk in production |
+| Cloud infrastructure | Where it runs, which account owns it | Procurement and security blockers, surprise bills |
+| Authentication | Who signs in, and which paths stay anonymous | Retrofitting auth touches every screen |
+| Background jobs | Work that happens off the request | Timeouts and lost work under load |
+| Build & release | CI, migrations, rollback | No safe way to ship a fix |
+| Monitoring & alerting | What is watched, who gets woken | Outages found by users |
+| Cost model | What scales with what | A pilot that cannot afford to become a rollout |
+
+Ask one decision at a time. Offer real options **with their trade-offs spelled out** —
+this is teaching, not a poll. State a recommendation and the reason for it, and make it
+easy to say "I don't know yet."
+
+Then close with:
+
+1. What are you already running well, and what would you rather not add?
+2. What technical constraint does this product make unavoidable?
+3. Which decision here is the most expensive to reverse?
+
+### Always record the version
+
+**Every technology named in this stage carries an explicit version.** "PostgreSQL" is not
+a decision; "PostgreSQL 17" is. A stack recorded without versions looks settled and is
+not — the next person installs whatever is current that week, and the gap only surfaces
+when something breaks.
+
+- Write the version in the decision table, in the architecture sketch, and in every
+  scaffolding file that names the technology.
+- Record the **line** the project targets (`Node 22 LTS`, `PostgreSQL 17`), not a floating
+  `latest`. If a minor or patch matters, say why.
+- **Do not write versions from memory.** Check the current release before recording it,
+  and if you cannot check, write the version you believe is right and mark it
+  `to verify` — an unverified version is an open question, not a decision.
+- Note the support horizon where it matters — an LTS ending inside the project's life is
+  a decision, not a detail.
+
+**Record each row's status honestly: `decided`, `provisional`, or `open`.** A choice made
+in a planning conversation without a developer in the room is `provisional` — write it
+down, and tell the user which rows should get a real design discussion before stage 6
+hardens anything. `open` rows are not failures; an infrastructure decision the user now
+knows they have to make is this stage working, not this stage failing.
+
+Output `05_tech_decisions.md`: a decision table (`Decision | Choice | Status | Why |
+Reversal cost`), an ASCII architecture sketch of what was discussed, an infrastructure
+checklist showing which items are decided and which are open, and open questions. Spend
+the care on the expensive-to-reverse rows; note the cheap ones and move on.
 
 ---
 
@@ -238,6 +297,7 @@ Then generate, deriving every file from the artifacts above — never from a tem
 
 | File | Derived from | Contains |
 |---|---|---|
+| `docs/STACK.md` | stage 5 decision table | every technology with its pinned version and status |
 | `docs/SCHEMA.md` | stage 2 features, stage 5 data source | entities, fields, relationships |
 | `docs/DATA_PIPELINE.md` | stage 5 | where data enters, how it moves, what owns it |
 | `docs/DESIGN_SYSTEM.md` | stage 4 screens | the tokens actually used in `04_screens.html` |
@@ -254,6 +314,18 @@ former becomes a hard boundary.
 
 Do not invent schema fields the requirements do not call for. An entity with no feature
 behind it is a guess, and it will be built.
+
+### Write the file even when the answer is "not yet"
+
+Some projects will not need a data pipeline, or will not have picked a database. **Create
+the file anyway**, with a one-line statement of what it is for and `미정 / not yet
+decided` where the content would go. A named empty file tells the next person that this
+decision exists and is waiting; a missing file tells them nothing, and the decision gets
+made by accident later.
+
+Write the stage 5 status through to the scaffolding: `open` rows become explicit "not yet
+decided" sections, not silent omissions. A scaffold that looks complete when nine
+infrastructure decisions are still open is lying about the project's state.
 
 ---
 
@@ -278,4 +350,7 @@ behind it is a guess, and it will be built.
 | "They only marked must-haves, I'll grade the rest" | Ungraded means ungraded. Write "not yet decided." |
 | "I'll estimate the market size to fill the gap" | Unbacked numbers go in open questions marked `[assumption]`. |
 | "Wireframes can wait until after implementation starts" | Stage 4 exists because building without seeing the screen is how work gets thrown away. |
+| "They didn't mention auth, so it's not needed" | They may not know it is a decision. That is exactly what stage 5 is for. Walk the whole checklist. |
+| "I'll list four frameworks and let them pick" | A bare menu is a poll. Explain what each choice does and what breaks, then decide together. |
+| "Stack is decided, stage 6 can harden it" | Decided in a room without a developer means `provisional`. Scaffold around it, don't cement it. |
 | "The documents are done, planning is finished" | Stage 6 is what makes it a project instead of a folder. |
