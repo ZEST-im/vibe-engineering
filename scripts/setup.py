@@ -297,7 +297,6 @@ def migrate_projects_json():
 def upgrade():
     """Download latest files from GitHub and reinstall"""
     import urllib.request
-    import tempfile
 
     print("Upgrading Vibe Engineering from GitHub...")
     print()

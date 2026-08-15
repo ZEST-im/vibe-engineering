@@ -176,7 +176,7 @@ def _push_central(project, runs):
     try:
         cfg = json.load(open(SYNC_CONFIG))
     except Exception:
-        raise SystemExit(f"sync.json 없음/오류 — 중앙 전송 불가: {SYNC_CONFIG}")
+        raise SystemExit(f"sync.json 없음/오류 — 중앙 전송 불가: {SYNC_CONFIG}") from None
     endpoint = str(cfg.get("endpoint", ""))
     secret = str(cfg.get("secret", ""))
     if not endpoint or not secret:
@@ -212,7 +212,7 @@ def reconcile(project, kanban_dir, transcripts, dry_run=False, push=False):
     try:
         existing = _load_runs(rp)
     except Exception as exc:
-        raise SystemExit(f"  runs.json 파싱 실패 — 덮어쓰지 않고 중단: {rp} ({exc})")
+        raise SystemExit(f"  runs.json 파싱 실패 — 덮어쓰지 않고 중단: {rp} ({exc})") from exc
     before = len(existing.get("runs") or [])
     if os.path.exists(rp):
         shutil.copy2(rp, rp + ".bak")

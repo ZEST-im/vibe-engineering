@@ -2145,7 +2145,7 @@ def main():
 
     # Init all registered projects
     projects = load_projects()
-    for key, info in projects.items():
+    for _key, info in projects.items():
         kdir = info.get("kanban_dir", "")
         # Backward compat: convert old db_path
         if not kdir and "db_path" in info:
@@ -2163,7 +2163,7 @@ def main():
 
     print(f"Vibe Engineering v5 — http://localhost:{port}/kanban")
     print(f"  Projects: {', '.join(projects.keys()) if projects else '(none)'}")
-    print(f"  Storage: JSON (git-friendly)")
+    print("  Storage: JSON (git-friendly)")
     if _load_sync_config():
         print(f"  Remote sync: enabled ({SYNC_CONFIG_PATH})")
         _schedule_remote_sync(delay=0.1)
@@ -2173,7 +2173,7 @@ def main():
         print("  Remote approvals: enabled (5s polling)")
     _start_runtime_reaper()
     print("  Worker runtime: enabled (5s lease reaper)")
-    print(f"  Ctrl+C to stop")
+    print("  Ctrl+C to stop")
     sys.stdout.flush()
     server.serve_forever()
 
