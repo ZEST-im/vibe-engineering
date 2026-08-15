@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local polling Worker for the Vibe Harness execution protocol."""
+"""Local polling Worker for the Vibe Engineering execution protocol."""
 
 import argparse
 import json
@@ -19,7 +19,7 @@ def request_json(method, url, payload=None, timeout=30):
         url,
         data=raw,
         method=method,
-        headers={"Content-Type": "application/json", "User-Agent": "Vibe-Harness-Worker/1"},
+        headers={"Content-Type": "application/json", "User-Agent": "Vibe-Engineering-Worker/1"},
     )
     try:
         with urllib_request.urlopen(req, timeout=timeout) as response:
@@ -62,7 +62,7 @@ def build_prompt(claim):
     context = claim.get("context", {})
     checklist = context.get("checklist", {}).get("items", [])
     return "\n".join([
-        "You are a Vibe Harness managed worker.",
+        "You are a Vibe Engineering managed worker.",
         f"Task #{task.get('id')}: {task.get('title', '')}",
         f"Description: {task.get('description', '')}",
         f"Details: {task.get('details', '')}",
@@ -150,7 +150,7 @@ def run_once(args):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Run a local Vibe Harness Worker")
+    parser = argparse.ArgumentParser(description="Run a local Vibe Engineering Worker")
     parser.add_argument("project")
     parser.add_argument("--server", default="http://127.0.0.1:4242")
     parser.add_argument("--agent", default="codex")

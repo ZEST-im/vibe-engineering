@@ -1,9 +1,15 @@
-# Vibe Harness
+# Vibe Engineering
 
 **Session harness for Claude Code.**  
 Scope boundaries, task accountability, phase gates, and code review — built for AI-speed development.
 
-Vibe coding is fast. But it drifts. Vibe Harness gives Claude a frame: what to work on, what not to touch, when to stop, and what happened.
+Vibe coding is fast. But it drifts. Vibe Engineering gives Claude a frame: what to work on, what not to touch, when to stop, and what happened.
+
+**How it got here.** It started as **vibe-kanban** — just a board to track what the agent was doing. Tracking alone
+turned out to be too little: the agent needed boundaries, gates, and a record, so the board grew into a session
+harness and the project became **vibe-harness**. What that harness actually does is engineer the conditions the
+agent works under, which is a broader job than holding a session together — hence **vibe-engineering**. Planning
+and design skills come first; loop engineering and graph engineering are next.
 
 ---
 
@@ -26,7 +32,7 @@ When you code with Claude at full speed, three things tend to go wrong:
 2. **Amnesia** — the next session has no idea what was decided last time
 3. **No gates** — code ships without review, docs stay stale, phases blur together
 
-Vibe Harness is a harness, not just a board. It gives Claude the structure to stay in bounds.
+Vibe Engineering is a harness, not just a board. It gives Claude the structure to stay in bounds.
 
 ---
 
@@ -60,11 +66,16 @@ The kanban board (localhost:4242) is the visible surface. The real value is the 
 
 ## Install
 
+> **Note on naming.** The project was renamed from *Vibe Harness* to *Vibe Engineering*.
+> The skill directory (`~/.claude/skills/vibe-harness/`), the `/vibe-harness` command, and the
+> per-project `vibe-harness/` data directory keep their old names for backward compatibility —
+> existing installs and registered projects keep working untouched. Old GitHub URLs redirect.
+
 ### 1. Clone
 
 ```bash
-git clone https://github.com/hoarchi/vibe-harness.git
-cd vibe-harness
+git clone https://github.com/hoarchi/vibe-engineering.git
+cd vibe-engineering
 ```
 
 ### 2. Setup
@@ -108,7 +119,7 @@ Older installs didn't copy `setup.py` to `~/.claude/skills/vibe-harness/`, so th
 
 ```bash
 mkdir -p ~/.claude/skills/vibe-harness
-curl -sL https://raw.githubusercontent.com/hoarchi/vibe-harness/main/scripts/setup.py \
+curl -sL https://raw.githubusercontent.com/hoarchi/vibe-engineering/main/scripts/setup.py \
   -o ~/.claude/skills/vibe-harness/setup.py
 python3 ~/.claude/skills/vibe-harness/setup.py upgrade
 ```
@@ -228,7 +239,7 @@ Monthly archive files (`vibe-harness/archive/YYYY-MM.json`) are git-tracked. The
 
 ## Managed Worker Runtime
 
-Vibe Harness can optionally claim `todo` tasks and run a configured agent in an
+Vibe Engineering can optionally claim `todo` tasks and run a configured agent in an
 isolated Git worktree. This layer is opt-in: installing it does not start an
 agent or execute a command.
 
@@ -302,7 +313,7 @@ Shows: column types, PK/FK/UQ/NN/DF badges, indexes, and Bezier FK relationship 
 
 ### Private remote dashboards
 
-Vibe Harness can push read-only snapshots to a private company dashboard after
+Vibe Engineering can push read-only snapshots to a private company dashboard after
 tasks, decisions, runs, or archives change. Local APIs remain bound to
 `127.0.0.1`; only the configured snapshot leaves the machine.
 

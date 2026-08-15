@@ -1,6 +1,6 @@
-# vibe-harness on Windows
+# vibe-engineering on Windows
 
-vibe-harness는 원래 macOS/Unix 설계다. server.py는 크로스플랫폼으로 맞췄지만,
+vibe-engineering은 원래 macOS/Unix 설계다. server.py는 크로스플랫폼으로 맞췄지만,
 **셸 훅과 LaunchAgent 자동화는 Windows에서 동작하지 않는다.** 이 문서는 Windows에서
 무엇이 되고 무엇을 수동으로 해야 하는지 정리한다.
 

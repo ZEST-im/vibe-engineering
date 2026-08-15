@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Vibe Harness Server v5 — JSON-based Multi-project Kanban Board
+Vibe Engineering Server v5 — JSON-based Multi-project Kanban Board
 Git-friendly: stores tasks as JSON files instead of SQLite.
 One server (localhost:4242) serves multiple projects with tab-based switching.
 """
@@ -1561,7 +1561,7 @@ def _post_snapshot(cfg, payload):
         headers={
             "Authorization": "Bearer " + cfg["secret"],
             "Content-Type": "application/json",
-            "User-Agent": "Vibe-Harness-Sync/1",
+            "User-Agent": "Vibe-Engineering-Sync/1",
         },
         method="POST",
     )
@@ -1581,7 +1581,7 @@ def _remote_request(cfg, method, query=None, payload=None):
         headers={
             "Authorization": "Bearer " + cfg["secret"],
             "Content-Type": "application/json",
-            "User-Agent": "Vibe-Harness-Sync/1",
+            "User-Agent": "Vibe-Engineering-Sync/1",
         },
         method=method,
     )
@@ -2161,7 +2161,7 @@ def main():
     signal.signal(signal.SIGINT, shutdown)
     signal.signal(signal.SIGTERM, shutdown)
 
-    print(f"Vibe Harness v5 — http://localhost:{port}/kanban")
+    print(f"Vibe Engineering v5 — http://localhost:{port}/kanban")
     print(f"  Projects: {', '.join(projects.keys()) if projects else '(none)'}")
     print(f"  Storage: JSON (git-friendly)")
     if _load_sync_config():

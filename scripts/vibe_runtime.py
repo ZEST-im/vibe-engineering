@@ -1,4 +1,4 @@
-"""Execution-control primitives for Vibe Harness.
+"""Execution-control primitives for Vibe Engineering.
 
 This module deliberately knows nothing about Kanban task semantics. server.py owns
 task transitions while this module provides policy loading, atomic runtime files,

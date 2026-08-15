@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Vibe Harness Setup — Copy server files to ~/.claude/skills/vibe-harness/ and install launchd agent
+Vibe Engineering Setup — Copy server files to ~/.claude/skills/vibe-harness/ and install launchd agent
 """
 import os
 import shutil
@@ -16,7 +16,7 @@ PLIST_NAME = "com.vibe-harness.server.plist"
 LAUNCH_AGENTS = os.path.expanduser("~/Library/LaunchAgents")
 SETTINGS_PATH = os.path.expanduser("~/.claude/settings.json")
 HOOKS_DIR = os.path.expanduser("~/.claude/hooks")
-REPO_URL = "https://raw.githubusercontent.com/hoarchi/vibe-harness/main"
+REPO_URL = "https://raw.githubusercontent.com/hoarchi/vibe-engineering/main"
 
 # Hook definitions: (src_name, event, entry_dict)
 HOOKS = [
@@ -274,7 +274,7 @@ def upgrade():
     import urllib.request
     import tempfile
 
-    print("Upgrading Vibe Harness from GitHub...")
+    print("Upgrading Vibe Engineering from GitHub...")
     print()
 
     files = {
@@ -293,7 +293,7 @@ def upgrade():
         dst = os.path.join(DEST, fname)
         try:
             print(f"  Downloading {fname}...")
-            req = urllib.request.Request(url, headers={"User-Agent": "Vibe-Harness-Setup"})
+            req = urllib.request.Request(url, headers={"User-Agent": "Vibe-Engineering-Setup"})
             with urllib.request.urlopen(req, timeout=15) as resp:
                 content = resp.read()
             # Backup existing
@@ -338,7 +338,7 @@ def upgrade():
 
 def main():
     if len(sys.argv) > 1 and sys.argv[1] == "uninstall":
-        print("Uninstalling Vibe Harness...")
+        print("Uninstalling Vibe Engineering...")
         uninstall_launchd()
         uninstall_hooks()
         return
@@ -347,7 +347,7 @@ def main():
         upgrade()
         return
 
-    print("Setting up Vibe Harness...")
+    print("Setting up Vibe Engineering...")
     print()
 
     # Step 1: Copy server files

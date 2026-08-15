@@ -19,7 +19,7 @@ fi
 
 echo ""
 echo "┌─────────────────────────────────────────────────┐"
-echo "  [Vibe Harness] 세션 종료 전 확인"
+echo "  [Vibe Engineering] 세션 종료 전 확인"
 echo "└─────────────────────────────────────────────────┘"
 if [[ "$IN_PROGRESS" -gt 0 ]]; then
   echo "  ⚠️  in_progress 태스크 ${IN_PROGRESS}개 — work report 작성 후 done/todo 이동 권장"

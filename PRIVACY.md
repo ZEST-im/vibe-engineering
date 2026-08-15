@@ -1,10 +1,10 @@
-# Privacy Policy — Vibe-Harness
+# Privacy Policy — Vibe-Engineering
 
 **Last updated**: 2026-03-14
 
 ## Summary
 
-Vibe-Harness runs entirely on your local machine. No data is collected, transmitted, or stored externally.
+Vibe-Engineering runs entirely on your local machine. No data is collected, transmitted, or stored externally.
 
 ## Data Storage
 
@@ -14,7 +14,7 @@ Vibe-Harness runs entirely on your local machine. No data is collected, transmit
 
 ## Data Collection
 
-Vibe-Harness does **not**:
+Vibe-Engineering does **not**:
 - Collect any personal information
 - Send any data to external servers
 - Use analytics, tracking, or telemetry
@@ -24,10 +24,10 @@ Vibe-Harness does **not**:
 
 ## Third-Party Services
 
-Vibe-Harness does not integrate with or send data to any third-party services.
+Vibe-Engineering does not integrate with or send data to any third-party services.
 
 ## Contact
 
 If you have questions about this privacy policy:
 - Email: info@zest.im
-- GitHub: https://github.com/hoarchi/vibe-harness/issues
+- GitHub: https://github.com/hoarchi/vibe-engineering/issues

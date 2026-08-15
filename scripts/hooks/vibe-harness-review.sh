@@ -15,7 +15,7 @@ CHANGED_FILES=$(git diff HEAD~1 HEAD --name-only 2>/dev/null | head -10 | sed 's
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  [Vibe Harness] CODE REVIEW GATE"
+echo "  [Vibe Engineering] CODE REVIEW GATE"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "  변경 요약: ${DIFF_STAT:-변경 없음}"
 if [[ -n "$CHANGED_FILES" ]]; then
