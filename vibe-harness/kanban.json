@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "next_id": 35,
+  "next_id": 36,
   "tasks": [
     {
       "id": 21,
@@ -722,6 +722,27 @@
       "updated_at": "2026-08-15T11:20:00+09:00",
       "position": 0,
       "phase": "PHASE_PMF05",
+      "review": "",
+      "created_by": "hogun",
+      "assigned_to": "hogun"
+    },
+    {
+      "id": 35,
+      "title": "vibe-engineering 리브랜딩",
+      "description": "GitHub 레포명·브랜드 표기를 vibe-engineering으로. 동작 경로/식별자는 호환성 유지",
+      "details": "## Changes\n- GitHub 레포 rename: hoarchi/vibe-harness → hoarchi/vibe-engineering (git remote 자동 갱신)\n- scripts/setup.py: REPO_URL → raw.githubusercontent.com/hoarchi/vibe-engineering/main\n- .claude-plugin/plugin.json: homepage/repository URL\n- README.md: clone URL, `cd vibe-engineering`, 계보 문단, Install 호환성 노트\n- 산문·배너·타이틀 브랜드 표기 치환 46건 (17개 파일)\n- docs/vibe-harness-windows.md: 소문자 산문 2행\n\n## 의도적으로 유지 (바꾸면 깨짐)\n- `~/.claude/skills/vibe-harness/` 설치 경로 52건 — 기존 설치 호환\n- `{project}/vibe-harness/` 데이터 디렉토리 13건 — 13개 프로젝트 projects.json kanban_dir 참조\n- `com.vibe-harness.*` launchd 라벨 6건, 훅 파일명 — settings.json 참조\n- `zest.im/api/internal/vibe-harness/sync` 4건 — 중앙 수집 엔드포인트\n- plugin.json `name` — 마켓플레이스 식별자, 바꾸면 기존 설치가 별개 플러그인으로 잡힘\n- 로컬 폴더명 — cwd이자 transcript 디렉토리 매핑 기준. 바꾸면 reconcile이 과거 세션 토큰을 못 찾음\n- kanban.json 내 구 URL 1건 — 과거 vibekanban→vibe-harness 리네이밍 이력, 소급 수정 안 함\n\n## Decisions\n- 레포명만 먼저. 폴더명·경로 리네이밍은 blast radius가 커서 별도 작업으로 분리.\n- REPO_URL을 같이 고침 — 안 고치면 원격 설치/자동 업데이트가 조용히 끊김.\n  (구 URL도 301/200 리다이렉트 확인했으나, 구 이름 선점 위험이 있어 갱신)\n- 문서는 Vibe Engineering, 커맨드는 /vibe-harness로 불일치가 남음 → README에 호환성 노트 명시.\n\n## Verification\n- 유지 대상 경로/식별자 75건 온전, 파일명 rename 0건 확인\n- 구/신 URL 리다이렉트 실측: raw 200, github.com 301\n- python3 -m unittest discover -s tests → 26 tests OK\n\n## Follow-up\n- 설치본 ~/.claude/skills/vibe-harness/SKILL.md 가 구버전 — 푸시 후 `setup.py upgrade` 필요\n- 경로/디렉토리명 전체 리네이밍은 미착수 (13개 프로젝트 재등록 + transcript 매핑 필요)",
+      "status": "done",
+      "priority": "high",
+      "category": "docs",
+      "target_date": "",
+      "started_at": "2026-08-15T11:30:00+09:00",
+      "completed_at": "2026-08-15T11:55:00+09:00",
+      "lines_added": 59,
+      "lines_removed": 48,
+      "created_at": "2026-08-15T11:30:00+09:00",
+      "updated_at": "2026-08-15T11:55:00+09:00",
+      "position": 0,
+      "phase": "PHASE_PMF06",
       "review": "",
       "created_by": "hogun",
       "assigned_to": "hogun"

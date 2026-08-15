@@ -1,10 +1,10 @@
 ---
 name: vibe-harness
-description: Vibe-Harness — Dev progress kanban board for Claude Code. Multi-project support, task tracking with code change stats + web UI.
+description: Vibe-Engineering — Dev progress kanban board for Claude Code. Multi-project support, task tracking with code change stats + web UI.
 user-invocable: true
 ---
 
-# Vibe-Harness — Dev Progress Kanban Board
+# Vibe-Engineering — Dev Progress Kanban Board
 
 Track development progress as a kanban board while coding with Claude Code.
 
@@ -374,7 +374,7 @@ Resolve review tasks by moving them to `done` once fixed.
 
 ## Phase Management
 
-Vibe-Harness includes a built-in phase management system for structured project progression.
+Vibe-Engineering includes a built-in phase management system for structured project progression.
 
 ### Phase Naming Convention
 
@@ -445,7 +445,7 @@ The `SCOPE_LOCK_BEGIN` / `SCOPE_LOCK_END` block is machine-readable: the `PreToo
 | Tests | All tests for current Phase features pass |
 | Docs | `PHASES.md` updated with completion details + test count |
 | Tech debt | Any debt carried forward is noted in PENDING Phase |
-| Vibe-Harness | All tasks for the Phase are `done` (check kanban.json) |
+| Vibe-Engineering | All tasks for the Phase are `done` (check kanban.json) |
 
 The `/vibe-harness phase check` and `/vibe-harness phase done` commands automate this — they read kanban.json and the phase markdown files. If the server is up, the same check is exposed at `GET /api/{project}/phase-check` as a convenience.
 
@@ -477,7 +477,7 @@ The Board UI is served by the optional local server. When it's running:
 
 ## Multi-User Rules
 
-Vibe-Harness uses JSON files for storage — fully git-friendly.
+Vibe-Engineering uses JSON files for storage — fully git-friendly.
 
 ### Storage — Git-Tracked
 

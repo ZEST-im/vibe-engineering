@@ -1,4 +1,4 @@
-# Vibe Harness: 하네스 강화 + 에이전트 격상 계획
+# Vibe Engineering: 하네스 강화 + 에이전트 격상 계획
 
 ## 배경
 

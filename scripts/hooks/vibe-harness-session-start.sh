@@ -48,7 +48,7 @@ if [[ -z "$PHASE_FILE" ]]; then
       PROOT=$(dirname "$(dirname "$KANBAN")")
       echo ""
       echo "┌─────────────────────────────────────────────────┐"
-      echo "  [Vibe Harness] ⚠ Phase 미설정 — 태스크 ${NTASKS}개 있는데 CURRENT_PHASE.md 없음"
+      echo "  [Vibe Engineering] ⚠ Phase 미설정 — 태스크 ${NTASKS}개 있는데 CURRENT_PHASE.md 없음"
       echo "└─────────────────────────────────────────────────┘"
       echo ""
       echo "  이 프로젝트는 kanban 태스크는 있지만 Phase 스코프 파일이 없습니다."
@@ -69,7 +69,7 @@ PROJECT=$(basename "$(dirname "$PHASE_FILE")")
 
 echo ""
 echo "┌─────────────────────────────────────────────────┐"
-echo "  [Vibe Harness] 세션 시작 — 현재 Phase 로드됨"
+echo "  [Vibe Engineering] 세션 시작 — 현재 Phase 로드됨"
 echo "└─────────────────────────────────────────────────┘"
 echo ""
 cat "$PHASE_FILE"

@@ -1,7 +1,7 @@
 -- =============================================================
 -- schema.sql — SEED / DEMO DATA ONLY
 -- This file is a hypothetical relational schema for vibe-harness.
--- Vibe-Harness itself uses JSON files (kanban.json), not SQL.
+-- Vibe-Engineering itself uses JSON files (kanban.json), not SQL.
 -- This file exists solely for the DB Schema view screenshot.
 -- =============================================================
 

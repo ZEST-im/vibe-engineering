@@ -1,4 +1,4 @@
-# Vibe Harness Worker Protocol
+# Vibe Engineering Worker Protocol
 
 ## Invariants
 

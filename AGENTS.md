@@ -1,4 +1,4 @@
-# AGENTS.md — Vibe Harness Rules for Codex and other agents
+# AGENTS.md — Vibe Engineering Rules for Codex and other agents
 
 Claude Code enforces these rules via hooks and skill instructions.
 This file provides the same rules for Codex CLI and other agents that read AGENTS.md.
@@ -27,7 +27,7 @@ python3 ~/.claude/skills/vibe-harness/server.py serve 4242 &
 
 If this project is not yet registered:
 ```bash
-python3 ~/.claude/skills/vibe-harness/server.py register vibe-harness "Vibe Harness" "$(pwd)/vibe-harness"
+python3 ~/.claude/skills/vibe-harness/server.py register vibe-harness "Vibe Engineering" "$(pwd)/vibe-harness"
 ```
 
 When the user types `ss` (sync & status):
