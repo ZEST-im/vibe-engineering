@@ -16,7 +16,7 @@ PLIST_NAME = "com.vibe-harness.server.plist"
 LAUNCH_AGENTS = os.path.expanduser("~/Library/LaunchAgents")
 SETTINGS_PATH = os.path.expanduser("~/.claude/settings.json")
 HOOKS_DIR = os.path.expanduser("~/.claude/hooks")
-REPO_URL = "https://raw.githubusercontent.com/hoarchi/vibe-engineering/main"
+REPO_URL = "https://raw.githubusercontent.com/ZEST-im/vibe-engineering/main"
 
 SKILLS_ROOT = os.path.expanduser("~/.claude/skills")
 # 설치 대상 스킬 디렉토리 — repo skills/<name>/SKILL.md 가 원본

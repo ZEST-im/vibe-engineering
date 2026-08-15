@@ -7,8 +7,8 @@
     "email": "info@zest.im",
     "url": "https://github.com/hoarchi"
   },
-  "homepage": "https://github.com/hoarchi/vibe-engineering",
-  "repository": "https://github.com/hoarchi/vibe-engineering",
+  "homepage": "https://github.com/ZEST-im/vibe-engineering",
+  "repository": "https://github.com/ZEST-im/vibe-engineering",
   "license": "MIT",
   "keywords": ["kanban", "harness", "phase-management", "progress", "devlog", "tracking", "productivity", "project-management", "task-management", "token-tracking"],
   "skills": "./skills/"
