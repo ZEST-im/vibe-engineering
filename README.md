@@ -60,6 +60,8 @@ The kanban board (localhost:4242) is the visible surface. The real value is the 
 - **DB Schema view** — reads schema files (schema.rb, schema.sql, Prisma) and renders an ERD: tables, columns, PK/FK/UQ badges, index list, and FK relationship lines.
 - **Archive** — done tasks auto-archived to monthly JSON files. Always visible. Never lost.
 - **Session rituals** — `qq` (wrap-up without push) and `cc` (commit + push + deploy + docs) as first-class commands.
+- **Kickoff planning** — `/vibe-planning` walks a new project through five gated stages, one question at a time, and leaves five short documents in `docs/planning/`. Built for developers who have to do the planning too.
+- **Design before build** — `/vibe-design` turns the landing page and key screens into self-contained HTML you open in a browser and approve *before* implementation starts.
 - **Zero dependencies** — pure Python + vanilla JS. No npm, no pip, no build step.
 
 ---
@@ -139,6 +141,14 @@ python3 scripts/setup.py uninstall
 ## Using It as a Harness
 
 The board is useful out of the box. But the real leverage comes from using the full harness pattern.
+
+### Starting a brand-new project
+
+Run `/vibe-planning`. It asks one question at a time through five gates — north star,
+requirements, user stories, screens, technical decisions — and leaves the five artifacts in
+`docs/planning/`. Stage 4 hands off to `/vibe-design`, so you look at the landing page and key
+screens in a browser before a line of it gets built. At the end it proposes the implementation
+tasks for the board, and the normal phase/kanban loop below takes over.
 
 ### Session start prompt (add to your workflow)
 
@@ -233,6 +243,8 @@ Monthly archive files (`vibe-harness/archive/YYYY-MM.json`) are git-tracked. The
 | `/vibe-harness report` | Today's completed task summary |
 | `qq` | Session wrap-up: docs + kanban + no push |
 | `cc` | Full close: docs + kanban + commit + push + deploy |
+| `/vibe-planning` | Kickoff planning — five gated stages into `docs/planning/` |
+| `/vibe-design` | Landing + key screens as HTML, checked in a browser |
 | `python3 ~/.claude/skills/vibe-harness/server.py sync` | Push configured remote snapshots now |
 
 ---

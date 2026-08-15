@@ -127,7 +127,8 @@ At the start of a session, establish current mission context by reading the proj
 1. **`CURRENT_PHASE.md`** (if present — checked in `private/`, then root, then `docs/`) — current phase name, scope, `Done when` checklist, and the `Do NOT touch` block. This is the primary scope signal.
 2. **`vibe-harness/kanban.json`** — check for any task with `status: "in_progress"`. If one exists, that is the active task; continue it instead of starting new work.
 3. **`vibe-harness/decisions.json`** — recent durable decisions that may constrain the work.
-4. **Optional**: if the Board UI server happens to be running already, you can hit `GET http://localhost:4242/api/{project_key}/context` for the same information in one call. Skip this step if the server is not up — do **not** spin it up just to fetch context.
+4. **`docs/planning/01_philosophy.md`** (if present) — the project's north star, written by the `vibe-planning` skill. Its principles and the "who we are not for" section are decision constraints; when a task conflicts with them, say so rather than quietly picking a side.
+5. **Optional**: if the Board UI server happens to be running already, you can hit `GET http://localhost:4242/api/{project_key}/context` for the same information in one call. Skip this step if the server is not up — do **not** spin it up just to fetch context.
 
 From these, derive:
 - Current Phase name and scope
