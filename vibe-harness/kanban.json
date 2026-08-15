@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "next_id": 41,
+  "next_id": 42,
   "tasks": [
     {
       "id": 21,
@@ -846,6 +846,27 @@
       "lines_removed": 14,
       "created_at": "2026-08-15T17:30:00+09:00",
       "updated_at": "2026-08-15T18:40:00+09:00",
+      "position": 0,
+      "phase": "PHASE_PMF06",
+      "review": "",
+      "created_by": "hogun",
+      "assigned_to": "hogun"
+    },
+    {
+      "id": 41,
+      "title": "제품 본체·데이터 불변식 테스트 (W33 리뷰 P1 대응)",
+      "description": "skills/ 내용과 kanban·runs JSON 불변식을 테스트로 고정. 손으로 치던 grep 을 재현 가능하게 이관",
+      "details": "## 배경\nW33 주간 리뷰 P1: 이 레포의 제품은 skills/*/SKILL.md 1,390줄인데 검증 테스트가 0이었다.\n기존 테스트는 전부 설치 배선만 봐서, SKILL.md 에 무엇이 적혀 있든 통과했다.\nP4 는 이번 주 확인 작업이 전부 일회성 셸 명령이라 재현되지 않는다는 것이었다.\n이 커밋이 그 둘을 함께 닫는다.\n\n## Changes\n- tests/test_skills.py (7 cases) — 제품 본체 검증\n  - 모든 스킬 디렉토리에 SKILL.md 존재\n  - frontmatter name 이 디렉토리명과 일치\n  - description 길이 하한 (모델이 스킬을 고르는 유일한 단서)\n  - user-invocable 선언\n  - `vibe-xxx` 로 참조한 스킬이 실재\n  - 스킬이 README 에 문서화됨 (추가하고 문서 갱신 잊는 것 방지)\n  - skills/ 디렉토리가 setup.SKILLS 에 등록됨 (설치 누락 방지)\n- tests/test_data_integrity.py (11 cases) — CLAUDE.md 규율의 강제\n  - task id 유일성, next_id > max(id)\n  - status 값 검증\n  - done 태스크의 details·lines 필수\n  - 담당자당 in_progress 1개\n  - 모든 태스크에 category\n  - runs.json 의 version 필드 보존 (Do NOT touch)\n  - session_id 유일성, 토큰 음수 금지, 합계 정합성\n\n## Decisions\n- 신규 테스트가 전부 처음부터 통과했으므로, **위반을 주입해 실제로 잡는지 9건 검증**했다.\n  frontmatter 불일치 / 없는 스킬 참조 / README 누락 / setup 등록 누락 /\n  중복 id / details 누락 / in_progress 2개 / version 제거 / session_id 중복 — 전부 잡음.\n  항상 통과하는 테스트는 테스트가 아니므로 이 확인이 없으면 P1 을 닫았다고 할 수 없다.\n- 분량 상한은 테스트하지 않았다. 파일에 선언된 값이 아니라 작성 시 목표였을 뿐이라\n  테스트로 만들면 임의의 숫자를 고정하게 된다.\n\n## Verification\n- 49 tests OK (기존 31 + 신규 18)\n- 위반 주입 9건 전량 검출 확인 후 파일 복원\n\n## Follow-up\n- W33 리뷰 P2(CI 부재)는 미해결. 테스트는 생겼으나 여전히 사람이 기억해서 쳐야 한다",
+      "status": "done",
+      "priority": "high",
+      "category": "qa",
+      "target_date": "",
+      "started_at": "2026-08-15T18:50:00+09:00",
+      "completed_at": "2026-08-15T19:20:00+09:00",
+      "lines_added": 214,
+      "lines_removed": 0,
+      "created_at": "2026-08-15T18:50:00+09:00",
+      "updated_at": "2026-08-15T19:20:00+09:00",
       "position": 0,
       "phase": "PHASE_PMF06",
       "review": "",
