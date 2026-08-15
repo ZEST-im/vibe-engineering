@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "next_id": 46,
+  "next_id": 47,
   "tasks": [
     {
       "id": 21,
@@ -951,6 +951,27 @@
       "lines_removed": 96,
       "created_at": "2026-08-15T22:20:00+09:00",
       "updated_at": "2026-08-15T23:05:00+09:00",
+      "position": 0,
+      "phase": "PHASE_PMF06",
+      "review": "",
+      "created_by": "hogun",
+      "assigned_to": "hogun"
+    },
+    {
+      "id": 46,
+      "title": "로컬 폴더 이전 복구 — vibe-engineering 으로",
+      "description": "프로젝트 폴더명 변경 후 끊긴 경로 3종을 복구하고 잔재를 정리",
+      "details": "## 배경\n로컬 폴더를 dev-hoarchi/vibe-harness → vibe-engineering 으로 이동.\nClaude Code 는 transcript 를 cwd 인코딩 디렉토리(/·.·_ → -)에 저장하므로\n세션을 보존하려면 ~/.claude/projects/ 아래 디렉토리도 함께 옮겨야 한다.\n사용자가 폴더와 transcript 를 함께 옮겨 세션은 살아남았고, 나머지 연결을 복구했다.\n\n## 복구한 것\n1. projects.json — vibe-harness 항목의 kanban_dir 을 새 경로로. 백업 남김\n   (name 도 \"Vibe Engineering\" 으로 갱신)\n2. 서버 재등록 — POST /api/projects. **key 는 vibe-harness 로 유지**했다.\n   key 를 vibe-engineering 으로 바꾸면 그동안 쌓인 stats 이력이 끊긴다.\n   디렉토리명과 key 가 달라지지만 key 는 식별자일 뿐이라 무해하다.\n   검증: exists=True, context API 가 PHASE_PMF06·do_not_touch 13건 정상 인식\n3. 잔재 정리 — 옛 경로에 빈 껍데기 폴더와 250B transcript 스텁이 다시 생겨 있었다.\n   projects.json 이 아직 옛 경로를 가리켜 서버/훅이 접근하며 mkdir 한 것으로 보인다.\n   삭제 전에 파일 0개, 스텁의 메타(custom-title·last-prompt)가 새 파일에도 있음을 확인\n\n## 조치 불필요했던 것\n- reconcile 토큰 집계 — _transcript_dir 이 cwd 에서 도출하므로 자동으로 새 경로를 봤다.\n  실행 결과 \"기존 3건 유지 + 신규 0건\" 으로 append-only 유지 확인.\n  어제 고친 merge_runs 가 폴더 이동에도 버틴다는 증거\n- git — 폴더 이동에 영향 없음\n\n## Decisions\n- 순서는 폴더 이동 → 등록 수정 → 잔재 정리. 반대로 할 수 없으므로 사후 정리가 정석\n- CURRENT_PHASE.md 의 Do NOT touch 에 있던 \"로컬 폴더명 — 매핑 깨짐\" 항목을\n  완료 표시로 전환 (더 이상 금지사항이 아님)\n\n## Verification\n- 55 tests OK\n- 서버 context API 정상, kanban.json 45건 인식\n- reconcile append-only 유지",
+      "status": "done",
+      "priority": "high",
+      "category": "infra",
+      "target_date": "",
+      "started_at": "2026-08-15T17:35:00+09:00",
+      "completed_at": "2026-08-15T17:50:00+09:00",
+      "lines_added": 6,
+      "lines_removed": 8,
+      "created_at": "2026-08-15T17:35:00+09:00",
+      "updated_at": "2026-08-15T17:50:00+09:00",
       "position": 0,
       "phase": "PHASE_PMF06",
       "review": "",
