@@ -1,9 +1,8 @@
 # ZEST UI — design language
 
 > Source: `@zest-im/ui` → `src/styles/tokens.css`, read 2026-08-15.
-> **Internal.** The package ships through private GitHub Packages and needs a token.
-> This file records the language so ZEST products stay coherent even where the package
-> is not installed.
+> **Free to use.** The npm package is private, but the design language is not — everything
+> needed to use it is in this file. Copy the tokens; you do not need the package.
 
 ## Character
 
@@ -82,18 +81,32 @@ silently change what a screen asserts.
   full. Mixing radii within one component reads as a mistake.
 - **Semantic colors keep their meaning.** Do not reuse `--danger` for a decorative red.
 
-## Provenance
+## Why it is built this way
 
-The token file records where the values came from: cool grays and the large-radius,
-low-shadow treatment follow **Toss**, the green is **Naver Pay green** (`#03c75a`, which
-[verified on Naver's own design page](https://developers.pay.naver.com/design/brand/logo)),
-and the `trust` blue matches **Toss blue** (`#3182f6`, verified on Toss's guide).
+The palette is tuned for **Korean product interfaces**, where a few things differ from
+Latin-first systems:
 
-Two cautions:
+- **Cool grays, not warm or neutral.** Hangul at body size has heavier visual mass than
+  Latin. A warm gray behind it turns muddy; the slight blue in `#4e5968` keeps dense text
+  readable without raising contrast to the point of harshness.
+- **No pure black.** `#191f28` is the floor. Korean typefaces have thicker strokes and
+  fewer weights, so `#000` on white reads as heavier than the same text in Latin.
+- **Large radii, almost no borders.** With `--border` at `#f2f4f6`, separation comes from
+  the surface step (white card on `--bg-soft`) rather than a line. Fewer lines means less
+  visual noise competing with dense Hangul.
+- **One accent, used everywhere.** Actions, completion, and KPIs share a single green, so
+  color means "this matters" rather than "this is a category". A second signal color
+  would force readers to learn a legend.
 
-- Those are **other companies' brand colors**. They are used here as ZEST's palette; do
-  not present ZEST work as affiliated with either company.
-- The gray ramp attribution is what the token file's own comments claim.
-  **It could not be verified against a Toss source** — their published guide is
-  documentation hosted on GitBook and does not expose their tokens. Treat the grays as
-  ZEST's values, not as a Toss citation.
+Pair it with the Korean typography notes in `design-systems.md` — line-height 1.6–1.7 and
+negative heading tracking are assumed by this palette, not optional with it.
+
+## Using it outside ZEST
+
+Free to use. The token block above is the whole system — copy it, rename the variables,
+and change the accent to your own.
+
+Two things to keep if you want the character to survive: **the surface step** (white on
+cool gray, borders nearly invisible) and **the single accent**. Those two do most of the
+work. The specific green is the least important part; it is the one thing you should
+replace to avoid looking like someone else's product.

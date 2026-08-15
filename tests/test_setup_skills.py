@@ -64,6 +64,25 @@ class CopySkillFilesTest(unittest.TestCase):
         self.assertTrue(os.path.exists(
             os.path.join(self.skills_root, "vibe-design", "references", "design-systems.md")))
 
+    def test_removes_support_files_deleted_from_repo(self):
+        """레포에서 지운 부속 파일이 설치본에 남으면 안 된다.
+
+        스킬이 참조하지 않는 낡은 문서가 설치본에만 남아 있으면, 사용자는
+        레포에 없는 지침을 따르게 된다.
+        """
+        ref_dir = os.path.join(self.repo_skills, "vibe-design", "references")
+        os.makedirs(ref_dir)
+        with open(os.path.join(ref_dir, "old.md"), "w") as fh:
+            fh.write("stale")
+        setup.copy_skill_files()
+        installed_old = os.path.join(self.skills_root, "vibe-design", "references", "old.md")
+        self.assertTrue(os.path.exists(installed_old))
+
+        os.remove(os.path.join(ref_dir, "old.md"))
+        setup.copy_skill_files()
+
+        self.assertFalse(os.path.exists(installed_old), "지운 파일이 설치본에 남음")
+
     def test_does_not_copy_pycache_or_backups(self):
         d = os.path.join(self.repo_skills, "vibe-design", "__pycache__")
         os.makedirs(d)

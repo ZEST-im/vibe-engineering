@@ -35,7 +35,7 @@ before screens, before tone. **There are two paths, and both end in real values.
 | Path | What you get |
 |---|---|
 | **A. Catalog** *(default)* | A system from `references/design-systems.md`, picked by what the product is. Real token files, checked licenses |
-| **A′. House system** | If the org has one — e.g. `references/zest-ui.md` — start there and skip the catalog |
+| **A′. House system** | If the org has one — e.g. `references/zest-ui.md` — start there instead of the catalog |
 | **B. A link** | You fetch the page and read its actual CSS |
 
 **Prefer A.** The catalog entries are token sets built to be reused, with licenses already
@@ -66,10 +66,10 @@ tone reference only, saying that is what you are doing.
    community centres, the status indicator became a heated floor, because the product is
    about whether a floor is warm.
 
-**If the product ships inside another company's platform** (a Naver Pay integration, an
-Apps-in-Toss mini-app), read `references/kr-platform-guides.md` first. Those platforms
-impose hard requirements — asset specs, clear space, brand-separation rules — that
-override design preference, and one of them requires partner status to use at all.
+**If the product ships inside another company's platform**, find that platform's partner
+guidelines before choosing anything. Asset specs, clear space, and brand-separation rules
+are hard requirements that override design preference — and some require partner status
+to use at all.
 
 If the fetch fails or you are offline, say so and fall back to Radix-style reasoning —
 12 steps with defined jobs — rather than picking colors freehand.
