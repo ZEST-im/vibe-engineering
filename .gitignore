@@ -26,7 +26,10 @@ private/
 .env
 .env.*
 .claude/
-.github/
+# .github 아래 로컬 흔적은 제외하되, CI 워크플로는 반드시 추적한다.
+# (디렉토리째 제외하면 하위를 되살릴 수 없어 `.github/*` 형태여야 한다)
+.github/*
+!.github/workflows/
 
 # e2e 스킬 검증용 임시 산출물
 test_temp/

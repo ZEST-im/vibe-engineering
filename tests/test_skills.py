@@ -85,6 +85,37 @@ class SkillCrossReferenceTest(unittest.TestCase):
             self.assertIn("/" + name, readme, name + " 이 README 에 없음")
 
 
+class RepoShipsWhatItClaimsTest(unittest.TestCase):
+    """레포에 있다고 보고한 것이 실제로 커밋에 들어갔는지 본다.
+
+    CI 워크플로를 추가했는데 .gitignore 의 `.github/` 에 걸려 푸시되지 않은 적이 있다.
+    로컬에는 있고 원격에는 없으니 로컬 테스트로는 영원히 잡히지 않는 종류다.
+    """
+
+    def _tracked(self, path):
+        import subprocess
+        out = subprocess.run(["git", "-C", ROOT, "ls-files", "--error-unmatch", path],
+                             capture_output=True, text=True)
+        return out.returncode == 0
+
+    def test_ci_workflow_is_tracked_by_git(self):
+        workflow_dir = os.path.join(ROOT, ".github", "workflows")
+        if not os.path.isdir(workflow_dir):
+            self.skipTest("워크플로 디렉토리 없음")
+        files = [f for f in os.listdir(workflow_dir) if f.endswith((".yml", ".yaml"))]
+        self.assertTrue(files, ".github/workflows 에 워크플로가 없음")
+        for name in files:
+            rel = ".github/workflows/" + name
+            self.assertTrue(self._tracked(rel),
+                            rel + " 이 git 추적 대상이 아님 — .gitignore 확인")
+
+    def test_installed_scripts_are_tracked(self):
+        """setup.py 가 배포하는 파일이 레포에 실제로 있어야 원격 설치가 성립한다."""
+        for name in ("server.py", "vibe_runtime.py", "worker.py", "kanban.html", "setup.py"):
+            self.assertTrue(self._tracked("scripts/" + name),
+                            "scripts/" + name + " 이 git 추적 대상이 아님")
+
+
 class SkillInstallContractTest(unittest.TestCase):
     def test_setup_declares_every_skill_dir(self):
         """skills/ 에 디렉토리를 만들고 setup.py 등록을 잊으면 설치가 안 된다."""
