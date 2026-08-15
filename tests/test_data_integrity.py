@@ -20,27 +20,51 @@ def load(name):
         return json.load(fh)
 
 
+def archived_tasks():
+    """archive/YYYY-MM.json 에 옮겨진 태스크.
+
+    아카이브는 kanban.json 을 가볍게 유지하려고 done 을 월별로 빼낸 것이다.
+    id 불변식은 **아카이브까지 합쳐야** 참이다 — kanban 만 보면 아카이브된 id 를
+    재사용해도 잡히지 않는다.
+    """
+    adir = os.path.join(DATA, "archive")
+    if not os.path.isdir(adir):
+        return []
+    out = []
+    for name in sorted(os.listdir(adir)):
+        if name.endswith(".json"):
+            with open(os.path.join(adir, name), encoding="utf-8") as fh:
+                out.extend(json.load(fh).get("tasks", []))
+    return out
+
+
 class KanbanIntegrityTest(unittest.TestCase):
     def setUp(self):
         self.kanban = load("kanban.json")
         self.tasks = self.kanban["tasks"]
+        self.archived = archived_tasks()
+        self.all_tasks = self.tasks + self.archived
 
-    def test_task_ids_are_unique(self):
-        ids = [t["id"] for t in self.tasks]
+    def test_task_ids_are_unique_across_archive(self):
+        ids = [t["id"] for t in self.all_tasks]
         dupes = {i for i in ids if ids.count(i) > 1}
-        self.assertEqual(set(), dupes, "중복 id: " + str(sorted(dupes)))
+        self.assertEqual(set(), dupes, "중복 id(아카이브 포함): " + str(sorted(dupes)))
 
     def test_next_id_is_above_every_used_id(self):
-        self.assertGreater(self.kanban["next_id"], max(t["id"] for t in self.tasks))
+        used = [t["id"] for t in self.all_tasks]
+        if not used:
+            self.skipTest("태스크가 하나도 없음")
+        self.assertGreater(self.kanban["next_id"], max(used),
+                           "next_id 가 아카이브된 id 보다 작거나 같음 — 재사용 위험")
 
     def test_status_is_a_known_value(self):
-        for t in self.tasks:
+        for t in self.all_tasks:
             self.assertIn(t["status"], ("todo", "in_progress", "done", "review"),
                           "task %s: 알 수 없는 status %r" % (t["id"], t["status"]))
 
     def test_done_tasks_carry_a_report(self):
         """CLAUDE.md: 완료 시 details 와 변경량이 필수."""
-        for t in self.tasks:
+        for t in self.all_tasks:
             if t["status"] != "done":
                 continue
             self.assertTrue((t.get("details") or "").strip(),
@@ -53,7 +77,7 @@ class KanbanIntegrityTest(unittest.TestCase):
     def test_at_most_one_task_in_progress_per_person(self):
         """CLAUDE.md: 한 번에 in_progress 는 유저당 1개."""
         counts = {}
-        for t in self.tasks:
+        for t in self.all_tasks:
             if t["status"] == "in_progress":
                 who = t.get("assigned_to") or t.get("created_by") or "?"
                 counts[who] = counts.get(who, 0) + 1
@@ -61,7 +85,7 @@ class KanbanIntegrityTest(unittest.TestCase):
         self.assertEqual({}, over, "in_progress 가 1개를 넘는 담당자: " + str(over))
 
     def test_every_task_has_a_category(self):
-        for t in self.tasks:
+        for t in self.all_tasks:
             self.assertTrue((t.get("category") or "").strip(),
                             "task %s: category 없음" % t["id"])
 
