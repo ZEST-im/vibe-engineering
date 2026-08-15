@@ -77,7 +77,7 @@ The kanban board (localhost:4242) is the visible surface. The real value is the 
 ### 1. Clone
 
 ```bash
-git clone https://github.com/hoarchi/vibe-engineering.git
+git clone https://github.com/ZEST-im/vibe-engineering.git
 cd vibe-engineering
 ```
 
@@ -122,7 +122,7 @@ Older installs didn't copy `setup.py` to `~/.claude/skills/vibe-harness/`, so th
 
 ```bash
 mkdir -p ~/.claude/skills/vibe-harness
-curl -sL https://raw.githubusercontent.com/hoarchi/vibe-engineering/main/scripts/setup.py \
+curl -sL https://raw.githubusercontent.com/ZEST-im/vibe-engineering/main/scripts/setup.py \
   -o ~/.claude/skills/vibe-harness/setup.py
 python3 ~/.claude/skills/vibe-harness/setup.py upgrade
 ```

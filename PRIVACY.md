@@ -30,4 +30,4 @@ Vibe-Engineering does not integrate with or send data to any third-party service
 
 If you have questions about this privacy policy:
 - Email: info@zest.im
-- GitHub: https://github.com/hoarchi/vibe-engineering/issues
+- GitHub: https://github.com/ZEST-im/vibe-engineering/issues
