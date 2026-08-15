@@ -20,10 +20,10 @@ REPO_URL = "https://raw.githubusercontent.com/hoarchi/vibe-engineering/main"
 
 SKILLS_ROOT = os.path.expanduser("~/.claude/skills")
 # 설치 대상 스킬 디렉토리 — repo skills/<name>/SKILL.md 가 원본
-SKILLS = ["vibe-harness", "vibe-planning", "vibe-design"]
+SKILLS = ["vibe-harness", "vibe-planning", "vibe-design", "vibe-review"]
 # 언인스톨 시 디렉토리째 지워도 되는 스킬
 # (vibe-harness 는 projects.json/server.log 가 함께 살아서 제외)
-REMOVABLE_SKILLS = ["vibe-planning", "vibe-design"]
+REMOVABLE_SKILLS = ["vibe-planning", "vibe-design", "vibe-review"]
 
 # Hook definitions: (src_name, event, entry_dict)
 HOOKS = [

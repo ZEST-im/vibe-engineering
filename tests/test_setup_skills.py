@@ -22,7 +22,8 @@ class CopySkillFilesTest(unittest.TestCase):
         self.repo_skills = os.path.join(self.tmp.name, "repo", "skills")
         self.scripts_dir = os.path.join(self.tmp.name, "repo", "scripts")
         os.makedirs(self.scripts_dir)
-        for name in ("vibe-harness", "vibe-planning", "vibe-design"):
+        # 픽스처는 선언된 스킬 목록에서 파생한다 — 스킬이 늘어도 테스트가 따라온다
+        for name in setup.SKILLS:
             d = os.path.join(self.repo_skills, name)
             os.makedirs(d)
             with open(os.path.join(d, "SKILL.md"), "w") as fh:
@@ -44,6 +45,18 @@ class CopySkillFilesTest(unittest.TestCase):
         for name in setup.SKILLS:
             path = os.path.join(self.skills_root, name, "SKILL.md")
             self.assertTrue(os.path.exists(path), name + " not installed")
+
+    def test_every_declared_skill_exists_in_repo(self):
+        """SKILLS 에 있는데 skills/ 에 없으면 설치가 조용히 건너뛴다."""
+        for name in setup.SKILLS:
+            path = os.path.join(ROOT, "skills", name, "SKILL.md")
+            self.assertTrue(os.path.exists(path), "skills/" + name + "/SKILL.md 없음")
+
+    def test_review_skill_is_installed(self):
+        setup.copy_skill_files()
+
+        self.assertIn("vibe-review", setup.SKILLS)
+        self.assertTrue(os.path.exists(os.path.join(self.skills_root, "vibe-review", "SKILL.md")))
 
     def test_skips_skill_missing_from_repo(self):
         os.remove(os.path.join(self.repo_skills, "vibe-design", "SKILL.md"))
