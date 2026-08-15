@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "next_id": 43,
+  "next_id": 44,
   "tasks": [
     {
       "id": 21,
@@ -888,6 +888,27 @@
       "lines_removed": 6,
       "created_at": "2026-08-15T19:30:00+09:00",
       "updated_at": "2026-08-15T19:55:00+09:00",
+      "position": 0,
+      "phase": "PHASE_PMF06",
+      "review": "",
+      "created_by": "hogun",
+      "assigned_to": "hogun"
+    },
+    {
+      "id": 43,
+      "title": "W33 리뷰 완료 조건 3·4·5 마무리",
+      "description": "린터 도입, vibe-review 일간 모드 실행, docs/PROGRESS.md 생성",
+      "details": "## 3. 린터 (ruff)\n- 전체 기본 규칙은 74건. 그중 S(bandit) 73건 대부분이 S603/S607/S310 으로,\n  git·launchctl 호출과 urlopen 전부에 걸린다. 이 프로젝트에서는 모두 의도된 호출이고\n  인자도 사용자 입력이 아니라 전면 적용하면 noqa 만 늘어난다. 보류 사유를 ruff.toml 에 기록.\n- 결함 규칙만 채택: F(pyflakes) + E9 + B(bugbear) = 9건. 전부 수정.\n  - F401 미사용 import(tempfile), F541 f-string 빈 placeholder 3건 → 자동 수정\n  - B904 except 체인 유실 4건 → raise ... from err/None 명시\n  - B007 미사용 루프 변수 → _key (같은 패턴이 2곳이라 줄 번호로 지정)\n- ruff.toml 신설. 런타임 의존성은 여전히 0 — ruff 는 CI 전용 개발 도구다.\n- CI 에 lint job 추가 (ruff 버전 고정)\n\n## 4. vibe-review 일간 모드 실행\n배선만 하고 미검증이던 것을 실제로 돌렸다. 설계대로 동작:\n- 점수 없이 \"주장과 실제의 차이\"에 집중\n- 실제로 한 건 짚음 — 415f2fe 가 \"CI 도입\"을 주장했으나 워크플로가 원격에 없었던 사건\n  (8027b22 에서 이미 수정됨). 나머지 주장은 실행으로 확인 — 51 tests, 린트, 원격 CI success\n- ss 배선 문제 없음\n\n## 5. docs/PROGRESS.md\nqq 절차가 갱신하라고 규정한 파일이 이 레포에 없어 무동작이던 것을 해소.\nPhase 단위 완료 사항만 담고 일상 기록은 kanban 에 둔다는 구분을 문서 상단에 명시.\n\n## Verification\n- 51 tests OK, ruff check All checks passed\n- 원격 CI 3.11/3.12/3.13 전부 success (직전 실행)",
+      "status": "done",
+      "priority": "high",
+      "category": "infra",
+      "target_date": "",
+      "started_at": "2026-08-15T20:00:00+09:00",
+      "completed_at": "2026-08-15T20:35:00+09:00",
+      "lines_added": 118,
+      "lines_removed": 11,
+      "created_at": "2026-08-15T20:00:00+09:00",
+      "updated_at": "2026-08-15T20:35:00+09:00",
       "position": 0,
       "phase": "PHASE_PMF06",
       "review": "",

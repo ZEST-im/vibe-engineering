@@ -71,7 +71,7 @@ def main():
     r = subprocess.run(["launchctl", "load", PLIST], capture_output=True, text=True)
     if r.returncode == 0:
         print(f"설치+로드 완료: {PLIST}")
-        print(f"  → 3시간마다 + 로드 시 1회: reconcile_runs.py --all --push")
+        print("  → 3시간마다 + 로드 시 1회: reconcile_runs.py --all --push")
         print(f"  로그: {LOG}")
     else:
         print("launchctl load 실패:", r.stderr.strip())
