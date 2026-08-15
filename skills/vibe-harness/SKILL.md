@@ -111,7 +111,8 @@ Check this repo's remote and pull everything, branches included:
 2. Update any in-progress task's `details` with an interim report; write `details` on done tasks that lack them.
 3. Update phase docs only when warranted: `PHASES.md` on phase completion, `CURRENT_PHASE.md` on scope / Known Issues change.
 4. **Code review** on uncommitted + unpushed changes (see Code Review section).
-5. No commit, no push — `qq` is documentation only. Do NOT touch PROGRESS.md — kanban replaces it.
+5. Update `docs/PROGRESS.md` — concise phase-level completion items only. It is an external-sharing snapshot, not a daily log; the day-to-day record stays in `kanban.json`.
+6. No commit, no push — `qq` is documentation only.
 
 ### `cc` — commit + push (+ deploy check)
 
@@ -368,7 +369,7 @@ If clean:
 Resolve review tasks by moving them to `done` once fixed.
 
 ### Key Rules
-- PROGRESS.md is "external-sharing snapshot" only. Daily records live in kanban.json only.
+- PROGRESS.md is an "external-sharing snapshot" — updated at `qq` / `cc` with concise phase-level completion items, never a daily log. The day-to-day record lives in kanban.json.
 - Every task MUST have a `category` (backend, frontend, infra, data, docs, qa, review, etc.)
 - Write `details` thoroughly on completion — viewable in web UI and in git history.
 - Record `tokens_used` (estimated integer) on completion.
