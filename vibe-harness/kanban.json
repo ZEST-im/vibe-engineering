@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "next_id": 36,
+  "next_id": 37,
   "tasks": [
     {
       "id": 21,
@@ -741,6 +741,27 @@
       "lines_removed": 48,
       "created_at": "2026-08-15T11:30:00+09:00",
       "updated_at": "2026-08-15T11:55:00+09:00",
+      "position": 0,
+      "phase": "PHASE_PMF06",
+      "review": "",
+      "created_by": "hogun",
+      "assigned_to": "hogun"
+    },
+    {
+      "id": 36,
+      "title": "vibe-planning / vibe-design 스킬",
+      "description": "프로젝트 착수 기획 5단계 관문 스킬 + 구현 전 화면 확인 관문 스킬",
+      "details": "## Changes\n- scripts/setup.py: 단일 스킬 → 다중 스킬 설치. SKILLS/SKILLS_ROOT/REMOVABLE_SKILLS,\n  copy_skill_files(), remove_added_skills(). 로컬설치·원격업그레이드·언인스톨 3경로\n- skills/vibe-planning/SKILL.md (192줄): 5단계 관문\n- skills/vibe-design/SKILL.md (93줄): 구현 전 화면 확인 관문\n- skills/vibe-harness/SKILL.md: Session Start에 docs/planning/01_philosophy.md 추가\n- README: Features 2항목, Commands 2행, \"Starting a brand-new project\" 절\n- tests/test_setup_skills.py: 신규 3케이스\n\n## Decisions\n- 진행 상태를 별도 파일(planning.json)로 두지 않고 docs/planning/ 산출물 존재 여부로 판단.\n  이 레포는 이미 \"JSON은 상태, 문서는 산출물\"로 갈려 있고, 단계 되돌리기는 거의 안 쓰임.\n- kanban 태스크로 각 단계를 태우는 안 기각 — 기획의 본질은 대화인데 lease/gate/retry가 과함.\n  단 기획 완료 후 후속 태스크 \"생성 제안\"은 채택.\n- 1단계 필수 3요소 강제(판단 기준 / 우리가 아닌 사람 / [assumption] 마커).\n  impactbook·buildchain philosophy 전문 검토에서 추출한 공통 DNA이자 일반 PM 템플릿에 없는 차별점.\n- vibe-design은 미학을 frontend-design 스킬에 위임. 고유값은 순서 강제와 산출물 형식뿐.\n- 분량 상한을 스킬 본문에 명시 — \"간소함\"이 요구사항이므로 상한 없으면 반드시 비대해짐.\n- remove_added_skills()는 vibe-harness 디렉토리를 지우지 않음 (projects.json/server.log 공존)\n\n## Verification\n- 29 tests OK (기존 26 + 신규 3)\n- 세 스킬 설치본이 레포와 byte-identical, frontmatter name 일치, 스킬 목록에 등록 확인\n- vibe-design 외부참조 규칙 smoke test: 준수 파일 0건 / 위반 파일 3건 검출(CDN css·unpkg js·google fonts)\n- 리브랜딩으로 구버전이던 vibe-harness SKILL.md 설치본도 함께 최신화됨\n\n## 미완\n- 실제 프로젝트 end-to-end 기획 1회 적용은 미실시. 인터뷰 답변이 필요해 에이전트 단독으로\n  검증 불가 — 다음 신규 프로젝트 착수 때 실주행 필요.\n- setup.py uninstall 왕복 검증은 의도적으로 미실시 (실제 훅·launchd까지 제거됨).\n  remove_added_skills() 보존 동작은 단위 테스트로 격리 검증됨.",
+      "status": "done",
+      "priority": "high",
+      "category": "docs",
+      "target_date": "",
+      "started_at": "2026-08-15T12:00:00+09:00",
+      "completed_at": "2026-08-15T12:40:00+09:00",
+      "lines_added": 421,
+      "lines_removed": 9,
+      "created_at": "2026-08-15T12:00:00+09:00",
+      "updated_at": "2026-08-15T12:40:00+09:00",
       "position": 0,
       "phase": "PHASE_PMF06",
       "review": "",
