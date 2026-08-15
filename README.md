@@ -62,6 +62,7 @@ The kanban board (localhost:4242) is the visible surface. The real value is the 
 - **Session rituals** — `qq` (wrap-up without push) and `cc` (commit + push + deploy + docs) as first-class commands.
 - **Kickoff planning** — `/vibe-planning` walks a new project through five gated stages, one question at a time, and leaves five short documents in `docs/planning/`. Built for developers who have to do the planning too.
 - **Design before build** — `/vibe-design` turns the landing page and key screens into self-contained HTML you open in a browser and approve *before* implementation starts.
+- **Review you can't argue with** — `/vibe-review` reads your repo the way a CTO reads a team member's: it runs the tests instead of believing the report, scores AI utilization and AI supervision separately, and escalates any problem that survives another week.
 - **Zero dependencies** — pure Python + vanilla JS. No npm, no pip, no build step.
 
 ---
@@ -245,6 +246,7 @@ Monthly archive files (`vibe-harness/archive/YYYY-MM.json`) are git-tracked. The
 | `cc` | Full close: docs + kanban + commit + push + deploy |
 | `/vibe-planning` | Kickoff planning — five gated stages into `docs/planning/` |
 | `/vibe-design` | Landing + key screens as HTML, checked in a browser |
+| `/vibe-review` | Weekly scored review + short daily pass on yesterday's output |
 | `python3 ~/.claude/skills/vibe-harness/server.py sync` | Push configured remote snapshots now |
 
 ---

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "next_id": 39,
+  "next_id": 40,
   "tasks": [
     {
       "id": 21,
@@ -804,6 +804,27 @@
       "lines_removed": 8,
       "created_at": "2026-08-15T14:30:00+09:00",
       "updated_at": "2026-08-15T16:20:00+09:00",
+      "position": 0,
+      "phase": "PHASE_PMF06",
+      "review": "",
+      "created_by": "hogun",
+      "assigned_to": "hogun"
+    },
+    {
+      "id": 39,
+      "title": "vibe-review 스킬 — 자기 객관화 리뷰",
+      "description": "팀원에게 들이대는 잣대를 자기 레포에 적용하는 주간/일간 리뷰 스킬",
+      "details": "## 컨셉\n컨텍스트 복구가 아니라 셀프 디스. 남을 평가하는 CTO 리뷰를 자기가 받아본다.\n\"제3자 리뷰를 스스로 계속 볼 수 있느냐\"가 그 자체로 지표라는 것이 사용자의 정의.\n\n## 참고\nlooom_ai/docs/developer-reviews/ 전문 분석 — 주차별 HTML + history.json,\n9축 점수, consecutive_weeks 로 반복 문제 추적, 실제 실행 기반 증거.\n가장 강한 발견이 \"보고는 64개 전부 통과, 실제 HEAD 는 1 failure\" 였다는 점에서\n증거 수집 방식이 이 리뷰의 핵심임을 확인.\n\n## Changes\n- skills/vibe-review/SKILL.md (201줄) 신규\n- scripts/setup.py: SKILLS·REMOVABLE_SKILLS 에 vibe-review 등록\n- tests/test_setup_skills.py: 픽스처를 setup.SKILLS 에서 파생하도록 변경 +\n  신규 2케이스(선언된 스킬이 레포에 실재하는지 / vibe-review 설치)\n- README: Features 1항목, Commands 1행\n\n## Decisions\n- 편향 대응 4규칙: 의도가 아닌 산출물로 판단(대화 기록을 근거로 쓰지 않음) /\n  어떤 보고서도 믿지 않고 직접 실행 / AI 기여를 따로 셈 / 반복은 주차 수를 명시\n- AI 활용강도와 AI 통제역량을 분리 유지 — 합치면 \"생산성 높음\"으로 실패가 숨는다\n- 일간은 점수 없음. 하루는 채점 표본으로 작고, 매일 점수는 노이즈가 되어 무시된다.\n  대신 \"주장과 실제의 차이\"에 집중\n- 일간 산출물은 화면 출력만. 매일 파일이 쌓이면 아무도 안 읽는다\n- 범위는 현재 레포 하나\n\n## 공개 배포 대응\nvibe-engineering 이 공개 레포임을 고려해 범용화:\n- 평가 축을 영문화 + history.json 키 매핑 (다른 스킬과 일관)\n- 리뷰 대상자를 git config user.name / 커밋 작성자에서 도출\n- 출력 경로는 기본값일 뿐이며 \"한 사람의 모든 주차 + history.json 이 한 디렉토리\"만 요구\n- 스택 무가정 — 프로젝트의 검사 명령을 먼저 찾고, 테스트·CI 부재 자체가 최우선 발견\n- 셀프/타인 리뷰를 스킬이 구분하지 않음. 편향의 방향만 다르고 해법은 동일\n\n## Verification\n- 31 tests OK (기존 29 + 신규 2)\n- 범용성 점검: 한국어 축명 잔재 0, 스택 무가정·handle 도출·경로 유연성·언어 지시 모두 명시",
+      "status": "done",
+      "priority": "high",
+      "category": "docs",
+      "target_date": "",
+      "started_at": "2026-08-15T16:30:00+09:00",
+      "completed_at": "2026-08-15T17:20:00+09:00",
+      "lines_added": 232,
+      "lines_removed": 6,
+      "created_at": "2026-08-15T16:30:00+09:00",
+      "updated_at": "2026-08-15T17:20:00+09:00",
       "position": 0,
       "phase": "PHASE_PMF06",
       "review": "",
