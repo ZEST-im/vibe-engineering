@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "next_id": 49,
+  "next_id": 50,
   "tasks": [
     {
       "id": 47,
@@ -41,6 +41,28 @@
       "created_by": "hogun",
       "assigned_to": "hogun",
       "details": "## 배경\nPMF08 의 선행 조건 — \"한 레포의 결과만으로 스킬을 만들면 오늘 한 일을 일반화한 척하는\n문서가 된다\". 그래서 아카이브 루틴을 실제로 다른 프로젝트에 돌려봤다.\n\n## 실행\n독립 프로젝트 8곳 + impactbook_ai 1곳 = 9곳.\n로직은 새로 짜지 않고 server.py 의 `_archive_tasks` 를 그대로 import 해서 돌렸다.\n다시 구현하면 서버와 조용히 갈라진다.\n\nimpactbook_ai (오늘 마지막, worktree 전부 정리된 뒤 본체에서만):\n- kanban.json 477,445B -> 85,038B (-82%)\n- hot 273건 -> 41건, 아카이브 163 -> 395건\n- 총 436건 무손실. 서버 /api/tasks 가 여전히 436건 반환. next_id 434 유지\n\nworktree 가 열려 있는 동안은 하지 않았다. kanban.json 은 모든 브랜치가 건드리는\ngit 추적 파일이라, 한 브랜치에서 아카이브하면 delete-vs-keep 충돌이 크게 난다.\n머지 직후·새 브랜치 분기 전이 유일하게 싼 타이밍이다.\n\n## 현재 상태 (12개 프로젝트 실측)\n- hot(kanban.json) 205,517B ≈ 66,296 tok — 세션 시작에 읽히는 양\n- archive/*.json 2,121,403B ≈ 684,324 tok — 디스크에 있지만 세션 시작에 안 읽힘\n비율이 1:10 이다. 아카이브의 값어치는 지운 것이 아니라 **안 읽는 것**에 있다.\n\n## 부수 정리\nprojects.json 에서 죽은 등록 3건 제거 (15 -> 12).\nworktree 는 사라지고 빈 껍데기 디렉토리만 남아 있었다.\n백업 ~/.claude/skills/vibe-harness/projects.json.bak-20260815\n\n## 도중에 잡은 결함 2건 (PMF08 후보)\n1. **직접 편집 경로에 원자성이 없다**\n   측정 중 impactbook kanban.json 이 109,409B 로 parse 실패했다가 곧 86,718B 정상이 됐다.\n   손상이 아니라 동시 쓰기 중 부분 읽기였다.\n   server.py `_write_kanban` 은 tmp + fsync + os.replace 로 원자적이다. 그런데\n   **CLAUDE.md 가 규정한 기본 경로는 \"에이전트가 kanban.json 을 직접 편집\"** 이고\n   이쪽은 truncate-then-write 라 원자성이 없다. 규약이 지정한 주 경로가 서버 경로보다\n   약하다. impactbook 의 id 409/410 중복도 같은 뿌리로 보인다 — 직접 편집은 잠금이\n   없어 전체 파일 last-writer-wins 다.\n2. **/context 가 in_progress 만 원문으로 내보낸다**\n   recent_done 은 _task_digest 를 거치는데 in_progress 는 details 전량이다.\n   impactbook 은 in_progress 6건이라 /context 36KB 중 20,899B 가 여기였다.\n   in_progress 1건 규율이 지켜지면 문제없는 설계지만, 규율이 깨지면 절감분을 도로 까먹는다.\n   다만 in_progress details 는 세션 시작에 실제로 필요한 정보라 단순 절삭은 반대 방향이다."
+    },
+    {
+      "id": 49,
+      "title": "대시보드 파이프라인 정상화 — 21개 점검·13개 연결 + position null 크래시",
+      "description": "AX 대시보드에 impactbook/jina 태스크가 안 보이던 문제 추적 → 등록·표기·본체 버그까지 정리",
+      "details": "## 발단\n대시보드에 impactbook·jina 태스크가 하나도 안 뜨고 담당이 빈칸. 선행 진단은 dashboards[\"ax-project\"]=[\"zesty-os\",\"zestim\"]라 했으나 그건 _load_sync_config docstring 예시였고, 실제 값은 [\"codebook\"] 하나. impactbook은 projects.json에 이미 등록돼 있었고 git user.name도 정상, 하네스도 가동 중이었다.\n\n## 조치\n- 설치본 갱신: ~/.claude/skills 사본이 레포보다 495줄 뒤처져 있었음(실행 런타임·remote command poller·ThreadingHTTPServer 누락). 동기화가 이때부터 양방향이 됨.\n- 미등록 9개 등록(salpim-maru·zestim·agent_ceo_staff·derev_ai·pante·pante_mvp·zeb-eco2·zest-ui·agent-rnd-phd). 미등록이면 reconcile이 스킵해 비용 집계가 0이었다.\n- codebook_vibe 중복 키 제거 — 같은 kanban_dir를 두 키가 가리켜 중앙에 이중 전송되던 것.\n- 담당 표기 정규화 1310건: 표기 변형을 정규 핸들로 통일(사람별 매핑은 레포 밖 users.json). codebook 미지정 336건은 hogun으로 백필. salpim-maru 담당자는 실제 인물이라 유지.\n- ax-project 13개 가동 프로젝트로 확장, 은퇴 8개 제외.\n- 훅 중복 4개 제거 — scope-guard·review·session-start·stop-gate가 settings.json에 2번씩 등록돼 매 이벤트마다 두 번 실행되고 있었다.\n\n## 본체 버그 (29d8e99 · d201d36)\nposition이 null인 태스크 203건이 정렬을 터뜨렸다. .get(\"position\", 0)은 키가 없을 때만 기본값을 쓰므로 값이 null이면 None이 그대로 나오고, 정수와 섞이는 순간 sort가 TypeError. 스냅샷은 대시보드 전체를 한 번에 정렬하니 한 프로젝트의 태스크 하나가 동기화 전체를 죽였다. 프로젝트를 13개로 늘리는 순간 드러남.\n- _new_task에서 null 유입 차단(근본 원인)\n- _snapshot_source · GET /api/<p>/tasks · _runtime_claim 정렬 키 null 안전\n- _runtime_claim의 id 정렬 키도 str 통일 — 문자열 id 혼재 시 워커 claim이 같은 크래시(별개 잠복 버그)\n- 회귀 테스트 3건. 수정 되돌리면 3건 실패, 적용 시 15/15 통과\n\n## 후속\n- 18개 리포 칸반 커밋은 푸시 보류 상태 (CI 있는 codebook_vibe·pante·looom_dev 고려)\n- CODOCAI는 fix/pin-sdk-version 브랜치가 origin/main을 추적 중 — 그냥 push하면 main으로 올라감\n- looom_ai는 문서상 은퇴했으나 projects.json 등록은 남아있음",
+      "status": "done",
+      "priority": "high",
+      "category": "infra",
+      "target_date": "",
+      "started_at": "",
+      "completed_at": "",
+      "lines_added": 40,
+      "lines_removed": 4,
+      "tokens_used": 0,
+      "created_at": "2026-08-21T22:09:03+09:00",
+      "updated_at": "2026-08-21T22:09:03+09:00",
+      "position": 0,
+      "phase": "PHASE_PMF07",
+      "review": "",
+      "created_by": "hogun",
+      "assigned_to": "hogun"
     }
   ]
 }
