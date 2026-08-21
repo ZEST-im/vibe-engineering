@@ -224,7 +224,7 @@ def _new_task(data, fields):
         "tokens_used": fields.get("tokens_used", 0),
         "created_at": now,
         "updated_at": now,
-        "position": fields.get("position", 0),
+        "position": fields.get("position") or 0,
         "phase": fields.get("phase", ""),
         "review": fields.get("review", ""),
         "created_by": fields.get("created_by", "") or _git_user(),
@@ -1237,7 +1237,7 @@ def _runtime_claim(kanban_dir, request_data):
             candidates = [task for task in candidates if str(task.get("id")) == str(requested_id)]
         candidates.sort(key=lambda task: (
             {"high": 0, "medium": 1, "low": 2}.get(task.get("priority"), 1),
-            task.get("position", 0), task.get("id", 0),
+            task.get("position") or 0, str(task.get("id", 0)),
         ))
         active_task_ids = {
             lease.get("task_id") for lease in runtime.get("leases", {}).values()
@@ -1521,7 +1521,7 @@ def _snapshot_source(key, info):
     kanban_dir = info.get("kanban_dir", "")
     data = _read_kanban(kanban_dir)
     tasks = data.get("tasks", []) + _list_archives(kanban_dir)
-    tasks.sort(key=lambda t: (t.get("position", 0), str(t.get("id", 0))))
+    tasks.sort(key=lambda t: (t.get("position") or 0, str(t.get("id", 0))))
     decisions = _read_decisions(kanban_dir).get("decisions", [])
     return {
         "key": key,
@@ -1859,7 +1859,7 @@ class Handler(BaseHTTPRequestHandler):
                 # Return active + archived tasks
                 data = _read_kanban(kanban_dir)
                 all_tasks = data["tasks"] + _list_archives(kanban_dir)
-                all_tasks.sort(key=lambda t: (t.get("position", 0), str(t.get("id", 0))))
+                all_tasks.sort(key=lambda t: (t.get("position") or 0, str(t.get("id", 0))))
                 return self._json(all_tasks)
 
             if rest == ["export"]:
