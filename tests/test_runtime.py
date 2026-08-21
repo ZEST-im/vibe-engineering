@@ -284,5 +284,41 @@ class RuntimeTest(unittest.TestCase):
             worktrees.cleanup()
 
 
+class NullPositionTest(unittest.TestCase):
+    """A task written with position=null used to abort every sort path.
+
+    None < int raises, so one such task anywhere killed the whole dashboard
+    snapshot — not just its own project."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.kanban = os.path.join(self.tmp.name, "vibe-harness")
+        os.makedirs(self.kanban)
+        with open(os.path.join(self.kanban, "kanban.json"), "w", encoding="utf-8") as handle:
+            json.dump({"version": 1, "next_id": 4, "tasks": [
+                {"id": 1, "position": 5, "status": "todo", "title": "numbered"},
+                {"id": 2, "position": None, "status": "todo", "title": "null position"},
+                {"id": "legacy-slug", "position": None, "status": "todo", "title": "null position, string id"},
+            ]}, handle)
+        self.original_sync = server._schedule_remote_sync
+        server._schedule_remote_sync = lambda *args, **kwargs: None
+
+    def tearDown(self):
+        server._schedule_remote_sync = self.original_sync
+        self.tmp.cleanup()
+
+    def test_snapshot_source_sorts_null_positions(self):
+        snapshot = server._snapshot_source("proj", {"kanban_dir": self.kanban, "name": "proj"})
+        self.assertEqual([task["id"] for task in snapshot["tasks"]], [2, "legacy-slug", 1])
+
+    def test_new_task_coerces_null_position_to_zero(self):
+        _, task = server._new_task({"tasks": [], "next_id": 1}, {"title": "x", "position": None})
+        self.assertEqual(task["position"], 0)
+
+    def test_runtime_claim_sorts_null_positions(self):
+        claim = server._runtime_claim(self.kanban, {"worker_id": "worker-a", "agent": "test"})
+        self.assertIsInstance(claim, tuple)
+
+
 if __name__ == "__main__":
     unittest.main()
