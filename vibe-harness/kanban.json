@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "next_id": 50,
+  "next_id": 51,
   "tasks": [
     {
       "id": 47,
@@ -63,6 +63,25 @@
       "review": "",
       "created_by": "hogun",
       "assigned_to": "hogun"
+    },
+    {
+      "id": 50,
+      "title": "rename 잔재 정리 — 토큰 수집 복구, 크래시 루프 정지, 등록 22개 확정",
+      "description": "dev-hoarchi 전체 프로젝트의 등록 여부 점검 + 로컬 서버 구동. 그 과정에서 폴더 rename 때 깨진 launchd 잡 2건 발견·수정",
+      "status": "done",
+      "priority": "high",
+      "category": "infra",
+      "phase": "PHASE_PMF07",
+      "created_at": "2026-08-22T13:20:00+09:00",
+      "updated_at": "2026-08-22T13:20:00+09:00",
+      "started_at": "2026-08-22T12:57:00+09:00",
+      "completed_at": "2026-08-22T13:20:00+09:00",
+      "position": 0,
+      "lines_added": 0,
+      "lines_removed": 0,
+      "created_by": "hogun",
+      "assigned_to": "hogun",
+      "details": "## 배경\n\"dev-hoarchi 안 모든 프로젝트의 등록 여부 확인 + 로컬 칸반 서버 구동\" 요청.\n등록 점검은 금방 끝났고, 서버 상태를 보다가 rename 잔재 2건이 나왔다.\n\n## 발견한 결함 2건 — 둘 다 폴더 rename(vibe-harness -> vibe-engineering) 잔재\n### 1. 토큰 수집이 4일간 죽어 있었다\ncom.vibe-harness.reconcile 이 옛 경로\n`dev-hoarchi/vibe-harness/scripts/reconcile_runs.py` 를 가리켰다. 폴더를 옮긴 뒤\n파일이 없어져 exit 2 로 **28회 연속 실패**. 로그에 같은 에러만 쌓였다.\n\ninstall_reconcile.py 는 경로를 `os.path.dirname(__file__)` 에서 유도하므로\n새 폴더에서 재실행하면 스스로 고쳐진다 — 하드코딩이 아니어서 살았다.\n즉시 1회 실행에서 밀린 것을 전부 따라잡았다 (codebook_vibe +187 세션,\npante_bde +86, imbk_gtm_agent +43). LastExitStatus = 0.\n\n### 2. 구 com.vibekanban.server 가 5월 8일부터 크래시 루프\n없는 파일 `~/.claude/skills/vibekanban/server.py` 를 KeepAlive 로 무한 재시작.\n초당 33B 씩 로그를 키워 **104MB** 에 도달해 있었다.\nplist 를 .disabled 로 이동해 정지, 로그 비움 (114M -> 4K).\n\n**교훈**: rename 시 확인한 것은 코드 안의 경로였다. launchd plist 는 코드가 아니라\n설정이고 실패해도 조용해서 안 봤다. 주기 실행 잡은 마지막 exit status 를 봐야 한다.\n\n## 등록 점검 — 34개 디렉토리\n- 등록 14 -> 22개\n- vibe-harness/ 없어 대상 아님 11개 (orca-* 4개, hogunism-blog 등)\n\n**되돌린 것 1건**: pante_hackerton/vibe-harness/ 는 우리 데이터 디렉토리가 아니라\n**이름만 같은 폴더**였다 — README/AGENTS.md/checklists/context/templates 로 된\n해커톤용 손으로 만든 마크다운 운영 폴더(\"PANTE Vibe Harness\").\n탐지가 디렉토리 이름만 보고 매칭한 탓이다. 등록 해제 + 딸려 생긴 빈 kanban.json 삭제.\n\n같은 실수가 더 있는지 22개 전부 재검사했다. 4곳이 걸렸으나 모두 정상:\nAGENT-TIPS-RND(README 가 우리 보드를 설명), codebook_vibe(폐기된 0바이트 kanban.db),\nderev_ai(token-usage.json 이 우리 보드를 canonical 로 참조), vibe-engineering(worker.json).\n\n## 배포 순서\nss 로 pull 하니 server.py 가 바뀌어 설치본이 뒤처졌다(설치본은 6월 21일 것이라\nUI 로고가 아직 구 브랜드였다). **배포 후 재기동** 순서를 지켰다 —\n반대로 하면 구버전을 물는다. 지난번에 한 번 틀렸던 실수다.\n\n## 결과\n- 등록 22 / 서버 응답 22 / exists=False 0건 / kanban.json 있는데 미등록 없음\n- com.vibe-harness.server PID 18875, /kanban HTTP 200\n- com.vibe-harness.reconcile exit 0\n- 58 tests OK\n\n## 되돌리는 방법\n- plist: ~/Library/LaunchAgents/com.vibekanban.server.plist.disabled 이름 복원 후 load\n- 등록: ~/.claude/skills/vibe-harness/projects.json.bak-20260822-1303\n\n## 후속\n신규 등록 4곳(agent_ceo_staff, derev_ai, agent-rnd-phd, pante_mvp)에 지난주\n아카이브 작업이 미커밋으로 남아 있다. 각 프로젝트 오너가 커밋할 몫이고,\n이제 보드에 떠서 눈에 보인다."
     }
   ]
 }
