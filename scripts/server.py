@@ -57,8 +57,42 @@ SYNC_CONFIG_PATH = os.environ.get(
 )
 SYNC_PENDING_PATH = os.path.join(SKILL_DIR, "sync-pending.json")
 
+USERS_CONFIG_PATH = os.environ.get(
+    "VIBE_HARNESS_USERS_CONFIG",
+    os.path.join(SKILL_DIR, "users.json"),
+)
+
+def _load_user_aliases():
+    """Load the {alias: canonical} display-name map.
+
+    Optional machine-local file — a missing or malformed users.json simply means
+    "no aliases", so behaviour is unchanged for anyone who never configures one.
+    """
+    if not hasattr(_load_user_aliases, "_cache"):
+        aliases = {}
+        try:
+            with open(USERS_CONFIG_PATH, encoding="utf-8") as f:
+                raw = json.load(f).get("aliases", {})
+            if isinstance(raw, dict):
+                aliases = {
+                    str(k).strip().lower(): str(v).strip()
+                    for k, v in raw.items()
+                    if str(k).strip() and str(v).strip()
+                }
+        except Exception:
+            aliases = {}
+        _load_user_aliases._cache = aliases
+    return _load_user_aliases._cache
+
+def _canon_user(name):
+    """Map a display name onto its canonical form. Unknown names pass through."""
+    n = (name or "").strip()
+    if not n:
+        return ""
+    return _load_user_aliases().get(n.lower(), n)
+
 def _git_user():
-    """Get git user.name, cached after first call."""
+    """Get git user.name (canonicalized), cached after first call."""
     if not hasattr(_git_user, "_cache"):
         try:
             _git_user._cache = subprocess.check_output(
@@ -66,7 +100,7 @@ def _git_user():
             ).decode().strip()
         except Exception:
             _git_user._cache = ""
-    return _git_user._cache
+    return _canon_user(_git_user._cache)
 
 # ── Projects Registry ──────────────────────────────
 
@@ -227,8 +261,8 @@ def _new_task(data, fields):
         "position": fields.get("position") or 0,
         "phase": fields.get("phase", ""),
         "review": fields.get("review", ""),
-        "created_by": fields.get("created_by", "") or _git_user(),
-        "assigned_to": fields.get("assigned_to", ""),
+        "created_by": _canon_user(fields.get("created_by", "")) or _git_user(),
+        "assigned_to": _canon_user(fields.get("assigned_to", "")),
     }
     data["tasks"].append(task)
     data["next_id"] = tid + 1
@@ -245,6 +279,9 @@ def _update_task(task, fields):
     for k in TASK_FIELDS:
         if k in fields:
             task[k] = fields[k]
+    for k in ("created_by", "assigned_to"):
+        if k in fields:
+            task[k] = _canon_user(task.get(k))
     # Auto-set timestamps and user
     if "status" in fields:
         if fields["status"] == "in_progress":

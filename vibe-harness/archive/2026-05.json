@@ -19,8 +19,8 @@
       "position": 0,
       "phase": "PHASE_MVP01",
       "review": "",
-      "created_by": "zest.hogun",
-      "assigned_to": ""
+      "created_by": "hogun",
+      "assigned_to": "hogun"
     },
     {
       "id": 19,
@@ -40,8 +40,8 @@
       "position": 0,
       "phase": "PHASE_PMF01",
       "review": "",
-      "created_by": "zest.hogun",
-      "assigned_to": ""
+      "created_by": "hogun",
+      "assigned_to": "hogun"
     },
     {
       "id": 18,
@@ -61,8 +61,8 @@
       "position": 0,
       "phase": "PHASE_PMF01",
       "review": "",
-      "created_by": "zest.hogun",
-      "assigned_to": ""
+      "created_by": "hogun",
+      "assigned_to": "hogun"
     },
     {
       "id": 17,
@@ -82,8 +82,8 @@
       "position": 0,
       "phase": "PHASE_PMF01",
       "review": "",
-      "created_by": "zest.hogun",
-      "assigned_to": ""
+      "created_by": "hogun",
+      "assigned_to": "hogun"
     }
   ]
 }

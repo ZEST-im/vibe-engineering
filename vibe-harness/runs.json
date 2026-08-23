@@ -44,6 +44,21 @@
       "commit": "",
       "ts": "2026-08-15T10:58:31+09:00",
       "source": "transcript-reconcile"
+    },
+    {
+      "task_id": null,
+      "agent": "claude",
+      "model": "claude-opus-5",
+      "tokens": 15159483,
+      "input_tokens": 294,
+      "output_tokens": 154283,
+      "cache_read_tokens": 14707263,
+      "cache_write_tokens": 297643,
+      "cost_usd": 39.2173,
+      "session_id": "5b7ab925-7ad9-464c-9de3-6c068fe4fd8b",
+      "commit": "",
+      "ts": "2026-08-21T22:24:16+09:00",
+      "source": "transcript-reconcile"
     }
   ]
 }

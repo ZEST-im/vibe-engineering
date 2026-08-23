@@ -52,6 +52,7 @@ This matters because:
 ~/.claude/skills/vibe-harness/server.py           ← Web server (optional, shared across projects)
 ~/.claude/skills/vibe-harness/kanban.html         ← Web UI (loaded by server)
 ~/.claude/skills/vibe-harness/projects.json       ← Project registry (used by server)
+~/.claude/skills/vibe-harness/users.json          ← Display-name alias map (optional, machine-local)
 {project}/vibe-harness/kanban.json                ← Per-project task data (git-tracked, authoritative)
 {project}/vibe-harness/decisions.json             ← Per-project decision log (git-tracked, authoritative)
 {project}/vibe-harness/archive/YYYY-MM.json       ← Monthly archives (git-tracked)
@@ -373,6 +374,36 @@ Vibe-Engineering uses JSON files for storage — fully git-friendly.
 - Set `created_by` from `git config user.name` on task creation
 - `in_progress` limit (1 task) applies **per user**, not globally
 - When starting a task, set `assigned_to` to current user
+
+#### Display-name aliases (`users.json`)
+
+`git config user.name` is often not the handle you want on the board — the same person
+shows up as `a.kim` on one machine, `akim-work` on another, and under their display name
+when a task is typed by hand. Normalizing that by editing the JSON after the fact does not
+hold: the next task created re-introduces the raw git name, so the same sweep runs again.
+
+Canonicalize at the point of entry instead. Create an optional machine-local map:
+
+```json
+// ~/.claude/skills/vibe-harness/users.json      (chmod 600 — it holds real names)
+{
+  "aliases": {
+    "a.kim": "akim",
+    "akim-work": "akim",
+    "Ayeong Kim": "akim"
+  }
+}
+```
+
+- Applied wherever an owner field is written: `_git_user()`, task creation, task update.
+- Lookup is case-insensitive and whitespace-trimmed. Unknown names pass through untouched,
+  so real teammates who need no alias are unaffected.
+- The file lives **outside** any repo — real names never land in a public project.
+- Missing or malformed file = no aliases. Nothing changes for anyone who skips this.
+- Override the path with `VIBE_HARNESS_USERS_CONFIG` (used by the tests).
+
+Set the canonical handle here rather than changing `git config user.name`: that name is
+usually global, so changing it rewrites the author on every future commit in every repo.
 
 ### Claude Auto-Recording Rules (Multi-User)
 
