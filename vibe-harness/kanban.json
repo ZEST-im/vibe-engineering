@@ -190,24 +190,24 @@
     },
     {
       "id": 56,
-      "title": "🟡 공개 레포에 제3자 실명 노출 — 히스토리 재작성 판단 필요",
+      "title": "공개 레포 제3자 실명 제거 — 히스토리 재작성 + 리포 재생성",
       "description": "kanban/archive 데이터에 동료 실명과 Discord uid 언급이 커밋되어 있다",
-      "details": "## 발견\n`vibe-harness` 는 공개 저장소인데 칸반 데이터에 제3자 실명이 들어 있다.\n- `vibe-harness/archive/2026-07.json` — 태스크 #24·#31 의 title·description·details 에 동료 실명 3회,\n  그리고 `Discord uid` 권한 할당 언급\n- `vibe-harness/kanban.json` — 태스크 #49 details 에 실명 정규화 매핑이 그대로 기록됨\n\n## 성격\n- **이번 세션이 만든 것이 아니다.** 이전 커밋들에 이미 포함되어 푸시된 상태다\n  (#24·#31 은 PHASE_PMF04, #49 details 는 `c68e380` — 병렬 세션 기록)\n- 이번 세션이 새로 추가한 문서·테스트는 전부 플레이스홀더 핸들로 작성했고,\n  실제 매핑은 레포 밖 `~/.claude/skills/vibe-harness/users.json` (chmod 600) 에만 둔다\n\n## 왜 자동으로 못 고치는가\n현재 파일만 수정해도 **git 히스토리에는 그대로 남는다.** 실제 제거는 history 재작성\n(filter-repo / force push) 이 필요하고, 이는 파괴적이며 origin 을 강제로 덮어쓴다.\n공개 레포이므로 이미 클론·포크된 사본이 있을 수 있다.\n\n## 선택지\n1. 그대로 둔다 — 사내 구성원 이름이고 민감도가 낮다고 판단하는 경우\n2. 현재 파일만 익명화(예: 이니셜/핸들) — 히스토리는 남지만 신규 클론·검색 노출은 줄어든다\n3. 히스토리 재작성 — 완전 제거. 파괴적, 협업자 재클론 필요\n\n## 판단 필요\n사용자 결정 사항. 3번은 명시 동의 없이는 실행하지 않는다.",
-      "status": "review",
-      "priority": "medium",
-      "category": "review",
+      "details": "## 문제\n공개 저장소 칸반 데이터에 제3자 실명이 커밋되어 있었다. 이전 커밋들에 이미 푸시된 상태.\n- `archive/2026-07.json` 태스크 #24·#31 의 title·description·details — 동료 실명 5곳\n- `kanban.json` 태스크 #49 details — 실명 4개가 나열된 담당 표기 매핑 문장 1곳\n- 커밋 author 이메일 1곳 (이 세션이 넣은 것, 미푸시 상태에서 함께 제거)\n\n## 사전 확인\n- fork 0 · network 0 · watcher 0 → 퍼간 사본 없음. 제거가 실효성 있는 조건\n- 커밋 메시지에는 실명 없음 (blob 만 대상)\n- 백업 2중: 재작성 전 번들(1.7M/80커밋) + 정리 후 번들(2.1M/80커밋) + repo-settings.json\n\n## 1단계 — 히스토리 재작성\n`git filter-repo --replace-text` 로 79개 커밋 재작성.\n치환 규칙 4줄. `지나치기` 같은 일반 단어를 깨뜨리지 않으려고, 실명이 여러 개 나열된\n매핑 문장은 부분 치환이 아니라 문장 전체를 통째로 교체했다.\n- 무손실 검증: 재작성 전/후 트리 대조 결과 차이가 2파일 5줄 = 전부 실명 라인뿐\n- `--force-with-lease` 로 push (그 사이 다른 세션 개입 없음 확인 후)\n- 모든 SHA 가 바뀌어 dangling 이 된 참조 22곳을 `commit-map` 으로 재매핑\n\n## 2단계 — 리포 삭제·재생성 (force push 로는 부족했다)\nforce push 는 ref 만 옮기고 객체는 unreachable 로 남긴다. 실제로 재작성 후에도\n`gh api .../commits/<구SHA>` 가 200 을 반환하고 patch 안에 실명이 그대로 읽혔다.\nGitHub GC 를 기다리거나 Support 에 요청하는 대신 삭제·재생성을 택했다\n(issue·PR·release·tag·fork 전부 0 이라 실질 비용은 star 3개).\n- `gh auth refresh -s delete_repo` 는 브라우저 플로우라 사용자가 직접 수행\n- delete → create(public, description 동일) → push → 설정 대조\n\n## 최종 검증\n- 구 SHA 3개 전부 `No commit found for SHA` (200 → 404)\n- 새 클론 80커밋에서 실명 3종 모두 커밋 0 / blob 0\n- 태스크 56건·JSON 무손실, unittest 68건 통과, CI(tests.yml) success 15s\n- 설정 7항목 + visibility 전부 저장본과 일치\n\n## 잃은 것 / 남은 것\n- star 3개 복구 불가, 리포 생성일이 2026-03-14 → 2026-08-23 으로 변경\n- URL 동일 → 마켓플레이스 링크·CI 워크플로 유지\n- 치환된 핸들 `jina` 는 실명이 아니라 유지. 핸들까지 지우려면 별도 판단 필요\n- `b6b5ee0` 참조는 매핑 불가 — 분기 해소 때 폐기된 커밋이라 히스토리에 애초에 없음",
+      "status": "done",
+      "priority": "high",
+      "category": "infra",
       "phase": "PHASE_PMF07",
       "target_date": null,
-      "started_at": null,
-      "completed_at": "",
-      "lines_added": 0,
-      "lines_removed": 0,
-      "tokens_used": 0,
+      "started_at": "2026-08-23T18:10:00+09:00",
+      "completed_at": "2026-08-23T18:10:00+09:00",
+      "lines_added": 6,
+      "lines_removed": 6,
+      "tokens_used": 120000,
       "position": 0,
-      "created_by": "claude-review",
+      "created_by": "hogun",
       "assigned_to": "hogun",
       "created_at": "2026-08-21T23:10:00+09:00",
-      "updated_at": "2026-08-21T23:10:00+09:00"
+      "updated_at": "2026-08-23T18:10:00+09:00"
     }
   ]
 }
