@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "next_id": 57,
+  "next_id": 58,
   "tasks": [
     {
       "id": 47,
@@ -208,6 +208,28 @@
       "assigned_to": "hogun",
       "created_at": "2026-08-21T23:10:00+09:00",
       "updated_at": "2026-08-23T18:10:00+09:00"
+    },
+    {
+      "id": 57,
+      "title": "토큰 사용량 사람별 귀속 — 일자별 분해 + 증분 push + enroll.py",
+      "description": "",
+      "details": "## 한 일\n\n전사 토큰 사용량을 사람별로 귀속시키는 클라이언트 측 구현. 신원은 zestim 발급 개인\n토큰으로 서버가 판정한다(클라이언트는 owner를 주장하지 않는다).\n\n### Phase 0 — rename 잔재 복구 (선행)\n리포가 vibe-harness → vibe-engineering 으로 바뀌면서 수집이 멈춰 있었다.\n- `com.vibe-harness.reconcile.plist` ProgramArguments 경로 교정\n- `projects.json` 의 `vibe-harness` 키 kanban_dir 교정 (키 이름은 유지 — sync.json\n  ax-project 대시보드 매핑이 이 키를 참조)\n- launchd reload 후 실제 수집 재개 확인\n\n### scripts/reconcile_runs.py (+242/-15)\n- `build_daily_runs()` — (세션 × 일자) 행. 메시지별 timestamp를 KST 달력 날짜로\n  버킷팅. 기존 run은 ts가 파일 mtime이라 여러 날 세션이 마지막 날에 몰렸다.\n- `machine_id()` — sync.json override 우선, 없으면 hostname\n- `changed_rows()` / `push_state_for()` / `load_push_state()` / `save_push_state()`\n  — 증분 push. 전송 성공 이후에만 상태 저장(실패분 유실 방지)\n- `build_push_payload()` — schema 1(현행 세션 단위)과 2(일자별) 분기\n- `_push_central()` 을 cfg+payload+sender 형태로 재구성 (테스트에서 네트워크 미사용)\n- CLI `--force-full-push` (복구용 전량 재전송)\n\n### scripts/enroll.py (신규, 231줄)\n직원 머신 등록. 재실행 안전. setup.py는 scope-lock이라 건드리지 않았다.\n- sync.json 토큰 기록(0600), 기존 키(dashboards 등) 보존\n- projects.json 없으면 생성, 있으면 절대 덮지 않음\n- launchd 에이전트 설치/교정, Label 고정으로 중복 방지\n- 인터프리터는 /usr/bin/python3 (Homebrew python 업그레이드에 안 깨지게)\n- `--repair` / `--dry-run`\n\n## 주요 기술 결정\n\n**로컬은 세션 단위 유지, 중앙만 일자별.** 로컬 runs.json에 일자별 분해를 적용하면\n기존 dateless 레코드(세션 전체 T)와 신규 일자별 레코드(a+b=T)가 이중 계상되고,\n`test_write_leaves_file_byte_identical_when_nothing_new` 불변식이 깨진다. 정밀도가\n필요한 쪽에만 정밀도를 줘서 마이그레이션 위험을 0으로 만들었다.\n\n**schema 2는 명시적 옵트인.** 중앙(zestim)이 일자별 스키마를 받을 준비가 되기 전에\n클라이언트가 먼저 바뀌면 전사 수집이 조용히 멈춘다. 기본값은 현행과 100% 동일.\n\n**owner를 클라이언트가 보내지 않는다.** 공유 secret 하나로는 누구나 남의 이름으로\npost할 수 있다. 서버가 토큰으로 판정하면 위조 불가 + 퇴사 시 개별 폐기 가능.\n\n## 측정된 근거\n- 중앙 union은 이미 동작 중: impactbook_ai ingested 72 vs total_runs 121\n- 전량 재전송 낭비: `ingested: 108, 신규 0건` 이 하루 8회 반복\n- transcript 25,049개 usage 메시지 중 timestamp 누락 0건\n\n## 테스트\n139 tests 통과 (기존 68 + 신규 71). ruff==0.16.3 clean, compileall OK.\n- test_reconcile_daily.py 23 / test_reconcile_push.py 14 / test_enroll.py 34\n\n## 후속 (스코프 밖)\n- zestim(Rails): 토큰 발급·관리, /runs schema 2 수용, 집계 엔드포인트, 레이스 패널\n- day-close 트리거 (퇴근 도장 = 그 날 확정 신호)\n- cleanupPeriodDays 상향 (기본 30일 — 머신이 그 이상 꺼지면 영구 손실)\n- PRIVACY.md 반영 필요 (개인별 금액 전 직원 공개) — 현재 scope-lock\n- task started_at/completed_at 이 비는 문제 (#49 와 동일, #57 생성 시에도 발생)\n\n설계 문서: docs/superpowers/specs/2026-08-24-token-usage-attribution-design.md\n커밋·푸시는 하지 않았다.",
+      "status": "done",
+      "priority": "medium",
+      "category": "backend",
+      "target_date": "",
+      "started_at": "",
+      "completed_at": "2026-08-24T12:22:51+09:00",
+      "lines_added": 1512,
+      "lines_removed": 23,
+      "tokens_used": 0,
+      "created_at": "2026-08-24T12:12:42+09:00",
+      "updated_at": "2026-08-24T12:22:51+09:00",
+      "position": 0,
+      "phase": "PHASE_PMF07",
+      "review": "",
+      "created_by": "hogun",
+      "assigned_to": ""
     }
   ]
 }

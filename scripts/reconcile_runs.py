@@ -24,10 +24,13 @@ import json
 import os
 import re
 import shutil
+import socket
 import urllib.request
 
 CONFIG = os.path.expanduser("~/.claude/skills/vibe-harness/projects.json")
 SYNC_CONFIG = os.path.expanduser("~/.claude/skills/vibe-harness/sync.json")
+# 증분 push 상태 — 프로젝트별로 "이미 보낸 행"을 기억한다 (테스트에서 교체)
+PUSH_STATE_PATH = os.path.expanduser("~/.claude/skills/vibe-harness/push-state.json")
 KST = datetime.timezone(datetime.timedelta(hours=9))
 
 # 컴포넌트별 $/token (server.py COMPONENT_RATES와 동일 — 캐시가 지배적이라 정확)
@@ -115,6 +118,139 @@ def build_runs(transcripts):
     return runs
 
 
+def _sync_cfg():
+    """sync.json 로드. 없거나 깨져도 기능이 멈추면 안 되므로 빈 dict."""
+    try:
+        with open(SYNC_CONFIG, encoding="utf-8") as fh:
+            cfg = json.load(fh)
+        return cfg if isinstance(cfg, dict) else {}
+    except Exception:
+        return {}
+
+
+def machine_id(cfg=None):
+    """이 머신의 라벨. sync.json의 machine이 있으면 그걸, 없으면 hostname.
+
+    한 사람이 여러 머신을 교차 사용해도 사람 단위로 합산되도록, 이 값은 귀속이 아니라
+    운영·디버그용 라벨이다. owner는 중앙이 토큰으로 판정한다.
+    """
+    if cfg is None:
+        cfg = _sync_cfg()
+    label = str((cfg or {}).get("machine") or "").strip()
+    if label:
+        return label
+    return socket.gethostname()
+
+
+def _kst_date(ts):
+    """transcript 메시지의 timestamp를 KST 달력 날짜로. 해석 불가면 None."""
+    if not ts:
+        return None
+    try:
+        dt = datetime.datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=KST)
+    return dt.astimezone(KST).date().isoformat()
+
+
+def build_daily_runs(transcripts, machine=None):
+    """중앙 저장소로 보낼 (세션 × 일자) 행을 만든다.
+
+    build_runs()는 세션당 1건이고 ts가 파일 mtime이라, 여러 날에 걸친 세션은 마지막
+    날에 전액이 몰린다. 일별 레이스가 그걸 그대로 그리면 거짓말이 되므로, 메시지별
+    timestamp를 KST 달력 날짜로 버킷팅해 일자별로 쪼갠다.
+
+    owner는 넣지 않는다 — 클라이언트가 신원을 주장하면 위조 경로가 된다.
+    """
+    if machine is None:
+        machine = machine_id()
+    files = sorted(set(glob.glob(transcripts + "/*.jsonl")
+                       + glob.glob(transcripts + "/**/*.jsonl", recursive=True)))
+    buckets = {}
+    for path in files:
+        sid = os.path.splitext(os.path.basename(path))[0]
+        try:
+            fh = open(path, errors="ignore")
+        except OSError:
+            continue
+        with fh:
+            for line in fh:
+                try:
+                    m = json.loads(line)
+                except Exception:
+                    continue
+                msg = m.get("message") or m
+                if not isinstance(msg, dict):
+                    continue
+                u = msg.get("usage")
+                if not u:
+                    continue
+                day = _kst_date(m.get("timestamp") or msg.get("timestamp"))
+                if not day:
+                    continue
+                agg = buckets.setdefault((sid, day), {
+                    "input_tokens": 0, "output_tokens": 0,
+                    "cache_read_tokens": 0, "cache_write_tokens": 0, "model": "",
+                })
+                agg["input_tokens"] += int(u.get("input_tokens") or 0)
+                agg["output_tokens"] += int(u.get("output_tokens") or 0)
+                agg["cache_read_tokens"] += int(u.get("cache_read_input_tokens") or 0)
+                agg["cache_write_tokens"] += int(u.get("cache_creation_input_tokens") or 0)
+                agg["model"] = msg.get("model", agg["model"]) or agg["model"]
+
+    rows = []
+    for (sid, day), agg in buckets.items():
+        total = (agg["input_tokens"] + agg["output_tokens"]
+                 + agg["cache_read_tokens"] + agg["cache_write_tokens"])
+        if total <= 0:
+            continue
+        rt = _rates(agg["model"])
+        cost = (agg["input_tokens"] * rt["in"] + agg["output_tokens"] * rt["out"]
+                + agg["cache_read_tokens"] * rt["cr"] + agg["cache_write_tokens"] * rt["cw"])
+        rows.append({
+            "session_id": sid,
+            "date": day,
+            "agent": "claude",
+            "model": agg["model"] or "claude",
+            "tokens": total,
+            "input_tokens": agg["input_tokens"],
+            "output_tokens": agg["output_tokens"],
+            "cache_read_tokens": agg["cache_read_tokens"],
+            "cache_write_tokens": agg["cache_write_tokens"],
+            "cost_usd": round(cost, 6),
+            "machine": machine,
+            "source": "transcript-daily",
+        })
+    rows.sort(key=lambda r: (r["date"], r["session_id"]))
+    return rows
+
+
+# ── 증분 push ────────────────────────────────────────
+# 3시간마다 전량을 재전송하던 낭비를 없앤다. 지난 날짜의 행은 확정되면 다시 안 바뀌므로
+# 정상 상태에서는 "오늘" 행만 전송된다.
+
+def _row_key(row):
+    return "%s|%s" % (row.get("session_id") or "", row.get("date") or "")
+
+
+def _row_fingerprint(row):
+    # JSON round-trip을 견디도록 문자열로 둔다 (float 재현 문제 회피)
+    return "%d:%s" % (int(row.get("tokens") or 0), repr(row.get("cost_usd")))
+
+
+def push_state_for(rows):
+    """이 행들을 보낸 뒤 저장할 상태."""
+    return {_row_key(r): _row_fingerprint(r) for r in rows}
+
+
+def changed_rows(state, rows):
+    """상태와 비교해 새로 생겼거나 값이 바뀐 행만 고른다."""
+    state = state or {}
+    return [r for r in rows if state.get(_row_key(r)) != _row_fingerprint(r)]
+
+
 # 매칭된 run에서 "더 완전한 쪽"을 고를 수치 필드 (server.py velocity 집계와 같은 max 규칙)
 MERGE_MAX_FIELDS = ("tokens", "input_tokens", "output_tokens",
                     "cache_read_tokens", "cache_write_tokens", "cost_usd")
@@ -171,19 +307,48 @@ def _load_runs(path):
     return doc
 
 
-def _push_central(project, runs):
-    """중앙 저장소(zestim)로 runs 전송. sync.json의 endpoint/secret 재사용."""
+def load_push_state(project):
+    """이 프로젝트에서 이미 보낸 행들의 지문. 없거나 깨졌으면 빈 상태(=전량 재전송)."""
     try:
-        cfg = json.load(open(SYNC_CONFIG))
+        with open(PUSH_STATE_PATH, encoding="utf-8") as fh:
+            doc = json.load(fh)
+        state = doc.get(project) if isinstance(doc, dict) else None
+        return state if isinstance(state, dict) else {}
     except Exception:
-        raise SystemExit(f"sync.json 없음/오류 — 중앙 전송 불가: {SYNC_CONFIG}") from None
-    endpoint = str(cfg.get("endpoint", ""))
-    secret = str(cfg.get("secret", ""))
-    if not endpoint or not secret:
-        raise SystemExit("sync.json에 endpoint/secret 없음")
-    runs_url = endpoint.rsplit("/", 1)[0] + "/runs"   # .../vibe-harness/sync → .../vibe-harness/runs
-    body = json.dumps({"project": project, "runs": runs}).encode("utf-8")
-    req = urllib.request.Request(runs_url, data=body, method="POST", headers={
+        return {}
+
+
+def save_push_state(project, state):
+    """전송 성공 후에만 호출한다. 실패한 전송을 보냈다고 적으면 그 행은 영구 유실된다."""
+    try:
+        with open(PUSH_STATE_PATH, encoding="utf-8") as fh:
+            doc = json.load(fh)
+        if not isinstance(doc, dict):
+            doc = {}
+    except Exception:
+        doc = {}
+    doc[project] = state
+    tmp = PUSH_STATE_PATH + ".tmp"
+    os.makedirs(os.path.dirname(PUSH_STATE_PATH) or ".", exist_ok=True)
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(doc, fh, ensure_ascii=False, indent=2)
+    os.replace(tmp, PUSH_STATE_PATH)
+
+
+def build_push_payload(project, runs, schema=1, machine=None):
+    """중앙 전송 payload.
+
+    schema 1 은 지금 중앙이 이해하는 형태 그대로다(세션 단위 전량). 중앙이 일자별
+    스키마를 받을 준비가 되면 sync.json 에 runs_schema=2 를 켜서 전환한다.
+    """
+    if schema < 2:
+        return {"project": project, "runs": runs}
+    return {"project": project, "schema": 2, "machine": machine, "runs": runs}
+
+
+def _http_post(url, payload, secret):
+    body = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(url, data=body, method="POST", headers={
         "Content-Type": "application/json",
         "Authorization": f"Bearer {secret}",
     })
@@ -191,7 +356,29 @@ def _push_central(project, runs):
         return json.loads(r.read().decode("utf-8", "replace"))
 
 
-def reconcile(project, kanban_dir, transcripts, dry_run=False, push=False):
+def _push_central(cfg, payload, sender=None):
+    """중앙 저장소(zestim)로 payload 전송. sync.json의 endpoint/secret 재사용."""
+    endpoint = str((cfg or {}).get("endpoint", ""))
+    secret = str((cfg or {}).get("secret", ""))
+    if not endpoint or not secret:
+        raise SystemExit("sync.json에 endpoint/secret 없음")
+    runs_url = endpoint.rsplit("/", 1)[0] + "/runs"   # .../vibe-harness/sync → .../vibe-harness/runs
+    if sender is not None:
+        return sender(runs_url, payload)
+    return _http_post(runs_url, payload, secret)
+
+
+def _push_central_legacy(project, runs):
+
+    """하위 호환 진입점 — 세션 단위 전량 전송."""
+    cfg = _sync_cfg()
+    if not cfg:
+        raise SystemExit(f"sync.json 없음/오류 — 중앙 전송 불가: {SYNC_CONFIG}")
+    return _push_central(cfg, build_push_payload(project, runs))
+
+
+def reconcile(project, kanban_dir, transcripts, dry_run=False, push=False,
+              sender=None, force_full=False):
     runs = build_runs(transcripts)
     total = sum(r["tokens"] for r in runs)
     cost = sum(r["cost_usd"] for r in runs)
@@ -222,8 +409,44 @@ def reconcile(project, kanban_dir, transcripts, dry_run=False, push=False):
     added = len(merged["runs"]) - before
     print(f"  로컬 기록: {rp} (기존 {before}건 유지 + 신규 {added}건)")
     if push:
-        res = _push_central(project, runs)
+        _push(project, transcripts, runs, sender=sender, force_full=force_full)
+
+
+def _push(project, transcripts, runs, sender=None, force_full=False):
+    """중앙 전송. schema 2 를 켠 머신만 일자별 증분으로 보낸다.
+
+    중앙이 일자별 스키마를 받을 준비가 되기 전에 클라이언트가 먼저 바뀌면 전사 수집이
+    조용히 멈춘다. 그래서 기본값은 지금과 동일한 세션 단위 전량 전송이다.
+    """
+    cfg = _sync_cfg()
+    if not cfg:
+        raise SystemExit(f"sync.json 없음/오류 — 중앙 전송 불가: {SYNC_CONFIG}")
+
+    try:
+        schema = int(cfg.get("runs_schema") or 1)
+    except (TypeError, ValueError):
+        schema = 1
+
+    if schema < 2:
+        res = _push_central(cfg, build_push_payload(project, runs), sender)
         print(f"  중앙 전송: {res}")
+        return
+
+    machine = machine_id(cfg)
+    rows = build_daily_runs(transcripts, machine=machine)
+    state = {} if force_full else load_push_state(project)
+    outgoing = changed_rows(state, rows)
+    if not outgoing:
+        print(f"  중앙 전송: 변경 없음 — skip ({len(rows)}행 모두 최신)")
+        return
+
+    payload = build_push_payload(project, outgoing, schema=2, machine=machine)
+    res = _push_central(cfg, payload, sender)
+    # 전송 성공 이후에만 상태를 갱신한다. 보낸 행만 기록해 실패분이 유실되지 않게 한다.
+    merged = load_push_state(project)
+    merged.update(push_state_for(outgoing))
+    save_push_state(project, merged)
+    print(f"  중앙 전송: {res} ({len(outgoing)}/{len(rows)}행)")
 
 
 def main():
@@ -234,6 +457,8 @@ def main():
     ap.add_argument("--transcripts")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--push", action="store_true", help="중앙 저장소로 전송")
+    ap.add_argument("--force-full-push", action="store_true",
+                    help="증분 상태를 무시하고 전량 재전송 (복구용)")
     a = ap.parse_args()
 
     if a.all:
@@ -247,7 +472,8 @@ def main():
                 continue
             # 한 프로젝트가 실패해도 나머지는 계속 — 단, 마지막에 비정상 종료로 알린다
             try:
-                reconcile(key, kd, td, dry_run=a.dry_run, push=a.push)
+                reconcile(key, kd, td, dry_run=a.dry_run, push=a.push,
+                          force_full=a.force_full_push)
             except SystemExit as exc:
                 print(f"[{key}] 건너뜀: {exc}")
                 failed.append(key)
@@ -261,7 +487,8 @@ def main():
     td = a.transcripts or _transcript_dir(os.path.dirname(os.path.abspath(kd)))
     if not os.path.isdir(td):
         raise SystemExit(f"transcript 디렉토리 없음: {td} (--transcripts로 지정 가능)")
-    reconcile(a.project or os.path.basename(os.path.dirname(kd)), kd, td, dry_run=a.dry_run, push=a.push)
+    reconcile(a.project or os.path.basename(os.path.dirname(kd)), kd, td,
+              dry_run=a.dry_run, push=a.push, force_full=a.force_full_push)
 
 
 if __name__ == "__main__":
