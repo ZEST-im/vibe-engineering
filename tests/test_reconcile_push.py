@@ -79,6 +79,38 @@ class PushBase(unittest.TestCase):
                                  push=True, sender=sender, force_full=force_full)
 
 
+class EmptyRegistryTest(unittest.TestCase):
+    """새 머신은 projects.json 이 비어 있다. 조용히 0건 처리하면 "성공했는데 데이터가
+    없는" 상태가 되고, 그게 이 제품이 반복해서 실패해 온 방식이다."""
+
+    def setUp(self):
+        self.orig_projects = reconcile_runs._projects
+        self.orig_argv = sys.argv
+
+    def tearDown(self):
+        reconcile_runs._projects = self.orig_projects
+        sys.argv = self.orig_argv
+
+    def test_all_with_empty_registry_fails_loudly(self):
+        reconcile_runs._projects = lambda: {}
+        sys.argv = ["reconcile_runs.py", "--all", "--dry-run"]
+
+        with self.assertRaises(SystemExit) as ctx:
+            reconcile_runs.main()
+
+        self.assertIn("projects.json", str(ctx.exception))
+
+    def test_all_with_registry_that_matches_nothing_fails_loudly(self):
+        """등록은 됐지만 transcript 가 하나도 안 잡히는 경우도 조용해선 안 된다."""
+        reconcile_runs._projects = lambda: {"proj": {"kanban_dir": "/nonexistent/vibe-harness"}}
+        sys.argv = ["reconcile_runs.py", "--all", "--dry-run"]
+
+        with self.assertRaises(SystemExit) as ctx:
+            reconcile_runs.main()
+
+        self.assertIn("0개", str(ctx.exception))
+
+
 class PushCredentialTest(unittest.TestCase):
     """스냅샷 secret 과 run 전송 토큰은 다른 자격증명이다.
 

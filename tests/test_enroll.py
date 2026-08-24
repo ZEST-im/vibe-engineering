@@ -280,6 +280,67 @@ class BootstrapProjectsTest(unittest.TestCase):
             self.assertEqual("{broken", fh.read())
 
 
+class AddProjectTest(unittest.TestCase):
+    """수집은 projects.json 에 등록된 프로젝트만 훑는다. 손으로 JSON 을 고치게 하면
+    빠뜨리고, 빠뜨리면 조용히 0건이 된다."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.path = os.path.join(self.tmp.name, "projects.json")
+        self.repo = os.path.join(self.tmp.name, "codebook_vibe")
+        os.makedirs(self.repo)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def read(self):
+        with open(self.path) as fh:
+            return json.load(fh)
+
+    def test_registers_key_with_kanban_dir_under_repo(self):
+        enroll.add_project(self.path, "codebook", self.repo)
+
+        self.assertEqual(os.path.join(self.repo, "vibe-harness"),
+                         self.read()["codebook"]["kanban_dir"])
+
+    def test_creates_registry_when_absent(self):
+        enroll.add_project(self.path, "codebook", self.repo)
+
+        self.assertIn("codebook", self.read())
+
+    def test_keeps_other_projects(self):
+        enroll.add_project(self.path, "codebook", self.repo)
+        other = os.path.join(self.tmp.name, "zesty-os")
+        os.makedirs(other)
+
+        enroll.add_project(self.path, "zesty_os", other)
+
+        self.assertEqual(["codebook", "zesty_os"], sorted(self.read().keys()))
+
+    def test_rerun_is_idempotent(self):
+        enroll.add_project(self.path, "codebook", self.repo)
+        first = self.read()
+
+        enroll.add_project(self.path, "codebook", self.repo)
+
+        self.assertEqual(first, self.read())
+
+    def test_rejects_repo_that_does_not_exist(self):
+        with self.assertRaises(ValueError):
+            enroll.add_project(self.path, "codebook", os.path.join(self.tmp.name, "nope"))
+
+    def test_rejects_blank_key(self):
+        with self.assertRaises(ValueError):
+            enroll.add_project(self.path, "  ", self.repo)
+
+    def test_parses_key_equals_path_pairs(self):
+        self.assertEqual(("codebook", "/x/y"), enroll.parse_project_arg("codebook=/x/y"))
+
+    def test_rejects_pair_without_equals(self):
+        with self.assertRaises(ValueError):
+            enroll.parse_project_arg("codebook")
+
+
 class ResolveScriptPathTest(unittest.TestCase):
     def test_points_at_the_reconcile_script_next_to_enroll(self):
         expected = os.path.join(SCRIPTS, "reconcile_runs.py")

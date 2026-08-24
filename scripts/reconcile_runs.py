@@ -475,7 +475,14 @@ def main():
 
     if a.all:
         failed = []
-        for key, meta in _projects().items():
+        done = 0
+        projects = _projects()
+        if not projects:
+            raise SystemExit(
+                "projects.json 이 비어 있다 — 수집할 프로젝트가 없다.\n"
+                "  등록: python3 scripts/enroll.py --add-project <키>=<리포경로>\n"
+                f"  파일: {CONFIG}")
+        for key, meta in projects.items():
             kd = meta.get("kanban_dir") if isinstance(meta, dict) else meta
             if not kd:
                 continue
@@ -486,11 +493,18 @@ def main():
             try:
                 reconcile(key, kd, td, dry_run=a.dry_run, push=a.push,
                           force_full=a.force_full_push)
+                done += 1
             except SystemExit as exc:
                 print(f"[{key}] 건너뜀: {exc}")
                 failed.append(key)
         if failed:
             raise SystemExit("실패한 프로젝트: " + ", ".join(failed))
+        # 조용한 0건은 "성공했는데 데이터가 없는" 상태를 만든다. 크게 실패시킨다.
+        if done == 0:
+            raise SystemExit(
+                f"등록된 {len(projects)}개 프로젝트 중 transcript 가 잡힌 것이 0개다.\n"
+                "  kanban_dir 경로가 이 머신의 실제 리포와 맞는지 확인한다.\n"
+                f"  파일: {CONFIG}")
         return
 
     kd = a.kanban_dir or (_kanban_dir_for(a.project) if a.project else None)

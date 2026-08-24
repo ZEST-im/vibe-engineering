@@ -103,6 +103,48 @@ def bootstrap_projects(path):
     return "kept"
 
 
+def parse_project_arg(pair):
+    """'<키>=<리포경로>' 를 쪼갠다."""
+    text = str(pair or "")
+    if "=" not in text:
+        raise ValueError("형식은 <키>=<리포경로> 다 (예: codebook=~/dev/codebook_vibe)")
+    key, path = text.split("=", 1)
+    return key.strip(), path.strip()
+
+
+def add_project(registry_path, key, repo_path):
+    """수집 대상 프로젝트를 등록한다.
+
+    수집은 projects.json 에 등록된 프로젝트만 훑는다. 손으로 JSON 을 고치게 하면
+    빠뜨리고, 빠뜨리면 조용히 0건이 된다. 키는 대시보드가 참조하는 공유 프로젝트 키를
+    그대로 쓴다 — 머신마다 리포 경로는 달라도 키는 같아야 한 프로젝트로 합쳐진다.
+    """
+    key = str(key or "").strip()
+    if not key:
+        raise ValueError("프로젝트 키가 비어 있다")
+    repo = os.path.abspath(os.path.expanduser(str(repo_path or "").strip()))
+    if not os.path.isdir(repo):
+        raise ValueError(f"리포 경로가 없다: {repo}")
+
+    try:
+        data = read_json(registry_path) or {}
+    except Exception as exc:
+        raise SystemExit(f"projects.json 파싱 실패 — 덮어쓰지 않고 중단: {exc}") from exc
+    if not isinstance(data, dict):
+        raise SystemExit("projects.json 최상위가 object 가 아니다")
+
+    data[key] = {"name": key, "kanban_dir": os.path.join(repo, "vibe-harness")}
+    parent = os.path.dirname(registry_path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    tmp = registry_path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, ensure_ascii=False, indent=2)
+        fh.write("\n")
+    os.replace(tmp, registry_path)
+    return data[key]
+
+
 # ── 수집 에이전트 ────────────────────────────────────
 
 def resolve_script_path():
@@ -197,13 +239,24 @@ def main(argv=None):
                     help="수집 주기(초). 기본 10800(3시간)")
     ap.add_argument("--runs-schema", type=int,
                     help="중앙이 일자별 스키마를 받을 준비가 된 뒤에만 2 로 켠다")
+    ap.add_argument("--add-project", action="append", metavar="키=리포경로",
+                    help="수집 대상 프로젝트 등록 (여러 번 지정 가능)")
     ap.add_argument("--repair", action="store_true",
                     help="토큰 변경 없이 에이전트 경로만 교정")
     ap.add_argument("--dry-run", action="store_true", help="변경 없이 계획만 출력")
     a = ap.parse_args(argv)
 
-    if not a.repair and not a.token:
-        ap.error("--token 이 필요하다 (또는 --repair)")
+    if not a.repair and not a.token and not a.add_project:
+        ap.error("--token 이 필요하다 (또는 --repair / --add-project)")
+
+    # 프로젝트 등록만 하는 경우 — 토큰 없이도 쓸 수 있다
+    if a.add_project and not a.token and not a.repair:
+        for pair in a.add_project:
+            key, repo = parse_project_arg(pair)
+            info = add_project(PROJECTS_CONFIG, key, repo)
+            print(f"projects  : {key} → {info['kanban_dir']}")
+        print("\n확인:  python3 %s --all --dry-run" % resolve_script_path())
+        return 0
 
     print(f"skill dir : {SKILL_DIR}")
 
@@ -233,6 +286,12 @@ def main(argv=None):
         else:
             write_sync_config(SYNC_CONFIG, cfg)
             print(f"sync.json : 기록 (0600) — machine={cfg.get('machine') or 'hostname'}")
+
+    # 2.5) 프로젝트 등록
+    for pair in (a.add_project or []):
+        key, repo = parse_project_arg(pair)
+        info = add_project(PROJECTS_CONFIG, key, repo)
+        print(f"projects  : {key} → {info['kanban_dir']}")
 
     # 3) 수집 에이전트
     script = resolve_script_path()
