@@ -247,3 +247,134 @@ python3 scripts/enroll.py --dry-run --token t
 | `tests/test_enroll.py` | 34 | 설정 병합·보존, plist 생성·멱등, 0600 권한, 레지스트리 미파괴, 인터프리터 선택 |
 
 전체 139 tests 통과 (기존 68 + 신규 71). `ruff==0.16.3` clean, `compileall` OK.
+
+---
+
+# 정정 및 구현 결과 (2026-08-24, 중앙 측)
+
+zestim 실제 구조를 확인하고 나서 위 설계의 세 가지를 정정한다.
+
+## 정정 1 — DB 가 아니라 GCS JSON 이다
+
+`중앙 `/runs` 핸들러` → `중앙 수집 모듈` → `중앙 오브젝트 스토리지 모듈`.
+저장은 `vibe-harness/runs/{project}.json` 이고 동시성은 GCS precondition(generation)으로
+직렬화된다. **마이그레이션이 없다.** 위에서 "신규 컬럼" 이라 쓴 것은 JSON 필드 추가로
+읽으면 된다. zestim 은 Next.js 앱이다(Rails 아님).
+
+## 정정 2 — owner 는 Discord uid 다
+
+`중앙 수집 모듈` 의 `사람 매핑 테이블` 이 이미 Discord uid → 별칭 매핑을 갖고 있고,
+개인 대시보드(`app/my/dashboard`)가 uid 기반으로 동작한다. owner 를 uid 로 저장하면
+`scope=me` 필터가 기존 구조에 그대로 붙는다. 별칭은 표시할 때 해석한다.
+
+토큰 발급은 `harnessPersonMapped(uid)` 를 통과해야 한다 — 귀속 대상 없는 토큰을 만들지
+않는다. 신규 입사자는 `사람 매핑 테이블` 등록이 선행이며, 이 항목이 온보딩 체크리스트에
+들어가야 한다.
+
+## 정정 3 — 이중 계상 규칙이 빠져 있었다 (중요)
+
+legacy 세션 행을 지우지 않기로 했으므로, 같은 세션에 일자별 행이 생기면 저장소에 둘이
+공존한다. 그대로 합산하면 **같은 사용량이 두 번 더해진다**(세션 전체 T + 일자별 a+b=T
+= 2T). 테스트로 실증했다: 고치기 전 `expected 600 to be 300`.
+
+규칙: **일자별 행이 있는 세션의 legacy 행은 집계에서 제외한다** (`effectiveRuns`).
+저장은 그대로 두고 읽을 때만 고른다.
+
+같은 함수에서 일별 버킷도 고쳤다. 기존 `tokenVelocityFromRuns` 는 `run.ts` 앞 10자로만
+날짜를 잡아서, `ts` 가 없는 일자별 행이 일별 추이에서 통째로 빠졌다. `date` 를 우선
+본다.
+
+## 함께 고친 잠재 결함
+
+`ingestRuns` 가 `map.set(session_id, run)` 으로 통째로 덮어쓰고 있었다. 세션 도중
+기록된 과소집계 값이 나중에 도착하면 완전한 값을 지운다. `mergeRuns` 로 바꿔 수치
+필드는 큰 쪽을 남기고, 빈 문자열이 기존 `commit` 을 지우지 않게 했다.
+
+## 구현된 것 (zestim)
+
+| 파일 | 내용 |
+|---|---|
+| `중앙 토큰 레지스트리 모듈` | 개인 토큰 레지스트리. GCS `vibe-harness/tokens.json`, **sha256 해시만 저장**, 폐기는 `revoked_at` 기록(레코드 유지) |
+| `중앙 병합 모듈` | `runKey` / `mergeRuns`(max-merge) / `prepareIncomingRuns`(owner 도장·필드 화이트리스트) / `effectiveRuns`(이중 계상 제거) |
+| `중앙 `/runs` 핸들러` | 개인 토큰 → owner 판정. schema 2 는 개인 토큰만. 공유 secret 은 schema 1 로 계속 동작 |
+| `중앙 `/tokens` 핸들러` | 발급(POST)·조회(GET)·폐기(DELETE). 관리자(공유 secret)만. **개인 토큰에는 발급 권한 없음** |
+| `중앙 수집 모듈` | `HarnessRun` 에 `owner`/`date`/`machine` 추가, `ingestRuns`·`tokenVelocityFromRuns` 수정 |
+
+테스트 88개 추가 (전체 258 passed). 라우트를 직접 실행하는 테스트로 인가 배선을
+고정했다 — 이 리포의 기존 규약이고, 실제로 그 테스트가 "클라이언트가 보낸 owner 가
+그대로 저장된다" 는 위조 구멍을 잡았다(`expected 'u9' to be undefined`).
+
+## 남은 것
+
+- **집계 엔드포인트** `GET /api/internal/vibe-harness/usage?scope=me|all` — 아직 없다
+- **레이스 패널** — `app/my/dashboard` 최상단. `ProjectPanel.tsx` 가 `AxDashboard` 를
+  렌더하는 자리 위
+- **각 머신 전환** — `enroll.py --token <발급받은 토큰>` 실행 후 `runs_schema: 2` 켜기.
+  순서를 지켜야 한다(중앙 배포 → 머신 전환)
+- **day-close** — 퇴근 도장을 그 날 확정 신호로 쓰는 것
+
+---
+
+# 3번 — 집계 엔드포인트와 레이스 패널 (구현 완료)
+
+## 인증 경계를 바꿨다
+
+위에서 집계 엔드포인트를 `/api/internal/vibe-harness/usage` 로 적었는데, `internal` 은
+머신 대 머신(공유 secret) 경로다. 이건 **사람이 부르는** 엔드포인트라 앱 인증을 써야
+한다. 실제 위치:
+
+```
+GET /api/my/dashboard/token-usage?scope=me|all&from=&to=&today=
+```
+
+`중앙 인증 모듈` 의 `myUid(req)` 가 Discord uid 를 주고, 그게 run 의 `owner` 와 같은
+키다. 그래서 필터가 그냥 `r.owner === viewer` 다.
+
+`scope=me` 는 뷰어 자신으로 **고정**한다. `owner` 파라미터로 남의 것만 조회하는 경로를
+두지 않았다. 전원 비교는 `scope=all` 로 명시적으로 켠다.
+
+## 집계 규칙
+
+| 항목 | 규칙 |
+|---|---|
+| 대상 행 | `owner` 와 `date` 가 모두 있는 일자별 행만. legacy 행은 owner 가 없어 사람 레인에 못 들어간다 |
+| 중복 | 프로젝트 단위로 `effectiveRuns` 를 먼저 적용 |
+| 머신 | 합산된다. `owner` 가 같으면 한 레인 — 2대 교차 사용이 여기서 해결된다 |
+| 범위 | 기본은 오늘이 속한 주(월~일, KST). 최대 92일 |
+| 정렬 | 날짜 → 사람 |
+| 레인 | 누적. 데이터 없는 날은 직전 값 유지(레이스는 뒤로 가지 않는다) |
+
+프로젝트 목록은 `loadHarnessSnapshot('ax-project').sources` 에서 온다. 요청당 프로젝트
+수만큼 GCS 읽기가 발생하므로 `Promise.all` 로 병렬화하고 범위 상한을 뒀다.
+
+## 패널
+
+`app/my/dashboard/components/TokenRaceSection.tsx` — 개인 대시보드 최상단(인사말 바로
+아래, 핵심 업무 위). 기본 `scope=me`, 버튼으로 `all` 토글.
+
+- 주의 첫날부터 하루씩 전진하며 레인이 늘어난다(420ms/일). 끝나면 멈추고 ↻ 로 재생.
+- 하단 날짜 칩을 누르면 그 날로 점프한다.
+- 뷰어 레인은 굵게·진한 색으로 구분한다.
+- **금액은 숫자만 표시한다.** 기준 설명 문구를 붙이지 않는다.
+
+계산은 전부 `중앙 집계 모듈` 에 있고 컴포넌트는 그리기만 한다 — 이 리포의 vitest
+는 `lib/**` 만 수집하므로, 로직이 lib 에 있어야 테스트가 붙는다.
+
+## 최종 상태
+
+| 리포 | 테스트 | 비고 |
+|---|---:|---|
+| vibe-engineering | 139 | 커밋됨 (`dad1ded`) |
+| zestim | 298 | 미커밋 |
+
+zestim 신규 테스트 128개. `tsc --noEmit` 은 제 코드에서 에러 0(남은 2건은 `.next/types`
+고아 생성물, gitignore).
+
+## 아직 남은 것
+
+- **각 머신 전환** — 중앙 배포 후 `enroll.py --token <발급 토큰>` 2대 실행 →
+  `sync.json` 에 `runs_schema: 2`. 순서를 반드시 지킨다.
+- **day-close** — 퇴근 도장을 그 날 확정 신호로. 지금은 오늘 행도 그대로 그린다.
+- **`cleanupPeriodDays`** — 기본 30일. 머신이 그 이상 꺼지면 그 구간 영구 손실.
+- **`PRIVACY.md`** — 개인별 금액이 전 직원에게 공개되는 설계. scope-lock 이라 미반영.
+- **온보딩·오프보딩 체크리스트** — `사람 매핑 테이블` 등록 + 토큰 발급 / 토큰 폐기.
