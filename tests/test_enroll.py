@@ -25,10 +25,35 @@ spec.loader.exec_module(enroll)
 
 
 class MergeSyncConfigTest(unittest.TestCase):
-    def test_sets_secret_from_token(self):
+    def test_token_goes_to_runs_token_not_secret(self):
+        """secret 은 스냅샷용 공유 값이다. 개인 토큰으로 덮으면 스냅샷이 401 로 죽는다."""
         cfg = enroll.merge_sync_config({}, token="tok-1", endpoint="https://e/sync")
 
-        self.assertEqual("tok-1", cfg["secret"])
+        self.assertEqual("tok-1", cfg["runs_token"])
+
+    def test_does_not_touch_secret_when_only_token_given(self):
+        cfg = enroll.merge_sync_config({}, token="tok-1", endpoint="https://e/sync")
+
+        self.assertNotIn("secret", cfg)
+
+    def test_preserves_existing_shared_secret(self):
+        existing = {"secret": "shared-value"}
+
+        cfg = enroll.merge_sync_config(existing, token="tok-1", endpoint="https://e/sync")
+
+        self.assertEqual("shared-value", cfg["secret"])
+
+    def test_shared_secret_can_be_set_for_a_fresh_machine(self):
+        cfg = enroll.merge_sync_config({}, token="tok-1", endpoint="https://e/sync",
+                                       shared_secret="shared-value")
+
+        self.assertEqual("shared-value", cfg["secret"])
+
+    def test_shared_secret_does_not_overwrite_runs_token(self):
+        cfg = enroll.merge_sync_config({}, token="tok-1", endpoint="https://e/sync",
+                                       shared_secret="shared-value")
+
+        self.assertEqual("tok-1", cfg["runs_token"])
 
     def test_sets_endpoint(self):
         cfg = enroll.merge_sync_config({}, token="tok-1", endpoint="https://e/sync")

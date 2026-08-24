@@ -356,12 +356,24 @@ def _http_post(url, payload, secret):
         return json.loads(r.read().decode("utf-8", "replace"))
 
 
+def push_credential(cfg):
+    """run 전송에 쓸 자격증명.
+
+    스냅샷(/sync)은 프로젝트 단위 공유 secret 만 인정하고, run(/runs)은 사람별 귀속을
+    위해 개인 토큰을 요구한다. 두 값을 한 필드에 뭉개면 개인 토큰으로 덮어쓰는 순간
+    스냅샷이 401 로 죽는다. 그래서 runs_token 을 따로 두고, 없으면 secret 으로 떨어진다.
+    """
+    cfg = cfg or {}
+    token = str(cfg.get("runs_token") or "").strip()
+    return token or str(cfg.get("secret") or "").strip()
+
+
 def _push_central(cfg, payload, sender=None):
-    """중앙 저장소(zestim)로 payload 전송. sync.json의 endpoint/secret 재사용."""
+    """중앙 저장소(zestim)로 payload 전송. sync.json의 endpoint 와 자격증명을 쓴다."""
     endpoint = str((cfg or {}).get("endpoint", ""))
-    secret = str((cfg or {}).get("secret", ""))
+    secret = push_credential(cfg)
     if not endpoint or not secret:
-        raise SystemExit("sync.json에 endpoint/secret 없음")
+        raise SystemExit("sync.json에 endpoint 또는 자격증명(runs_token/secret) 없음")
     runs_url = endpoint.rsplit("/", 1)[0] + "/runs"   # .../vibe-harness/sync → .../vibe-harness/runs
     if sender is not None:
         return sender(runs_url, payload)

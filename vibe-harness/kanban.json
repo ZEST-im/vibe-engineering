@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "next_id": 58,
+  "next_id": 59,
   "tasks": [
     {
       "id": 47,
@@ -225,6 +225,28 @@
       "tokens_used": 0,
       "created_at": "2026-08-24T12:12:42+09:00",
       "updated_at": "2026-08-24T12:22:51+09:00",
+      "position": 0,
+      "phase": "PHASE_PMF07",
+      "review": "",
+      "created_by": "hogun",
+      "assigned_to": ""
+    },
+    {
+      "id": 58,
+      "title": "토큰 귀속 활성화 — 배포·발급·등록 + 자격증명 분리 수정",
+      "description": "",
+      "details": "## 한 일\n\n#57(클라이언트) + zestim(중앙) 을 실제로 켰다. 순서: 중앙 배포 → 토큰 발급 →\n머신 등록 → 검증.\n\n- zestim `bc076ad` 푸시 → 빌드 `dd491014` SUCCESS → 리비전 `zestim-web-00268-z8n`\n- 배포 확인: tokens/token-usage/runs 세 라우트 모두 401(인증 없이) 응답\n- 토큰 발급: label `mac-studio`, 레지스트리에 해시만 저장(원문 미노출 확인)\n- 이 머신 등록: `enroll.py --token … --machine mac-studio --runs-schema 2`\n- 전 프로젝트 schema 2 전송 (6개 프로젝트, 242행)\n\n## 실행 중 터진 결함 — 자격증명 두 개를 한 필드에 뭉갰다\n\n`enroll.py` 가 개인 토큰을 `sync.json` 의 `secret` 에 썼는데, 그 필드는 스냅샷\n동기화(`/sync`)가 쓰는 프로젝트 공유 값이다. `/sync` 는 공유 secret 만 인정하므로\n개인 토큰으로 덮은 순간 대시보드 스냅샷이 401 로 죽었다.\n\n실증: 개인 토큰 → /sync 401, 공유 secret → /sync 400(인가 통과).\n\n수정 — 필드 분리:\n- `secret` = 스냅샷용 프로젝트 공유\n- `runs_token` = run 전송용 사람별 개인\n- `push_credential(cfg)` 가 runs_token 우선, 없으면 secret 폴백(하위호환)\n- `enroll.py --token` 은 runs_token 만, secret 은 보존. 새 머신용 `--shared-secret` 추가\n\n복구 후 양쪽 확인: 스냅샷 `Remote sync complete`, run 전송 `ok: True (1/1행)`.\n\n## 실데이터 검증\n\n이중 계상 규칙(effectiveRuns)이 막아낸 규모 — 없으면 대시보드가 최대 2배 틀린다:\n- 제품 A 49%\n- 제품 B 25%\n- 제품 C 17%\n\n저장 데이터에 owner/date/machine 확인 (codebook 46행 중 일자별 25행,\nowner 전부 설정, machine=mac-studio, legacy 21행은 삭제되지 않음).\n\n증분 push: 재실행 시 6개 중 5개 완전 skip. vibe-harness 만 1행 재전송(이 세션이\n오늘 행을 키우는 중 — 의도된 동작). 전환 전 3시간마다 242행 전량 재전송.\n\n## 테스트\n148 tests 통과 (기존 139 + 자격증명 분리 9). ruff clean, compileall OK.\n\n## 남은 것\n- 두 번째 머신 등록 (그 머신에서 토큰 별도 발급 + enroll.py)\n- 대시보드 눈으로 확인 (HMAC 개인 토큰 인증이라 개인 대시보드 링크로 열어야 함)\n- day-close, cleanupPeriodDays, PRIVACY 문서, 온보딩·오프보딩 체크리스트",
+      "status": "done",
+      "priority": "medium",
+      "category": "infra",
+      "target_date": "",
+      "started_at": "",
+      "completed_at": "",
+      "lines_added": 210,
+      "lines_removed": 12,
+      "tokens_used": 0,
+      "created_at": "2026-08-24T16:56:08+09:00",
+      "updated_at": "2026-08-24T16:56:08+09:00",
       "position": 0,
       "phase": "PHASE_PMF07",
       "review": "",

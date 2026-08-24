@@ -36,8 +36,13 @@ DEFAULT_ENDPOINT = "https://os.zest.im/api/internal/vibe-harness/sync"
 
 # ── 설정 ─────────────────────────────────────────────
 
-def merge_sync_config(existing, token, endpoint, machine=None, runs_schema=None):
-    """기존 sync.json 위에 등록 정보를 얹는다. 모르는 키는 건드리지 않는다."""
+def merge_sync_config(existing, token, endpoint, machine=None, runs_schema=None,
+                     shared_secret=None):
+    """기존 sync.json 위에 등록 정보를 얹는다. 모르는 키는 건드리지 않는다.
+
+    개인 토큰은 runs_token 에 넣는다. secret 은 스냅샷(/sync)용 프로젝트 공유 값이라
+    건드리면 대시보드 동기화가 401 로 죽는다 — 실제로 한 번 깨뜨렸다.
+    """
     token = str(token or "").strip()
     endpoint = str(endpoint or "").strip()
     if not token:
@@ -48,7 +53,11 @@ def merge_sync_config(existing, token, endpoint, machine=None, runs_schema=None)
     cfg = dict(existing or {})
     cfg["enabled"] = True
     cfg["endpoint"] = endpoint
-    cfg["secret"] = token
+    cfg["runs_token"] = token
+    if shared_secret is not None:
+        shared = str(shared_secret).strip()
+        if shared:
+            cfg["secret"] = shared
     if machine is not None:
         label = str(machine).strip()
         if label:
@@ -181,6 +190,8 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description="직원 머신을 토큰 사용량 수집에 등록")
     ap.add_argument("--token", help="zestim에서 발급받은 개인 토큰")
     ap.add_argument("--endpoint", default=DEFAULT_ENDPOINT)
+    ap.add_argument("--shared-secret",
+                    help="스냅샷 동기화용 프로젝트 공유 secret (새 머신 최초 설정 시에만)")
     ap.add_argument("--machine", help="이 머신의 라벨 (기본: hostname)")
     ap.add_argument("--interval", type=int, default=DEFAULT_INTERVAL,
                     help="수집 주기(초). 기본 10800(3시간)")
@@ -211,9 +222,13 @@ def main(argv=None):
         except Exception as exc:
             raise SystemExit(f"sync.json 파싱 실패 — 덮어쓰지 않고 중단: {exc}") from exc
         cfg = merge_sync_config(existing, a.token, a.endpoint,
-                                machine=a.machine, runs_schema=a.runs_schema)
+                                machine=a.machine, runs_schema=a.runs_schema,
+                                shared_secret=a.shared_secret)
         if a.dry_run:
-            preview = dict(cfg, secret="***")
+            preview = dict(cfg)
+            for masked in ("secret", "runs_token"):
+                if masked in preview:
+                    preview[masked] = "***"
             print(f"sync.json : 예정 → {json.dumps(preview, ensure_ascii=False)}")
         else:
             write_sync_config(SYNC_CONFIG, cfg)

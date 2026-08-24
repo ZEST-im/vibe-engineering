@@ -79,6 +79,35 @@ class PushBase(unittest.TestCase):
                                  push=True, sender=sender, force_full=force_full)
 
 
+class PushCredentialTest(unittest.TestCase):
+    """스냅샷 secret 과 run 전송 토큰은 다른 자격증명이다.
+
+    /sync(스냅샷)는 프로젝트 단위 공유 secret 만 인정하고, /runs(사람별 귀속)는 개인
+    토큰을 요구한다. 한 필드에 뭉개면 개인 토큰으로 덮어쓰는 순간 스냅샷이 401 로 죽는다.
+    실제로 그렇게 깨뜨린 뒤에 이 테스트를 넣었다.
+    """
+
+    def test_uses_runs_token_when_present(self):
+        cred = reconcile_runs.push_credential({"secret": "shared", "runs_token": "personal"})
+
+        self.assertEqual("personal", cred)
+
+    def test_falls_back_to_shared_secret(self):
+        self.assertEqual("shared", reconcile_runs.push_credential({"secret": "shared"}))
+
+    def test_blank_runs_token_falls_back(self):
+        cred = reconcile_runs.push_credential({"secret": "shared", "runs_token": "  "})
+
+        self.assertEqual("shared", cred)
+
+    def test_no_credential_at_all_is_empty(self):
+        self.assertEqual("", reconcile_runs.push_credential({}))
+
+    def test_push_without_any_credential_aborts(self):
+        with self.assertRaises(SystemExit):
+            reconcile_runs._push_central({"endpoint": "https://e/sync"}, {"project": "p", "runs": []})
+
+
 class IncrementalPushTest(PushBase):
     def test_first_push_sends_the_row(self):
         self.write_transcript("s1", [("2026-08-19T10:00:00+09:00", 10)])

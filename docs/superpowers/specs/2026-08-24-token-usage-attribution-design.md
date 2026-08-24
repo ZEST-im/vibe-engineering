@@ -378,3 +378,74 @@ zestim 신규 테스트 128개. `tsc --noEmit` 은 제 코드에서 에러 0(남
 - **`cleanupPeriodDays`** — 기본 30일. 머신이 그 이상 꺼지면 그 구간 영구 손실.
 - **`PRIVACY.md`** — 개인별 금액이 전 직원에게 공개되는 설계. scope-lock 이라 미반영.
 - **온보딩·오프보딩 체크리스트** — `사람 매핑 테이블` 등록 + 토큰 발급 / 토큰 폐기.
+
+---
+
+# 활성화 (2026-08-24 실행 기록)
+
+순서대로 실행했다. 중간에 결함 하나가 실제로 터졌다.
+
+| 단계 | 결과 |
+|---|---|
+| 1. zestim 배포 | `bc076ad` → 빌드 `dd491014` SUCCESS → 리비전 `zestim-web-00268-z8n` 트래픽 100% |
+| 2. 토큰 발급 | uid `793…942` / label `mac-studio`. 레지스트리에 해시만(원문 미노출 확인) |
+| 3·4. 머신 등록 | `enroll.py --token … --machine mac-studio --runs-schema 2` |
+| 검증 | 전 프로젝트 schema 2 전송, 증분 skip 동작, 저장 데이터에 owner·date·machine 확인 |
+
+배포 후 세 라우트가 모두 401(인증 없이) 로 응답해 존재를 확인했다.
+
+## 터진 결함 — 자격증명 두 개를 한 필드에 뭉갰다
+
+`enroll.py` 가 개인 토큰을 `sync.json` 의 `secret` 에 썼다. 그런데 `secret` 은
+**스냅샷 동기화(`/sync`)** 가 쓰는 프로젝트 공유 값이고, `/sync` 는 공유 secret 만
+인정한다(`sync/route.ts` 의 `VIBE_HARNESS_SYNC_SECRET`). 개인 토큰으로 덮은 순간
+대시보드 스냅샷이 401 로 죽었다. 실증:
+
+```
+개인 토큰 → /sync : HTTP 401
+공유 secret → /sync : HTTP 400   (payload 오류 = 인가는 통과)
+```
+
+수정: 필드를 분리했다.
+
+| 필드 | 용도 | 범위 |
+|---|---|---|
+| `secret` | 스냅샷 동기화 `/sync` | 프로젝트 공유 |
+| `runs_token` | run 전송 `/runs` | 사람별 개인 |
+
+`reconcile_runs.push_credential(cfg)` 가 `runs_token` 을 우선하고 없으면 `secret` 으로
+떨어진다(기존 머신 하위호환). `enroll.py --token` 은 `runs_token` 만 건드리고 `secret`
+은 보존한다. 새 머신에서 공유 secret 도 함께 세팅해야 하면 `--shared-secret` 를 쓴다.
+
+복구 후 양쪽 경로를 다시 확인했다: 스냅샷 `Remote sync complete`, run 전송
+`ok: True … (1/1행)`.
+
+## 실데이터로 확인한 이중 계상 규모
+
+`effectiveRuns` 규칙이 없으면 대시보드가 최대 두 배로 틀린다. 중앙 저장소 실데이터:
+
+| 프로젝트 | 순진한 합 | 규칙 적용 | 막아낸 중복 |
+|---|---:|---:|---:|
+| 제품 A | (비공개) | (비공개) | 49% |
+| 제품 B | (비공개) | (비공개) | 25% |
+| 제품 C | (비공개) | (비공개) | 17% |
+
+## 증분 push 효과
+
+전환 전에는 3시간마다 242행을 전량 재전송했다. 전환 후 즉시 재실행 결과:
+
+```
+impactbook_ai  변경 없음 — skip (89행 모두 최신)
+codebook       변경 없음 — skip (25행 모두 최신)
+zesty_os       변경 없음 — skip (123행 모두 최신)
+looom_dev      변경 없음 — skip (3행 모두 최신)
+pante          변경 없음 — skip (1행 모두 최신)
+vibe-harness   ok: True … (1/1행)      ← 오늘 활동 중인 프로젝트만
+```
+
+## 이 머신에서 남은 것
+
+- **두 번째 머신** — 그 머신에서 토큰을 따로 발급받고(`label` 을 다르게) `enroll.py` 실행.
+  이 세션은 Mac Studio 만 등록했다.
+- **대시보드 눈으로 확인** — `/api/my/dashboard/token-usage` 는 HMAC 개인 토큰 인증이라
+  개인 대시보드 링크로 열어야 한다. 저장 데이터·집계 로직은 확인했다.
