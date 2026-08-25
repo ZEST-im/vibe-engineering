@@ -63,6 +63,7 @@ The kanban board (localhost:4242) is the visible surface. The real value is the 
 - **Kickoff planning** — `/vibe-planning` walks a new project through five gated stages, one question at a time, and leaves five short documents in `docs/planning/`. Built for developers who have to do the planning too.
 - **Design before build** — `/vibe-design` turns the landing page and key screens into self-contained HTML you open in a browser and approve *before* implementation starts.
 - **Review you can't argue with** — `/vibe-review` reads your repo the way a CTO reads a team member's: it runs the tests instead of believing the report, scores AI utilization and AI supervision separately, and escalates any problem that survives another week.
+- **Token usage attribution (opt-in)** — reconstructs per-day token usage from Claude Code transcripts and, if you configure an endpoint, pushes it so several machines of the same person merge into one lane. Off by default; nothing leaves the machine until you run `enroll.py`.
 - **Zero dependencies** — pure Python + vanilla JS. No npm, no pip, no build step.
 
 ---
@@ -248,6 +249,49 @@ Monthly archive files (`vibe-harness/archive/YYYY-MM.json`) are git-tracked. The
 | `/vibe-design` | Landing + key screens as HTML, checked in a browser |
 | `/vibe-review` | Weekly scored review + short daily pass on yesterday's output |
 | `python3 ~/.claude/skills/vibe-harness/server.py sync` | Push configured remote snapshots now |
+| `python3 scripts/enroll.py --token <t>` | Register this machine for token usage collection |
+| `python3 scripts/enroll.py --add-project <key>=<repo>` | Register a project to collect from |
+| `python3 scripts/reconcile_runs.py --all --dry-run` | Preview what would be collected |
+
+---
+
+## Token Usage Attribution (opt-in)
+
+Claude Code writes a transcript per session under `~/.claude/projects/`. Those transcripts already
+contain exact token counts. `reconcile_runs.py` reads them and rebuilds usage **per session per
+calendar day (KST)** — session totals alone put a multi-day session's whole cost on its last day.
+
+Nothing is transmitted until you configure an endpoint. There is no default telemetry.
+
+```bash
+# 1) register this machine (writes ~/.claude/skills/vibe-harness/sync.json)
+python3 scripts/enroll.py --token <token> --machine <name> --runs-schema 2
+
+# 2) register the projects to collect from — without this, collection finds nothing
+python3 scripts/enroll.py --add-project codebook=~/dev/codebook
+
+# 3) check, then send
+python3 scripts/reconcile_runs.py --all --dry-run
+python3 scripts/reconcile_runs.py --all --push
+```
+
+`enroll.py` installs a recurring collector: a LaunchAgent on macOS, a Scheduled Task on Windows.
+Re-running it is safe — the agent label and task name are fixed, so nothing duplicates. `--repair`
+re-points it after you move or rename the repository.
+
+**What gets sent.** Only counters and identifiers: project key, session id, date, model, token
+counts, computed cost, and a machine label. Transcript content, prompts, code, and file paths are
+never sent. Sends are incremental — a day that has not changed is not resent.
+
+**Two separate credentials.** `secret` authenticates dashboard snapshots (shared per project);
+`runs_token` authenticates usage rows (personal). Do not put one in the other's field — a personal
+token in `secret` breaks snapshot sync.
+
+**The default endpoint is ZEST-internal.** If you are running your own, pass `--endpoint`.
+
+**Windows.** Works, with two caveats: `sync.json` cannot be restricted to `0600` because Windows
+does not apply POSIX permissions, and the collector runs through Task Scheduler rather than cron.
+See [docs/vibe-harness-windows.md](docs/vibe-harness-windows.md).
 
 ---
 

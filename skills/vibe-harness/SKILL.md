@@ -53,6 +53,8 @@ This matters because:
 ~/.claude/skills/vibe-harness/kanban.html         ← Web UI (loaded by server)
 ~/.claude/skills/vibe-harness/projects.json       ← Project registry (used by server)
 ~/.claude/skills/vibe-harness/users.json          ← Display-name alias map (optional, machine-local)
+~/.claude/skills/vibe-harness/sync.json           ← Remote sync config + tokens (0600, machine-local, never commit)
+~/.claude/skills/vibe-harness/push-state.json     ← Incremental push state (machine-local)
 {project}/vibe-harness/kanban.json                ← Per-project task data (git-tracked, authoritative)
 {project}/vibe-harness/decisions.json             ← Per-project decision log (git-tracked, authoritative)
 {project}/vibe-harness/archive/YYYY-MM.json       ← Monthly archives (git-tracked)
@@ -85,6 +87,33 @@ This matters because:
 | `/vibe-harness decide "<title>"` | Record a technical decision in the Decision Log |
 
 These commands are convenience wrappers. They ultimately read and write the same JSON files an agent would edit directly.
+
+## Token usage collection
+
+Opt-in. Reads Claude Code transcripts (`~/.claude/projects/`) and rebuilds usage per session per
+calendar day (KST). Nothing is transmitted unless `sync.json` has an endpoint and a credential.
+
+```bash
+python3 scripts/enroll.py --token <t> --machine <name> --runs-schema 2   # register this machine
+python3 scripts/enroll.py --add-project <key>=<repo path>                # register a project
+python3 scripts/enroll.py --repair                                       # re-point after repo move
+python3 scripts/reconcile_runs.py --all --dry-run                        # preview
+python3 scripts/reconcile_runs.py --all --push                           # send changed rows only
+python3 scripts/reconcile_runs.py --all --push --force-full-push         # resend everything (recovery)
+```
+
+Rules Claude must follow here:
+
+- **`--add-project` is not optional.** Collection only walks projects in `projects.json`. A machine
+  with an empty registry used to exit 0 having done nothing; it now fails loudly, but the fix is
+  still to register the projects.
+- **Project keys are shared, paths are not.** Use the same key every machine uses; the repo path
+  differs per machine. A made-up key produces rows the dashboard never reads.
+- **`secret` and `runs_token` are different credentials.** `secret` signs dashboard snapshots
+  (per project, shared); `runs_token` signs usage rows (per person). Writing a personal token into
+  `secret` breaks snapshot sync with a 401.
+- **Never commit `sync.json`** or paste a token into chat, a commit message, or an issue.
+- Re-running `enroll.py` is safe. The LaunchAgent label and the Windows task name are fixed.
 
 ## Shorthand Commands (user types these directly)
 

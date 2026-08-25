@@ -505,3 +505,36 @@ dev 서버에 실제 컴포넌트를 띄우고 중앙 저장소 실데이터로 
 
 owner 단일 → 한 레인 합산. MacBook 은 7/28 이후 세션이 없어 8월 집계 기여가 0이다
 (전송 실패가 아니다).
+
+---
+
+# Windows 호환 (2026-08-24)
+
+Windows 사용자의 실행 보고에서 나왔다. 세 가지가 실제 결함이었다.
+
+| 증상 | 원인 | 조치 |
+|---|---|---|
+| 자동 실행이 안 걸림 | `enroll.py` 가 macOS(launchd) 전용. 안내 문구는 Windows 에 없는 cron 을 가리켰다 | `schtasks /Create /F` 로 작업 등록. 이름 고정이라 재실행해도 중복되지 않는다 |
+| `PYTHONUTF8=1` 없으면 크래시 | 출력의 `—`(U+2014)가 cp949 에 없다 | 두 스크립트가 시작 시 stdout/stderr 를 UTF-8 로 재설정 (`server.py` 와 동일) |
+| — (보고에 없던 것) | transcript 를 인코딩 없이 열어 Windows 기본 인코딩으로 UTF-8 을 읽었다. `errors="ignore"` 가 깨진 바이트를 버려 **JSON 파싱 실패한 줄이 통째로 누락** | 모든 읽기에 `encoding="utf-8"` 명시 |
+
+세 번째가 가장 나쁘다. 크래시가 아니라 조용한 과소집계라 사용자가 알 방법이 없다. 보고에
+없었고 코드를 보다가 나왔다.
+
+## macOS 에서 재현되는 형태로 고정했다
+
+Windows 전용 결함을 Windows 없이 회귀 방지하려면 재현 수단이 필요하다.
+`tests/test_windows_compat.py`:
+
+- `PYTHONIOENCODING=cp949:strict` 로 서브프로세스 실행 → 인코딩 크래시를 그대로 재현한다
+- `python -X warn_default_encoding -W error::EncodingWarning` → 암묵적 로케일 인코딩을
+  쓰는 `open()` 을 에러로 만든다. 수정 전 `reconcile_runs.py:175` 에서 정확히 걸렸다
+- `build_schtasks_argv` 는 순수 함수라 Windows 없이 검증한다 (공백 있는 경로 따옴표 처리,
+  시간 단위 변환, `/F` 멱등성)
+
+## 남은 제약
+
+- **`sync.json` 이 `0600` 으로 보호되지 않는다.** Windows 는 POSIX 권한을 적용하지 않는다.
+  스크립트가 `chmod` 를 호출해도 `-rw-r--r--` 로 남는다. 등록 시 경고를 출력하고 문서에
+  적었다. 계정 밖 접근이 가능한 위치에 프로필을 두지 않는 것으로 대신한다.
+- **`.sh` 훅 5종은 여전히 비활성이다.** 수집과 무관하다.

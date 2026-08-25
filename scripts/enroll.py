@@ -24,12 +24,21 @@ import plistlib
 import subprocess
 import sys
 
+# Windows cp949 콘솔에서 '—' 같은 문자가 크래시를 낸다. 사용자가 PYTHONUTF8=1 을 손으로
+# 붙여야 돌아가던 문제라 스크립트가 직접 보장한다. reconfigure 가 없으면 no-op.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
+
 SKILL_DIR = os.path.expanduser("~/.claude/skills/vibe-harness")
 SYNC_CONFIG = os.path.join(SKILL_DIR, "sync.json")
 PROJECTS_CONFIG = os.path.join(SKILL_DIR, "projects.json")
 RECONCILE_LOG = os.path.join(SKILL_DIR, "reconcile.log")
 
 AGENT_LABEL = "com.vibe-harness.reconcile"
+WINDOWS_TASK_NAME = "VibeHarnessReconcile"
 DEFAULT_INTERVAL = 10800          # 3시간
 DEFAULT_ENDPOINT = "https://os.zest.im/api/internal/vibe-harness/sync"
 
@@ -180,6 +189,38 @@ def build_launchd_plist(script, log, interval=DEFAULT_INTERVAL, python=None):
     return plistlib.dumps(plist, sort_keys=True).decode("utf-8")
 
 
+def build_schtasks_argv(script, python=None, interval=DEFAULT_INTERVAL,
+                        task_name=WINDOWS_TASK_NAME):
+    """Windows 작업 스케줄러 등록 명령.
+
+    /F 로 같은 이름을 덮어쓴다 — launchd 의 고정 Label 과 같은 규율이라 재실행해도
+    작업이 두 개가 되지 않는다. 경로에 공백이 흔하므로(C:\Program Files\...) /TR 안의
+    실행 문자열은 각 경로를 따옴표로 감싼다.
+    """
+    py = python or default_agent_python()
+    seconds = max(60, int(interval))
+    if seconds % 3600 == 0:
+        schedule, modifier = "HOURLY", seconds // 3600
+    else:
+        schedule, modifier = "MINUTE", max(1, seconds // 60)
+    run = '"%s" "%s" --all --push' % (py, script)
+    return ["schtasks", "/Create", "/F",
+            "/SC", schedule, "/MO", str(modifier),
+            "/TN", task_name, "/TR", run]
+
+
+def install_windows_task(script, interval=DEFAULT_INTERVAL, dry_run=False):
+    """작업 스케줄러에 수집 작업을 등록한다."""
+    argv = build_schtasks_argv(script, interval=interval)
+    if dry_run:
+        return "would-install"
+    done = subprocess.run(argv, capture_output=True, text=True, check=False)
+    if done.returncode != 0:
+        detail = (done.stderr or done.stdout or "").strip()[-300:]
+        return f"실패 — 직접 등록이 필요하다: {' '.join(argv)}\n            {detail}"
+    return "installed"
+
+
 def agent_needs_update(existing_text, expected_text):
     """설치된 에이전트가 원하는 것과 다른가. 없으면 당연히 다르다."""
     if existing_text is None:
@@ -297,13 +338,19 @@ def main(argv=None):
     script = resolve_script_path()
     if not os.path.isfile(script):
         raise SystemExit(f"reconcile_runs.py 를 찾지 못했다: {script}")
-    if sys.platform != "darwin":
-        print(f"agent     : {sys.platform} 는 자동 등록 미지원 — "
-              f"cron 등으로 `{sys.executable} {script} --all --push` 를 "
-              f"{a.interval}초 간격 실행")
-    else:
+    if sys.platform == "darwin":
         result = install_launch_agent(script, RECONCILE_LOG, a.interval, dry_run=a.dry_run)
-        print(f"agent     : {result} → {script}")
+    elif os.name == "nt":
+        result = install_windows_task(script, a.interval, dry_run=a.dry_run)
+    else:
+        result = (f"{sys.platform} 는 자동 등록 미지원 — "
+                  f"`{sys.executable} {script} --all --push` 를 "
+                  f"{a.interval}초 간격으로 직접 걸어야 한다")
+    print(f"agent     : {result} → {script}")
+
+    if os.name == "nt":
+        print("주의      : Windows 는 POSIX 권한이 적용되지 않아 sync.json 이 0600 으로"
+              " 보호되지 않는다. 토큰이 든 파일이니 계정 밖에 노출되지 않게 둔다.")
 
     print("\n확인:  python3 %s --all --dry-run" % script)
     return 0

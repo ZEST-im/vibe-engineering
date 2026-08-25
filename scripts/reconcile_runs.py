@@ -25,7 +25,16 @@ import os
 import re
 import shutil
 import socket
+import sys
 import urllib.request
+
+# Windows cp949 콘솔에서 '—' 같은 문자가 크래시를 낸다. 사용자가 PYTHONUTF8=1 을 손으로
+# 붙여야 돌아가던 문제라 스크립트가 직접 보장한다. reconfigure 가 없으면 no-op.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
 
 CONFIG = os.path.expanduser("~/.claude/skills/vibe-harness/projects.json")
 SYNC_CONFIG = os.path.expanduser("~/.claude/skills/vibe-harness/sync.json")
@@ -73,7 +82,7 @@ def _summarize(path):
     tot = inp = out = cr = cw = 0
     model = ""
     try:
-        with open(path, errors="ignore") as fh:
+        with open(path, encoding="utf-8", errors="ignore") as fh:
             for line in fh:
                 try:
                     m = json.loads(line)
@@ -172,7 +181,7 @@ def build_daily_runs(transcripts, machine=None):
     for path in files:
         sid = os.path.splitext(os.path.basename(path))[0]
         try:
-            fh = open(path, errors="ignore")
+            fh = open(path, encoding="utf-8", errors="ignore")
         except OSError:
             continue
         with fh:
@@ -300,7 +309,7 @@ def _load_runs(path):
     """
     if not os.path.exists(path):
         return {}
-    with open(path) as fh:
+    with open(path, encoding="utf-8") as fh:
         doc = json.load(fh)
     if not isinstance(doc, dict):
         raise ValueError("최상위가 JSON object가 아님")
