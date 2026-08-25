@@ -108,6 +108,35 @@ class ImplicitEncodingTest(unittest.TestCase):
         self.assertEqual(0, r.returncode, r.stderr[-800:])
 
 
+class SourceWarningTest(unittest.TestCase):
+    """컴파일 경고는 shim 보다 먼저 stderr 로 나간다 — 인코딩 처리로 막을 수 없다.
+
+    Python 3.12 부터 invalid escape sequence 가 SyntaxWarning 으로 승격됐다. 경고 본문에는
+    문제가 된 소스 줄이 그대로 실리고, 그 줄이 한글이면 cp949 콘솔에서 깨진 바이트가 된다.
+    실제로 CI 3.12/3.13 에서만 터졌고 3.11 은 조용히 넘어갔다.
+    """
+
+    def _warnings(self, relpath):
+        import py_compile
+        import tempfile
+        import warnings
+
+        cfile = os.path.join(tempfile.mkdtemp(), "out.pyc")
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            py_compile.compile(os.path.join(ROOT, relpath), cfile=cfile, doraise=True)
+        return [str(w.message) for w in caught]
+
+    def test_enroll_compiles_without_warnings(self):
+        self.assertEqual([], self._warnings("scripts/enroll.py"))
+
+    def test_reconcile_compiles_without_warnings(self):
+        self.assertEqual([], self._warnings("scripts/reconcile_runs.py"))
+
+    def test_server_compiles_without_warnings(self):
+        self.assertEqual([], self._warnings("scripts/server.py"))
+
+
 class SchtasksTest(unittest.TestCase):
     """Windows 자동 등록. launchd 와 같은 규율 — 재실행해도 중복되지 않는다."""
 

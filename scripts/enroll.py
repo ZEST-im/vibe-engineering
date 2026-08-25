@@ -191,7 +191,7 @@ def build_launchd_plist(script, log, interval=DEFAULT_INTERVAL, python=None):
 
 def build_schtasks_argv(script, python=None, interval=DEFAULT_INTERVAL,
                         task_name=WINDOWS_TASK_NAME):
-    """Windows 작업 스케줄러 등록 명령.
+    r"""Windows 작업 스케줄러 등록 명령.
 
     /F 로 같은 이름을 덮어쓴다 — launchd 의 고정 Label 과 같은 규율이라 재실행해도
     작업이 두 개가 되지 않는다. 경로에 공백이 흔하므로(C:\Program Files\...) /TR 안의

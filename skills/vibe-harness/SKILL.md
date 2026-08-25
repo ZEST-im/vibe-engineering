@@ -109,6 +109,13 @@ Rules Claude must follow here:
   still to register the projects.
 - **Project keys are shared, paths are not.** Use the same key every machine uses; the repo path
   differs per machine. A made-up key produces rows the dashboard never reads.
+- **Never reuse a retired project key, and never merge two keys because the names look alike.**
+  A key is an identity, not a label. Registering a live repository under a dead project's key
+  mixes two unrelated histories, and once mixed they cannot be told apart. If you are unsure which
+  key a repository belongs to, ask — do not guess from the folder name.
+- **Person totals survive key fragmentation.** Usage is summed per owner across every project, so
+  a wrong key does not lose a person's numbers; it only splits the per-project view. Fix the key
+  going forward rather than rewriting history.
 - **`secret` and `runs_token` are different credentials.** `secret` signs dashboard snapshots
   (per project, shared); `runs_token` signs usage rows (per person). Writing a personal token into
   `secret` breaks snapshot sync with a 401.
