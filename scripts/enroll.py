@@ -21,6 +21,8 @@ import argparse
 import json
 import os
 import plistlib
+import re
+import shutil
 import subprocess
 import sys
 
@@ -45,8 +47,11 @@ DEFAULT_ENDPOINT = "https://os.zest.im/api/internal/vibe-harness/sync"
 
 # ── 설정 ─────────────────────────────────────────────
 
+ID_PREFIX_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]{0,7}$")
+
+
 def merge_sync_config(existing, token, endpoint, machine=None, runs_schema=None,
-                     shared_secret=None):
+                     shared_secret=None, id_prefix=None):
     """기존 sync.json 위에 등록 정보를 얹는다. 모르는 키는 건드리지 않는다.
 
     개인 토큰은 runs_token 에 넣는다. secret 은 스냅샷(/sync)용 프로젝트 공유 값이라
@@ -73,6 +78,14 @@ def merge_sync_config(existing, token, endpoint, machine=None, runs_schema=None,
             cfg["machine"] = label
     if runs_schema is not None:
         cfg["runs_schema"] = int(runs_schema)
+    if id_prefix is not None:
+        prefix = str(id_prefix).strip()
+        if prefix:
+            # 숫자로 시작하거나 공백·구분자가 섞이면 정수 id 와 구분되지 않는다.
+            if not ID_PREFIX_RE.match(prefix):
+                raise ValueError(
+                    "id_prefix 는 영문으로 시작하는 영숫자 1~8자다: %r" % prefix)
+            cfg["id_prefix"] = prefix
     return cfg
 
 
@@ -152,6 +165,51 @@ def add_project(registry_path, key, repo_path):
         fh.write("\n")
     os.replace(tmp, registry_path)
     return data[key]
+
+
+# ── 스킬 설치본 갱신 ────────────────────────────────
+# 서버는 레포가 아니라 설치본에서 돈다. `git pull` 만으로는 서버가 바뀌지 않는다.
+#
+# 설치 디렉토리에는 코드와 머신 로컬 상태가 같이 있다 — sync.json(개인 토큰),
+# projects.json(수집 대상), users.json(실명 별칭), push-state.json(전송 이력). 통째로
+# 덮으면 그게 날아간다. 그래서 복사는 화이트리스트다. 새 파일이 생기면 여기에 명시적으로
+# 추가해야 하고, 모르는 파일은 건드리지 않는다.
+#
+# setup.py 는 넣지 않는다. 훅을 중복 등록한 이력이 있어 잠긴 파일이고, 설치본에 최신을
+# 두면 누군가 그걸 실행하게 된다.
+SKILL_CODE_FILES = (
+    ("scripts/server.py", "server.py"),
+    ("scripts/kanban.html", "kanban.html"),
+    ("scripts/worker.py", "worker.py"),
+    ("scripts/vibe_runtime.py", "vibe_runtime.py"),
+    ("scripts/reconcile_runs.py", "reconcile_runs.py"),
+    ("scripts/enroll.py", "enroll.py"),
+    ("skills/vibe-harness/SKILL.md", "SKILL.md"),
+)
+
+
+def skill_install_plan(repo_root, dest=SKILL_DIR):
+    """(원본, 대상) 목록. 존재하는 것만 담는다."""
+    plan = []
+    for rel, name in SKILL_CODE_FILES:
+        src = os.path.join(repo_root, rel)
+        if os.path.exists(src):
+            plan.append((src, os.path.join(dest, name)))
+    return plan
+
+
+def install_skill_files(repo_root, dest=SKILL_DIR):
+    """레포의 코드를 설치본으로 반영한다. 머신 로컬 파일은 목록에 없으므로 보존된다."""
+    os.makedirs(dest, exist_ok=True)
+    copied = []
+    for src, target in skill_install_plan(repo_root, dest):
+        shutil.copy2(src, target)
+        copied.append(target)
+    return copied
+
+
+def repo_root_of_this_script():
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 # ── 수집 에이전트 ────────────────────────────────────
@@ -282,13 +340,33 @@ def main(argv=None):
                     help="중앙이 일자별 스키마를 받을 준비가 된 뒤에만 2 로 켠다")
     ap.add_argument("--add-project", action="append", metavar="키=리포경로",
                     help="수집 대상 프로젝트 등록 (여러 번 지정 가능)")
+    ap.add_argument("--id-prefix", metavar="접두어",
+                    help="칸반 태스크 ID 접두어 (중앙이 배정한 값). 사람마다 달라야 한다")
+    ap.add_argument("--update-skill", action="store_true",
+                    help="레포의 코드를 설치본으로 반영 (서버는 설치본에서 돈다)")
     ap.add_argument("--repair", action="store_true",
                     help="토큰 변경 없이 에이전트 경로만 교정")
     ap.add_argument("--dry-run", action="store_true", help="변경 없이 계획만 출력")
     a = ap.parse_args(argv)
 
-    if not a.repair and not a.token and not a.add_project:
-        ap.error("--token 이 필요하다 (또는 --repair / --add-project)")
+    if not a.repair and not a.token and not a.add_project and not a.update_skill:
+        ap.error("--token 이 필요하다 (또는 --repair / --add-project / --update-skill)")
+
+    # 코드 반영은 다른 단계와 독립이다. 서버가 최신이어야 나머지가 의미를 갖는다.
+    if a.update_skill:
+        if a.dry_run:
+            plan = skill_install_plan(repo_root_of_this_script())
+            print("skill     : %d개 파일 반영 예정" % len(plan))
+            for _src, dest in plan:
+                print("            %s" % os.path.basename(dest))
+        else:
+            copied = install_skill_files(repo_root_of_this_script())
+            print("skill     : %d개 파일 반영 → %s" % (len(copied), SKILL_DIR))
+            print("            머신 로컬(sync.json·projects.json·users.json)은 보존됐다")
+
+    if a.update_skill and not a.token and not a.repair and not a.add_project:
+        print("\n확인:  python3 %s --all --dry-run" % resolve_script_path())
+        return 0
 
     # 프로젝트 등록만 하는 경우 — 토큰 없이도 쓸 수 있다
     if a.add_project and not a.token and not a.repair:
@@ -317,7 +395,7 @@ def main(argv=None):
             raise SystemExit(f"sync.json 파싱 실패 — 덮어쓰지 않고 중단: {exc}") from exc
         cfg = merge_sync_config(existing, a.token, a.endpoint,
                                 machine=a.machine, runs_schema=a.runs_schema,
-                                shared_secret=a.shared_secret)
+                                shared_secret=a.shared_secret, id_prefix=a.id_prefix)
         if a.dry_run:
             preview = dict(cfg)
             for masked in ("secret", "runs_token"):
@@ -326,7 +404,8 @@ def main(argv=None):
             print(f"sync.json : 예정 → {json.dumps(preview, ensure_ascii=False)}")
         else:
             write_sync_config(SYNC_CONFIG, cfg)
-            print(f"sync.json : 기록 (0600) — machine={cfg.get('machine') or 'hostname'}")
+            print(f"sync.json : 기록 (0600) — machine={cfg.get('machine') or 'hostname'}"
+                  f", id_prefix={cfg.get('id_prefix') or '(없음 → 정수 발급)'}")
 
     # 2.5) 프로젝트 등록
     for pair in (a.add_project or []):
