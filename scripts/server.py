@@ -166,8 +166,8 @@ def _read_kanban(kanban_dir):
     with open(kp, encoding="utf-8") as f:
         data = json.load(f)
     if "next_id" not in data:
-        max_id = max((t.get("id", 0) for t in data.get("tasks", [])), default=0)
-        data["next_id"] = max_id + 1
+        nums = _numeric_ids(data.get("tasks"))
+        data["next_id"] = (max(nums) + 1) if nums else 1
     return data
 
 def _write_kanban(kanban_dir, data):
@@ -238,10 +238,67 @@ def _archive_tasks(kanban_dir, tasks_to_archive):
         with open(fpath, "w", encoding="utf-8") as f:
             json.dump(existing, f, indent=2, ensure_ascii=False)
 
+# ── 사람별 ID 접두어 ────────────────────────────────────────────────────────
+# 여러 사람이 같은 kanban.json 을 각자 로컬에서 편집하면 next_id 가 각자 증가해
+# **같은 번호가 서로 다른 태스크에 붙는다.** 2026-08-25 실제로 #427 이 겹쳤고,
+# git 은 서로 다른 위치의 두 태스크를 조용히 둘 다 머지한다 — 에러 없이 하나가 사라진다.
+# 접두어를 붙이면 구조적으로 겹칠 수 없다(hg918 / ar12 …).
+#
+# ⚠️ 이 도구는 20 개 프로젝트가 공용으로 쓴다. **접두어 미설정이 기본이고, 그때는
+#    기존 정수 발급과 동작이 완전히 같다.** 기존 950여 건의 정수 id 는 손대지 않는다.
+def _parse_id(raw):
+    """URL 의 id 조각을 파싱한다. 숫자면 int, 아니면 문자열 그대로(접두어 id).
+
+    ★ 예전에는 int(rest[1]) 이라 접두어 id 가 오면 ValueError 로 500 이 났다.
+      기존 정수 id 는 int 로 유지해야 저장된 값과 == 비교가 맞는다.
+    """
+    raw = str(raw)
+    try:
+        return int(raw)
+    except ValueError:
+        return raw
+
+
+def _id_prefix():
+    """sync.json 의 id_prefix. 없으면 None → 기존 정수 발급."""
+    try:
+        cfg = _load_sync_config() or {}
+        v = str(cfg.get("id_prefix", "")).strip()
+        return v or None
+    except Exception:
+        return None
+
+
+def _numeric_ids(items):
+    """정수로 읽히는 id 만 추린다 — 접두어가 섞인 뒤에도 next_id 계산이 깨지지 않게."""
+    out = []
+    for it in items or []:
+        try:
+            out.append(int(it.get("id")))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _mint_id(data, prefix=None):
+    """(발급할 id, 다음 next_id) 를 돌려준다. 접두어가 있으면 문자열, 없으면 정수."""
+    n = data.get("next_id", 1)
+    try:
+        n = int(n)
+    except (TypeError, ValueError):
+        n = 1
+    # ★ next_id 가 실제 최대값보다 뒤처져 있으면 중복이 난다(파일을 손으로 고치면 실제로 그렇게 된다).
+    #   발급 직전에 항상 실측 최대값과 맞춘다.
+    used = _numeric_ids(data.get("tasks")) + _numeric_ids(data.get("decisions"))
+    if used:
+        n = max(n, max(used) + 1)
+    return (f"{prefix}{n}" if prefix else n), n + 1
+
+
 def _new_task(data, fields):
     """Create a new task, return (updated_data, new_task)."""
     now = _now()
-    tid = data.get("next_id", 1)
+    tid, _next = _mint_id(data, _id_prefix())
     task = {
         "id": tid,
         "title": fields.get("title", ""),
@@ -265,7 +322,7 @@ def _new_task(data, fields):
         "assigned_to": _canon_user(fields.get("assigned_to", "")),
     }
     data["tasks"].append(task)
-    data["next_id"] = tid + 1
+    data["next_id"] = _next
     return data, task
 
 TASK_FIELDS = ("title", "description", "details", "status", "priority", "category",
@@ -866,8 +923,9 @@ def _write_decisions(kanban_dir, data):
     _schedule_remote_sync(kanban_dir)
 
 def _new_decision(data, d):
+    _did, _dnext = _mint_id(data, _id_prefix())
     dec = {
-        "id": data["next_id"],
+        "id": _did,
         "title": d.get("title", "").strip(),
         "why": d.get("why", "").strip(),
         "revisit": d.get("revisit", "").strip(),
@@ -877,7 +935,7 @@ def _new_decision(data, d):
         "created_at": _now(),
         "updated_at": _now(),
     }
-    data["next_id"] += 1
+    data["next_id"] = _dnext
     data["decisions"].append(dec)
     return data, dec
 
@@ -2087,7 +2145,7 @@ class Handler(BaseHTTPRequestHandler):
 
             # /api/{project}/tasks/{id}
             if len(rest) == 2 and rest[0] == "tasks":
-                tid = int(rest[1])
+                tid = _parse_id(rest[1])
                 d = self._body()
                 data = _read_kanban(kanban_dir)
                 task = next((t for t in data["tasks"] if t["id"] == tid), None)
@@ -2100,7 +2158,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(task)
 
             if len(rest) == 2 and rest[0] == "decisions":
-                did = int(rest[1])
+                did = _parse_id(rest[1])
                 d = self._body()
                 data = _read_decisions(kanban_dir)
                 dec = next((x for x in data["decisions"] if x["id"] == did), None)
@@ -2122,14 +2180,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": "unknown project"}, 404)
 
             if len(rest) == 2 and rest[0] == "tasks":
-                tid = int(rest[1])
+                tid = _parse_id(rest[1])
                 data = _read_kanban(kanban_dir)
                 data["tasks"] = [t for t in data["tasks"] if t["id"] != tid]
                 _write_kanban(kanban_dir, data)
                 return self._json({"deleted": tid})
 
             if len(rest) == 2 and rest[0] == "decisions":
-                did = int(rest[1])
+                did = _parse_id(rest[1])
                 data = _read_decisions(kanban_dir)
                 data["decisions"] = [x for x in data["decisions"] if x["id"] != did]
                 _write_decisions(kanban_dir, data)
