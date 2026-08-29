@@ -127,7 +127,8 @@ class BuildDailyRunsTest(unittest.TestCase):
 
         rows = reconcile_runs.build_daily_runs(self.transcripts)
 
-        self.assertAlmostEqual(1000 * 0.000015, rows[0]["cost_usd"], places=6)
+        # Opus 5 입력 단가 $5/1M. 2026-08 이전에는 $15/1M(구 Opus 3) 로 고정돼 있었다.
+        self.assertAlmostEqual(1000 * 0.000005, rows[0]["cost_usd"], places=6)
 
     def test_message_without_timestamp_is_skipped(self):
         self.write("s1", [{"message": {"model": "claude-opus-5", "usage": usage()}}])

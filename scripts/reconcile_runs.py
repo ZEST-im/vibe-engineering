@@ -42,21 +42,58 @@ SYNC_CONFIG = os.path.expanduser("~/.claude/skills/vibe-harness/sync.json")
 PUSH_STATE_PATH = os.path.expanduser("~/.claude/skills/vibe-harness/push-state.json")
 KST = datetime.timezone(datetime.timedelta(hours=9))
 
-# 컴포넌트별 $/token (server.py COMPONENT_RATES와 동일 — 캐시가 지배적이라 정확)
+# 컴포넌트별 $/token. 캐시 읽기 0.1x · 캐시 쓰기 1.25x 는 입력 단가에서 파생된다.
+#
+# 2026-08 감사에서 표가 낡아 있던 것을 발견했다 — opus 가 $15/$75(구 Opus 3 시절)로 잡혀
+# 있어 비용이 3배로 부풀려졌고, fable-5 는 표에 없어 _default 로 떨어져 3.3배 과소계상됐다.
+# 모델을 새로 쓰기 시작하면 여기에 먼저 추가할 것. 빠지면 조용히 _default 로 떨어진다.
+#
+# 매칭은 순서가 있다 — "sonnet-5"($2/$10)를 "sonnet"($3/$15)보다 먼저 봐야 한다.
+
+
+def _tier(inp, out):
+    """입력 단가에서 4종 단가를 만든다. 캐시 배수를 한 곳에서만 정의하기 위해서."""
+    return {"in": inp, "out": out, "cw": inp * 1.25, "cr": inp * 0.1}
+
+
 COMPONENT_RATES = {
-    "opus":     {"in": 0.000015, "out": 0.000075, "cw": 0.00001875, "cr": 0.0000015},
-    "sonnet":   {"in": 0.000003, "out": 0.000015, "cw": 0.00000375, "cr": 0.0000003},
-    "haiku":    {"in": 0.000001, "out": 0.000005, "cw": 0.00000125, "cr": 0.0000001},
-    "_default": {"in": 0.000003, "out": 0.000015, "cw": 0.00000375, "cr": 0.0000003},
+    "fable":      _tier(0.000010, 0.000050),
+    "mythos":     _tier(0.000010, 0.000050),
+    "opus":       _tier(0.000005, 0.000025),
+    "sonnet-5":   _tier(0.000002, 0.000010),
+    "sonnet":     _tier(0.000003, 0.000015),
+    "haiku":      _tier(0.000001, 0.000005),
+    "_default":   _tier(0.000003, 0.000015),
 }
+
+# 긴 이름이 먼저 오도록 고정 — "sonnet-5" 가 "sonnet" 보다 앞이어야 한다.
+_RATE_ORDER = ("fable", "mythos", "opus", "sonnet-5", "sonnet", "haiku")
 
 
 def _rates(model):
     ml = (model or "").lower()
-    for key, r in COMPONENT_RATES.items():
-        if key != "_default" and key in ml:
-            return r
+    for key in _RATE_ORDER:
+        if key in ml:
+            return COMPONENT_RATES[key]
     return COMPONENT_RATES["_default"]
+
+
+def cost_breakdown(model, input_tokens=0, output_tokens=0,
+                   cache_read_tokens=0, cache_write_tokens=0):
+    """토큰 타입별 비용. total 은 합계.
+
+    총액만 기록하면 "무엇이 비용을 끌었는지" 사후 분해가 추정이 된다. 실제로 캐시 읽기가
+    비용의 대부분인데 화면에는 총 토큰과 총 비용만 있어 해석이 어긋났다.
+    """
+    rt = _rates(model)
+    parts = {
+        "in": input_tokens * rt["in"],
+        "out": output_tokens * rt["out"],
+        "cr": cache_read_tokens * rt["cr"],
+        "cw": cache_write_tokens * rt["cw"],
+    }
+    parts["total"] = sum(parts.values())
+    return parts
 
 
 def _projects():
@@ -164,6 +201,114 @@ def _kst_date(ts):
     return dt.astimezone(KST).date().isoformat()
 
 
+# ── Codex(OpenAI) ────────────────────────────────────
+# 단가표는 비워둔다. 채우기 전까지 cost_usd 는 0 이고 cost_breakdown 은 기록하지 않는다.
+#
+# 추정치를 넣지 말 것. Claude 쪽에서 낡은 단가($15/$75)가 3배 부풀린 비용을 몇 달간
+# 내보낸 전례가 있다. 모르는 값은 0 으로 두는 편이 틀린 값보다 낫다 — 0 은 "아직 없음"
+# 으로 읽히지만 틀린 값은 사실로 읽힌다.
+#
+# 채울 때 형식: {"gpt-5.6-codex": _tier(입력단가, 출력단가), ...}  ($ per token)
+CODEX_RATES = {}
+
+CODEX_SESSIONS = os.path.expanduser("~/.codex/sessions")
+
+
+def _codex_rates(model):
+    ml = (model or "").lower()
+    for key, rates in CODEX_RATES.items():
+        if key.lower() in ml:
+            return rates
+    return None
+
+
+def _kst_date(iso_ts):
+    """UTC ISO 타임스탬프 → KST 업무일자(YYYY-MM-DD)."""
+    if not iso_ts:
+        return None
+    try:
+        dt = datetime.datetime.fromisoformat(str(iso_ts).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=datetime.timezone.utc)
+    kst = datetime.timezone(datetime.timedelta(hours=9))
+    return dt.astimezone(kst).date().isoformat()
+
+
+def build_codex_daily_runs(sessions_dir=None, cwd=None, machine=None):
+    """Codex 세션(~/.codex/sessions/**/*.jsonl) → 일자별 run 행.
+
+    ⚠️ 토큰 의미가 Claude 와 다르다.
+      Claude: input_tokens(캐시 제외) + cache_read_input_tokens(별도 필드)
+      Codex : input_tokens 가 캐시를 포함한 총 입력, cached_input_tokens 는 그 부분집합
+
+    그대로 옮기면 캐시가 이중계상된다. 여기서 실입력 = input - cached 로 쪼갠다.
+
+    total_token_usage 는 세션 누적값이라 마지막 이벤트만 취한다. 이벤트를 합치면 폭증한다.
+    """
+    root = sessions_dir or CODEX_SESSIONS
+    rows = []
+    files = sorted(set(glob.glob(root + "/*.jsonl")
+                       + glob.glob(root + "/**/*.jsonl", recursive=True)))
+    for path in files:
+        meta, last = {}, None
+        try:
+            with open(path, encoding="utf-8", errors="replace") as fh:
+                for line in fh:
+                    try:
+                        obj = json.loads(line)
+                    except ValueError:
+                        continue
+                    payload = obj.get("payload") or {}
+                    if obj.get("type") == "session_meta" and not meta:
+                        meta = payload
+                    elif payload.get("type") == "token_count":
+                        usage = (payload.get("info") or {}).get("total_token_usage")
+                        if usage:
+                            last = usage
+        except OSError:
+            continue
+        if not last:
+            continue
+        if cwd and (meta.get("cwd") or "") != cwd:
+            continue
+
+        total_in = int(last.get("input_tokens") or 0)
+        cached = int(last.get("cached_input_tokens") or 0)
+        out = int(last.get("output_tokens") or 0)
+        cw = int(last.get("cache_write_input_tokens") or 0)
+        model = meta.get("model") or "codex"
+
+        row = {
+            "session_id": meta.get("session_id") or os.path.basename(path),
+            "date": _kst_date(meta.get("timestamp")),
+            "agent": "codex",
+            "model": model,
+            "tokens": total_in + out,
+            "input_tokens": max(total_in - cached, 0),
+            "output_tokens": out,
+            "cache_read_tokens": cached,
+            "cache_write_tokens": cw,
+            "cost_usd": 0,
+            "machine": machine,
+            "source": "codex-session",
+        }
+        rates = _codex_rates(model)
+        if rates:
+            parts = {
+                "in": row["input_tokens"] * rates["in"],
+                "out": out * rates["out"],
+                "cr": cached * rates["cr"],
+                "cw": cw * rates["cw"],
+            }
+            row["cost_usd"] = round(sum(parts.values()), 6)
+            row["cost_breakdown"] = {k: round(v, 6) for k, v in parts.items()}
+        rows.append(row)
+    rows.sort(key=lambda r: (r["date"] or "", r["session_id"]))
+    return rows
+
+
 def build_daily_runs(transcripts, machine=None):
     """중앙 저장소로 보낼 (세션 × 일자) 행을 만든다.
 
@@ -215,9 +360,9 @@ def build_daily_runs(transcripts, machine=None):
                  + agg["cache_read_tokens"] + agg["cache_write_tokens"])
         if total <= 0:
             continue
-        rt = _rates(agg["model"])
-        cost = (agg["input_tokens"] * rt["in"] + agg["output_tokens"] * rt["out"]
-                + agg["cache_read_tokens"] * rt["cr"] + agg["cache_write_tokens"] * rt["cw"])
+        parts = cost_breakdown(agg["model"], agg["input_tokens"], agg["output_tokens"],
+                               agg["cache_read_tokens"], agg["cache_write_tokens"])
+        cost = parts.pop("total")
         rows.append({
             "session_id": sid,
             "date": day,
@@ -229,6 +374,7 @@ def build_daily_runs(transcripts, machine=None):
             "cache_read_tokens": agg["cache_read_tokens"],
             "cache_write_tokens": agg["cache_write_tokens"],
             "cost_usd": round(cost, 6),
+            "cost_breakdown": {k: round(v, 6) for k, v in parts.items()},
             "machine": machine,
             "source": "transcript-daily",
         })

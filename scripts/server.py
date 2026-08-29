@@ -1057,23 +1057,43 @@ def _cost_per_token(agent, model):
 # Per-component $/token (PMF03, cost model A). Used when a run carries a token
 # breakdown (input/output/cache_read/cache_write) — accurate because Claude runs
 # are cache-dominated and cache reads cost ~10% of input.
-COMPONENT_RATES = {
-    "claude": {
-        "opus":     {"in": 0.000015, "out": 0.000075, "cw": 0.00001875, "cr": 0.0000015},
-        "sonnet":   {"in": 0.000003, "out": 0.000015, "cw": 0.00000375, "cr": 0.0000003},
-        "haiku":    {"in": 0.000001, "out": 0.000005, "cw": 0.00000125, "cr": 0.0000001},
-        "_default": {"in": 0.000003, "out": 0.000015, "cw": 0.00000375, "cr": 0.0000003},
-    },
-}
+#
+# 이 표는 reconcile_runs.py 와 값이 같아야 한다. 두 곳에 손으로 적어두었더니 실제로
+# 드리프트가 났다 — 2026-08 감사 시점에 opus 가 $15/$75(구 Opus 3)로 남아 비용이 3배
+# 부풀려져 있었다. 그래서 reconcile_runs 를 단일 출처로 삼고 여기서는 불러다 쓴다.
+
+
+def _tier(inp, out):
+    return {"in": inp, "out": out, "cw": inp * 1.25, "cr": inp * 0.1}
+
+
+def _load_component_rates():
+    """reconcile_runs 의 표를 재사용한다. 못 불러오면 같은 값으로 적은 사본을 쓴다."""
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import reconcile_runs
+        return dict(reconcile_runs.COMPONENT_RATES), tuple(reconcile_runs._RATE_ORDER)
+    except Exception:
+        rates = {
+            "fable": _tier(0.000010, 0.000050), "mythos": _tier(0.000010, 0.000050),
+            "opus": _tier(0.000005, 0.000025), "sonnet-5": _tier(0.000002, 0.000010),
+            "sonnet": _tier(0.000003, 0.000015), "haiku": _tier(0.000001, 0.000005),
+            "_default": _tier(0.000003, 0.000015),
+        }
+        return rates, ("fable", "mythos", "opus", "sonnet-5", "sonnet", "haiku")
+
+
+_CLAUDE_RATES, _RATE_ORDER = _load_component_rates()
+COMPONENT_RATES = {"claude": _CLAUDE_RATES}
 
 def _component_rates(agent, model):
     amap = COMPONENT_RATES.get((agent or "").lower())
     if not amap:
         return None
     ml = (model or "").lower()
-    for key, rates in amap.items():
-        if key != "_default" and key in ml:
-            return rates
+    for key in _RATE_ORDER:
+        if key in ml and key in amap:
+            return amap[key]
     return amap.get("_default")
 
 def _run_cost(run):
