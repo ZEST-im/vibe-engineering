@@ -60,3 +60,26 @@ A directory named `vibe-harness/` is not proof it belongs to this tool — the n
 collides with hand-rolled coordination folders. Check for the **file**, not the
 directory: `{project}/vibe-harness/kanban.json`. Registering a look-alike drops an
 empty board into someone else's folder.
+
+## After rewriting history
+
+A rewrite is only as complete as the refs it reached. Verify from outside, not inside:
+
+```bash
+# 1. Local refs the rewrite could not touch. Tools leave refs of their own —
+#    a checkpoint ref pointing straight at a tree is skipped, not rewritten,
+#    and it keeps the old blobs reachable.
+git for-each-ref | grep -v refs/heads/main
+
+# 2. Remote refs the rewrite never saw. A merged pull-request branch still
+#    holds the entire pre-rewrite history until it is deleted.
+git ls-remote origin
+
+# 3. Prove it from a fresh clone. Checking the repo you rewrote in tells you
+#    about that repo, not about what the world can fetch.
+git clone <url> /tmp/verify && cd /tmp/verify && <your search>
+```
+
+Deleting a branch is not enough on GitHub: `refs/pull/N/head` survives branch
+deletion and keeps the old commits fetchable with one command. Purging those
+requires recreating the repository (or asking the host to garbage-collect).
