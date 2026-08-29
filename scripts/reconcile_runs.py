@@ -158,8 +158,8 @@ def build_runs(transcripts):
         tot, inp, out, cr, cw, model = _summarize(f)
         if tot <= 0:
             continue
-        rt = _rates(model)
-        cost = inp * rt["in"] + out * rt["out"] + cr * rt["cr"] + cw * rt["cw"]
+        parts = cost_breakdown(model, inp, out, cr, cw)
+        cost = parts.pop("total")
         sid = os.path.splitext(os.path.basename(f))[0]
         ts = datetime.datetime.fromtimestamp(os.path.getmtime(f), KST).isoformat(timespec="seconds")
         runs.append({
@@ -167,6 +167,7 @@ def build_runs(transcripts):
             "tokens": tot, "input_tokens": inp, "output_tokens": out,
             "cache_read_tokens": cr, "cache_write_tokens": cw,
             "cost_usd": round(cost, 4),
+            "cost_breakdown": {k: round(v, 6) for k, v in parts.items()},
             "session_id": sid, "commit": "", "ts": ts, "source": "transcript-reconcile",
         })
     runs.sort(key=lambda r: r["ts"])
@@ -259,6 +260,15 @@ CODEX_RATES = {
 CODEX_SESSIONS = os.path.expanduser("~/.codex/sessions")
 
 
+def _codex_sessions_dir():
+    """Codex 세션 경로. 환경변수를 **호출 시점에** 읽는다.
+
+    모듈 상수로 굳히면 import 이후에 설정한 값이 반영되지 않는다. 실제로 테스트가
+    개발자 홈의 실제 세션(40MB)을 스캔해 0.04초짜리 스위트가 45초가 됐다.
+    """
+    return os.environ.get("VIBE_CODEX_SESSIONS") or CODEX_SESSIONS
+
+
 def _codex_rates(model):
     ml = (model or "").lower()
     # alias `gpt-5.6` 가 `gpt-5.6-luna` 보다 먼저 맞지 않게 구체적인 키 우선.
@@ -293,7 +303,7 @@ def build_codex_daily_runs(sessions_dir=None, cwd=None, machine=None):
 
     total_token_usage 는 세션 누적값이라 마지막 이벤트만 취한다. 이벤트를 합치면 폭증한다.
     """
-    root = sessions_dir or CODEX_SESSIONS
+    root = sessions_dir or _codex_sessions_dir()
     rows = []
     files = sorted(set(glob.glob(root + "/*.jsonl")
                        + glob.glob(root + "/**/*.jsonl", recursive=True)))
@@ -333,9 +343,10 @@ def build_codex_daily_runs(sessions_dir=None, cwd=None, machine=None):
             model = next(iter(turn_models))
         model = model or ("codex-mixed" if turn_models else "codex")
 
+        row_date = _kst_date(meta.get("timestamp"))
         row = {
             "session_id": meta.get("session_id") or os.path.basename(path),
-            "date": _kst_date(meta.get("timestamp")),
+            "date": row_date,
             "agent": "codex",
             "model": model,
             "tokens": total_in + out,
@@ -344,6 +355,9 @@ def build_codex_daily_runs(sessions_dir=None, cwd=None, machine=None):
             "cache_read_tokens": cached,
             "cache_write_tokens": cw,
             "cost_usd": 0,
+            # merge_runs 는 session_id 로 묶고 dry-run 은 ts[:10] 을 읽는다.
+            # Claude 행과 같은 모양이어야 한 목록에 섞일 수 있다.
+            "ts": (row_date + "T00:00:00+09:00") if row_date else None,
             "machine": machine,
             "source": "codex-session",
         }
@@ -597,9 +611,25 @@ def _push_central_legacy(project, runs):
     return _push_central(cfg, build_push_payload(project, runs))
 
 
+def collect_runs(transcripts, cwd=None, codex_sessions=None):
+    """한 프로젝트의 run 을 에이전트 구분 없이 모아 돌려준다.
+
+    Codex 를 따로 돌려야 하는 구조는 결국 빠뜨린다 — 실제로 수집기를 만들고도 연결하지
+    않아 사용량이 통째로 빠져 있었다. 에이전트가 늘면 여기에 한 줄 더한다.
+
+    cwd 가 없으면 Codex 는 건너뛴다. Codex 세션은 cwd 로만 프로젝트를 가릴 수 있어서,
+    특정하지 못한 채 모으면 남의 프로젝트 사용량을 끌어온다.
+    """
+    runs = list(build_runs(transcripts))
+    if cwd:
+        runs.extend(build_codex_daily_runs(codex_sessions, cwd=cwd))
+    return runs
+
+
 def reconcile(project, kanban_dir, transcripts, dry_run=False, push=False,
               sender=None, force_full=False):
-    runs = build_runs(transcripts)
+    # 프로젝트 cwd = kanban_dir 의 부모. Codex 세션을 이 프로젝트로 가리는 기준이다.
+    runs = collect_runs(transcripts, cwd=os.path.dirname(os.path.abspath(kanban_dir)))
     total = sum(r["tokens"] for r in runs)
     cost = sum(r["cost_usd"] for r in runs)
     print(f"[{project}] transcript {transcripts}")

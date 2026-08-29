@@ -328,11 +328,16 @@ def upgrade():
     print("Upgrading Vibe Engineering from GitHub...")
     print()
 
+    # enroll.py 의 SKILL_CODE_FILES 와 같은 집합이어야 한다. 두 목록이 갈라져 있어
+    # reconcile_runs.py 가 여기서 빠져 있었고, 그 결과 `setup.py upgrade` 만 돌린
+    # 머신은 단가표·수집기 수정이 반영되지 않은 채로 남았다.
     files = {
         "server.py": f"{REPO_URL}/scripts/server.py",
         "vibe_runtime.py": f"{REPO_URL}/scripts/vibe_runtime.py",
         "worker.py": f"{REPO_URL}/scripts/worker.py",
         "kanban.html": f"{REPO_URL}/scripts/kanban.html",
+        "reconcile_runs.py": f"{REPO_URL}/scripts/reconcile_runs.py",
+        "enroll.py": f"{REPO_URL}/scripts/enroll.py",
         "setup.py": f"{REPO_URL}/scripts/setup.py",
     }
 

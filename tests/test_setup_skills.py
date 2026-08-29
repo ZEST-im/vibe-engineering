@@ -125,3 +125,23 @@ class CopySkillFilesTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UpgradeFileListTest(unittest.TestCase):
+    """`setup.py upgrade` 와 `enroll.py --update-skill` 이 같은 파일을 덮어야 한다.
+
+    두 목록이 갈라져 reconcile_runs.py 가 upgrade 경로에서 빠져 있었다. README 가
+    안내하는 한 줄 업데이트만 돌린 머신은 단가표 수정이 반영되지 않은 채 남는다.
+    """
+
+    def test_upgrade_covers_every_file_enroll_installs(self):
+        import re
+        root = os.path.join(os.path.dirname(__file__), "..")
+        enroll_src = open(os.path.join(root, "scripts", "enroll.py"), encoding="utf-8").read()
+        setup_src = open(os.path.join(root, "scripts", "setup.py"), encoding="utf-8").read()
+
+        block = re.search(r"SKILL_CODE_FILES = \((.*?)\)\n", enroll_src, re.S).group(1)
+        installed = set(re.findall(r'"([\w.]+\.(?:py|html|md))"\s*\)', block))
+
+        missing = {n for n in installed if n != "SKILL.md" and f'"{n}"' not in setup_src}
+        self.assertEqual(set(), missing, f"setup.py upgrade 가 빠뜨린 파일: {missing}")
