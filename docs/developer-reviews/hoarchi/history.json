@@ -145,6 +145,177 @@
         }
       ],
       "rescored_note": "zesty-os 루브릭 확인 후 재채점 — 활동량/커밋형식을 근거로 쓴 git_change_management 8→6, telemetry 앵커 미충족인 ai_utilization 10→8"
+    },
+    {
+      "period": {
+        "label": "2026-W35",
+        "start": "2026-08-17",
+        "end": "2026-08-29",
+        "note": "W34 리뷰 미실행 — W33 종료 다음날부터 13일 구간을 한 번에 다룸"
+      },
+      "scores": {
+        "overall": 7,
+        "requirements": 8,
+        "architecture": 8,
+        "implementation": 8,
+        "testing": 7,
+        "git_change_management": 6,
+        "operations": 5,
+        "ai_utilization": 9,
+        "ai_supervision": 7
+      },
+      "score_evidence": {
+        "testing": {
+          "anchor": "7",
+          "confidence": "high",
+          "supports": [
+            "직접 실행 Ran 232 tests OK (W33 31개)",
+            "실패 모드 테스트 — 전송 실패 시 상태 미저장, KST 일자 경계, schema 1 하위호환, 권한 0600",
+            "22커밋 중 12개가 tests/ 를 건드림 (W33 은 11중 2)"
+          ],
+          "concerns": [
+            "skills/ 1,987줄에 내용 검증 테스트 0 — test_skills.py 10개는 전부 포장(frontmatter·참조·등재) 검사"
+          ],
+          "unknowns": [
+            "커버리지 도구 미설정 — 232개가 무엇을 덮는지 미측정"
+          ]
+        },
+        "operations": {
+          "anchor": "5",
+          "confidence": "high",
+          "supports": [
+            "CI 3버전 매트릭스 + ruff, 최근 5회 success",
+            "enroll.py 로 머신 등록 도구화, Windows 작업 스케줄러 지원",
+            "증분 push 로 3시간마다 242행 전량 재전송을 중단"
+          ],
+          "concerns": [
+            "수집 파이프라인이 기간 중 2회 무징후 중단(rename 잔재 28회 연속 실패 후 4일 중단, 08-24 동일 고장 재발)",
+            "죽은 워크트리 경로 등록이 유령 디렉토리를 되살리는 순환이 일주일간 미발견",
+            "파이프라인 상태 알림 없음 — launchctl list 가 크래시 루프와 정상 잡을 동일하게 표시"
+          ],
+          "unknowns": [
+            "롤백 절차 문서 부재 여부는 확인했으나 실제 필요성은 미검증"
+          ]
+        },
+        "ai_supervision": {
+          "anchor": "7",
+          "confidence": "high",
+          "supports": [
+            "경계를 실행으로 확인 — 개인 토큰 /sync 401 vs 공유 secret /sync 400 실증",
+            "설계 반박을 지우지 않고 '정정 1·2' 절로 보존 (설계문서 451줄)",
+            "이중 계상 규칙이 초안에 없었고 구현 중 테스트가 검출",
+            "전송 내용을 로그가 아니라 sender 가로채기로 확인"
+          ],
+          "concerns": [
+            "W34 리뷰 미실행 — 통제 장치 자체를 거름",
+            "칸반 #49·#58 이 done 인데 completed_at 공란, 불변식 테스트가 못 잡음",
+            "히스토리 재작성 후 갈라진 클론을 수동으로 부딪혀서야 발견"
+          ],
+          "unknowns": []
+        },
+        "git_change_management": {
+          "anchor": "6",
+          "confidence": "medium",
+          "supports": [
+            "22커밋 목적형 분할, conventional prefix 일관",
+            "히스토리 재작성 시 SHA 참조 갱신 커밋(b6b2158)을 별도로 남김"
+          ],
+          "concerns": [
+            "같은 워킹트리에 세션 밖 커밋·푸시 발생(#55)",
+            "kanban.json 직접 편집 경로에 원자성·잠금 없어 id 중복 발생",
+            "재작성 이후 다른 클론 상태가 추적되지 않음 — ahead 36/behind 42 방치"
+          ],
+          "unknowns": [
+            "다른 머신들의 현재 정렬 상태 미확인"
+          ]
+        }
+      },
+      "source_coverage": {
+        "git": "observed",
+        "tests": "observed",
+        "ci": "observed",
+        "docs": "observed",
+        "deployment": "unverified",
+        "coverage": "missing"
+      },
+      "verdict": "W33 의 critical 두 개에 제대로 답했고 AI 통제 역량이 3→7 로 올랐다. 그러나 이 제품이 반복 실패하는 방식은 코드 결함이 아니라 성공한 것처럼 보이는 침묵이다 — 기간 중 3회, 모두 사람이 우연히 발견했다. 문서 대응이 한 번 재발했으므로 다음은 실행되는 장치여야 한다. 무인 운전은 아직 이르다.",
+      "priorities": [
+        {
+          "category": "운영 실패의 무징후성",
+          "dimension": "operations",
+          "status": "new",
+          "consecutive_weeks": 1,
+          "severity": "critical",
+          "actions": [
+            "reconcile 마지막 성공 시각과 exit status 를 보드/context 에 노출",
+            "N시간 이상 성공 없으면 세션 시작 시 경고"
+          ]
+        },
+        {
+          "category": "제품 본체 미검증",
+          "dimension": "testing",
+          "status": "repeated",
+          "consecutive_weeks": 2,
+          "severity": "high",
+          "actions": [
+            "SKILL.md 가 선언한 커맨드·산출물 경로가 실제 코드에 존재하는지 대조하는 테스트 1종"
+          ]
+        },
+        {
+          "category": "병렬 세션 쓰기 경합",
+          "dimension": "git_change_management",
+          "status": "new",
+          "consecutive_weeks": 1,
+          "severity": "high",
+          "actions": [
+            "kanban.json 직접 편집 경로에 원자적 쓰기 적용",
+            "히스토리 재작성 시 다른 클론 대응(reset --hard, pull 아님)을 스킬 문서화"
+          ]
+        },
+        {
+          "category": "리뷰 루틴 미실행",
+          "dimension": "ai_supervision",
+          "status": "new",
+          "consecutive_weeks": 1,
+          "severity": "high",
+          "actions": [
+            "W36 리뷰를 거르지 않는다"
+          ]
+        },
+        {
+          "category": "검증 결과의 비재현성",
+          "dimension": "testing",
+          "status": "repeated",
+          "consecutive_weeks": 2,
+          "severity": "medium",
+          "actions": [
+            "커버리지 도구를 붙이고 현재 수치를 docs/PROGRESS.md 에 기록"
+          ]
+        }
+      ],
+      "resolved": [
+        {
+          "category": "CI 부재",
+          "resolved_in": "2026-W35",
+          "evidence": "GitHub Actions Python 3.11/3.12/3.13 + ruff==0.16.3, 최근 5회 success"
+        },
+        {
+          "category": "AI 통제",
+          "resolved_in": "2026-W35",
+          "evidence": "ai_supervision 3 → 7. 실패 주입·경계 검증·정정 기록이 아티팩트로 존재"
+        }
+      ],
+      "git": {
+        "commits": 22,
+        "additions": 4535,
+        "deletions": 270,
+        "net_lines": 4265,
+        "files_touched": 35,
+        "test_files_touched": 12,
+        "migration_files_touched": 0,
+        "delivery_files_touched": 7,
+        "ai_attributed_commits": 17
+      }
     }
   ]
 }

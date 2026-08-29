@@ -47,21 +47,21 @@
       "task_id": null,
       "agent": "claude",
       "model": "claude-opus-5",
-      "tokens": 529801179,
-      "input_tokens": 2640,
-      "output_tokens": 1652265,
-      "cache_read_tokens": 522804562,
-      "cache_write_tokens": 5341712,
-      "cost_usd": 336.1078,
+      "tokens": 561723475,
+      "input_tokens": 2868,
+      "output_tokens": 1796147,
+      "cache_read_tokens": 553745929,
+      "cache_write_tokens": 6178531,
+      "cost_usd": 360.4068,
       "session_id": "8d3d8ee8-73d7-4ee2-8033-ceafb47c8791",
       "commit": "",
       "ts": "2026-08-15T10:58:31+09:00",
       "source": "transcript-reconcile",
       "cost_breakdown": {
-        "in": 0.01204,
-        "out": 38.896475,
-        "cr": 250.442564,
-        "cw": 29.237113
+        "in": 0.0132,
+        "out": 41.306625,
+        "cr": 261.402281,
+        "cw": 33.3857
       }
     },
     {
@@ -104,6 +104,27 @@
         "out": 27.58205,
         "cr": 179.668839,
         "cw": 22.414144
+      }
+    },
+    {
+      "session_id": "01a04b94-8d95-7e90-a384-ad12f9735b23",
+      "date": "2026-08-29",
+      "agent": "codex",
+      "model": "gpt-5.6-sol",
+      "tokens": 3513319,
+      "input_tokens": 166377,
+      "output_tokens": 18942,
+      "cache_read_tokens": 3328000,
+      "cache_write_tokens": 0,
+      "cost_usd": 2.375548,
+      "ts": "2026-08-29T00:00:00+09:00",
+      "machine": null,
+      "source": "codex-session",
+      "cost_breakdown": {
+        "in": 0.665508,
+        "out": 0.37884,
+        "cr": 1.3312,
+        "cw": 0.0
       }
     }
   ]

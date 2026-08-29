@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>2026-W35 개발자 리뷰 — hoarchi</title>
+<style>
+:root{--bg:#f3f6f4;--card:#fff;--line:#d8e1db;--text:#17221c;--dim:#5d6e64;--green:#118c6b;--amber:#b46d0d;--red:#b83b62;--violet:#5b50b8;--mono:ui-monospace,SFMono-Regular,Menlo,monospace}
+@media(prefers-color-scheme:dark){:root{--bg:#111613;--card:#182019;--line:#2c3a31;--text:#e6efe9;--dim:#93a89c;--green:#3fbf97;--amber:#dda13f;--red:#e2708f;--violet:#9a8ff0}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.65}.wrap{max-width:980px;margin:auto;padding:56px 24px 90px}h1{font-size:42px;line-height:1.15;margin:8px 0 12px}h2{margin-top:46px;font-size:24px}h3{margin-top:28px;font-size:18px}.eyebrow,.meta{font:12px var(--mono);color:var(--dim)}.eyebrow{color:var(--green);letter-spacing:.14em}.lede{font-size:18px;color:var(--dim);max-width:75ch}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:28px 0}.card{background:var(--card);border:1px solid var(--line);border-radius:15px;padding:22px}.metric b{display:block;font:700 30px var(--mono);color:var(--green)}.metric span{font-size:12px;color:var(--dim)}.tablewrap{overflow-x:auto}table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line)}th,td{padding:12px;border-bottom:1px solid var(--line);text-align:left}th{font-size:12px;color:var(--dim)}.score{font:700 18px var(--mono)}.up{color:var(--green)}.same{color:var(--amber)}.down{color:var(--red)}.priority{border-left:4px solid var(--amber);margin:12px 0}.critical{border-left-color:var(--red)}.good{border-left-color:var(--green)}code{font-family:var(--mono);font-size:.92em}li{margin:7px 0}.evidence{font:12px var(--mono);color:var(--dim)}.verdict{border-top:4px solid var(--green);font-size:16px}footer{margin-top:50px;text-align:center;color:var(--dim);font:11px var(--mono)}@media(max-width:720px){.grid{grid-template-columns:repeat(2,1fr)}h1{font-size:34px}}
+</style>
+</head>
+<body><main class="wrap">
+<p class="eyebrow">VIBE ENGINEERING · AI CTO WEEKLY REVIEW</p>
+<h1>hoarchi · 2026-W35</h1>
+<p class="meta">@hoarchi · 2026-08-17–2026-08-29 · 대상 ref: <code>origin/main</code> @ <code>c3be992</code></p>
+<p class="lede">W33 이 지적한 두 개의 critical 이 실제로 닫혔다. CI 는 돌고, 테스트는 31개에서 232개가 됐으며, AI 통제는 실패 주입과 경계 검증이 기록으로 남는 수준까지 올라왔다. 그런데 같은 기간에 수집 파이프라인이 두 번 조용히 죽었고, 등록이 유령 디렉토리를 되살리는 순환이 일주일간 돌았다. <strong>고치는 능력이 아니라 고장을 알아채는 장치가 이 제품의 약한 곳이다</strong> — 그리고 그걸 잡을 유일한 장치인 주간 리뷰를 W34 에 걸렀다.</p>
+
+<div class="grid">
+  <div class="card metric"><b>22</b><span>커밋</span></div>
+  <div class="card metric"><b>+4,265</b><span>순증 라인</span></div>
+  <div class="card metric"><b>35</b><span>변경 파일</span></div>
+  <div class="card metric"><b>7/10</b><span>종합 평가</span></div>
+</div>
+
+<section>
+<h2>0. 이 리뷰의 범위</h2>
+<p>W34 는 리뷰가 실행되지 않았다. 그래서 이번 리뷰는 <strong>W33 종료 다음 날(08-17)부터 08-29 까지 13일</strong>을 대상으로 한다. W34 구간 7커밋 + W35 구간 15커밋. 라벨은 실행 시점의 주(W35)를 따르되, 비교 대상은 W33 이다.</p>
+</section>
+
+<section>
+<h2>1. W33 대비 변화</h2>
+<div class="tablewrap">
+<table>
+<thead><tr><th>영역</th><th>W33</th><th>W35</th><th>판정</th></tr></thead>
+<tbody>
+<tr><td>종합</td><td class="score">5</td><td class="score">7</td><td class="up">개선</td></tr>
+<tr><td>요구사항</td><td>7</td><td>8</td><td class="up">451줄 설계문서, 중앙 반박을 "정정" 절로 기록</td></tr>
+<tr><td>아키텍처</td><td>7</td><td>8</td><td class="up">자격증명 분리, owner 판정을 서버로, schema 1/2 공존</td></tr>
+<tr><td>구현</td><td>6</td><td>8</td><td class="up">머신 교차 귀속·중복 제거·증분 push 가 실데이터로 검증</td></tr>
+<tr><td>테스트</td><td>3</td><td>7</td><td class="up">31 → 232. 실패 모드 테스트가 다수</td></tr>
+<tr><td>Git 변경관리</td><td>6</td><td>6</td><td class="same">히스토리 재작성 + 병렬 세션 쓰기가 미해결</td></tr>
+<tr><td>운영</td><td>1</td><td>5</td><td class="up">CI 도입·배포 검증. 다만 무징후 실패가 반복</td></tr>
+<tr><td>AI 활용 강도</td><td>8</td><td>9</td><td class="up">두 머신·두 에이전트, 사용량이 계측되는 단계</td></tr>
+<tr><td>AI 통제 역량</td><td>3</td><td>7</td><td class="up">실패 주입·경계 검증·정정 기록이 아티팩트로 남음</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+
+<section>
+<h2>2. 잘된 부분</h2>
+<div class="card good">
+<h3>W33 의 critical 두 개가 실제로 닫혔다</h3>
+<p><strong>CI 부재</strong> — GitHub Actions 가 Python 3.11/3.12/3.13 매트릭스 + <code>ruff==0.16.3</code> 로 매 푸시마다 돈다. 최근 5회 전부 <code>success</code>. 이 기간 22커밋 중 7개가 CI·배포 설정을 건드렸다(W33 은 0개).</p>
+<p><strong>제품 본체 미검증</strong> — 부분 해소. 아래 P2 참조.</p>
+</div>
+<div class="card good">
+<h3>테스트가 "돌아가는지"가 아니라 "어떻게 깨지는지"를 본다</h3>
+<p>직접 실행: <code>Ran 232 tests … OK</code> (61.5s). W33 의 31개에서 7.5배. 중요한 건 개수가 아니라 종류다 — KST 일자 경계, 합 보존, owner 미주장, <strong>전송 실패 시 상태 미저장</strong>, schema 1 하위호환, 등록 멱등성·권한(0600), cp949 콘솔 생존. 22커밋 중 12개가 테스트 경로를 건드렸다(W33 은 11중 2).</p>
+</div>
+<div class="card good">
+<h3>설계가 현실에 반박당한 것을 지웠다가 아니라 적었다</h3>
+<p><code>docs/superpowers/specs/2026-08-24-token-usage-attribution-design.md</code> 451줄에 <strong>"정정 1", "정정 2"</strong> 절이 있다. owner 를 문자열로 두려던 초안이 중앙의 <code>사람 매핑 테이블</code> uid 매핑과 어긋난 것, 집계 엔드포인트 경로가 <code>internal</code> 이면 안 되는 것 — 둘 다 반박 내용과 함께 남았다. 설계문서를 결과에 맞춰 고쳐 쓰면 다음 사람이 같은 실수를 반복한다.</p>
+</div>
+<div class="card good">
+<h3>경계를 말이 아니라 실행으로 확인했다</h3>
+<p>개인 토큰이 공유 secret 필드를 덮어써 스냅샷이 401 로 죽은 사고에서, 수정 후 <strong>양쪽을 각각 쏴서</strong> 확인했다 — 개인 토큰 → <code>/sync</code> 401, 공유 secret → <code>/sync</code> 400(인가 통과). "고쳤다"가 아니라 "이렇게 확인했다"가 남았다. 이중 계상 규칙은 초안에 없었고 <strong>구현 중 테스트가 잡았다</strong>(실데이터 기준 세 제품에서 각각 49%·25%·17% 과대계상).</p>
+</div>
+</section>
+
+<section>
+<h2>3. 안 된 부분</h2>
+<div class="card critical">
+<h3>P1 · 운영 실패에 징후가 없다 <span class="evidence">(신규 · critical)</span></h3>
+<p>이 기간에 수집 파이프라인이 <strong>두 번</strong> 조용히 죽었다. 첫 번째는 폴더 rename 후 launchd 잡이 옛 경로를 보고 28회 연속 실패해 4일간 수집 중단. 점검 목록을 문서에 넣어 대응했는데 <strong>08-24 에 같은 고장이 재발</strong>했다(마지막 성공 10:28). 그래서 이번엔 도구로 대응했다(<code>enroll.py --repair</code>).</p>
+<p>세 번째 변종이 오늘 나왔다. 죽은 워크트리 경로에 남은 프로젝트 등록을 서버가 폴링하면서 <strong>빈 디렉토리를 계속 되살리고 있었다</strong> — 지워도 다시 생겼고, 일주일간 아무도 몰랐다.</p>
+<p>공통점은 고장의 성격이 아니라 <strong>발견 경로</strong>다. 셋 다 보드가 정상으로 보였고, 셋 다 사람이 우연히 다른 일을 하다 발견했다. <code>launchctl list</code> 는 크래시 루프와 정상 잡을 같은 모양으로 보여준다. <strong>수집 파이프라인에 대한 알림이 하나도 없다.</strong></p>
+</div>
+<div class="card priority">
+<h3>P2 · 제품 본체의 <em>내용</em>은 여전히 미검증 <span class="evidence">(2주 연속 · high, critical 에서 하향)</span></h3>
+<p><code>tests/test_skills.py</code> 10개가 생겼지만 검사하는 것은 <strong>포장</strong>이다 — frontmatter, 참조 파일 존재, README 등재, setup 선언. 규칙 내용을 검증하는 케이스는 0이다.</p>
+<p><code>skills/</code> 는 1,987줄이고 이 기간에 +106 늘었다. 이 제품이 파는 것은 스크립트가 아니라 그 안의 판단 규칙인데, 232개 테스트 중 그 규칙이 실제로 원하는 행동을 유도하는지 보는 것은 없다. W33 의 지적이 절반만 닫혔다.</p>
+</div>
+<div class="card priority">
+<h3>P3 · 병렬 세션이 같은 파일을 경합한다 <span class="evidence">(신규 · high)</span></h3>
+<ul>
+<li>같은 워킹트리에 세션 밖 커밋·푸시가 발생(칸반 #55 에 원인 규명 기록)</li>
+<li><code>kanban.json</code> 동시 편집으로 id 중복 — 규약이 지정한 기본 경로(직접 편집)에 원자성도 잠금도 없다. 서버 쓰기만 원자적이다</li>
+<li>히스토리 재작성(<code>b6b2158</code>) 후 한 머신이 <code>ahead 36 / behind 42</code> 로 갈라진 채 방치됐고, 오늘 수동으로 부딪혀서야 발견됐다. <strong>그대로 pull 했으면 스크럽한 제3자 실명이 공개 레포로 되돌아갔다</strong></li>
+</ul>
+<p>재작성 자체는 신중했다(SHA 참조 갱신 커밋을 따로 남겼다). 문제는 재작성 이후 <strong>다른 클론이 어떤 상태인지 아무도 모른다</strong>는 것이다.</p>
+</div>
+<div class="card priority">
+<h3>P4 · 검증 결과가 레포에 남지 않는다 <span class="evidence">(2주 연속 · medium)</span></h3>
+<p>W33 과 동일. e2e 산출물 경로 <code>test_temp/</code> 가 <code>.gitignore</code> 36행에 그대로 있다. 커버리지 도구도 없어 232개가 무엇을 덮는지 측정되지 않는다 — 이 리뷰도 "232개"라는 개수와 테스트 이름으로만 판단했다.</p>
+</div>
+<div class="card priority">
+<h3>P5 · 리뷰 루틴 자체가 실행되지 않았다 <span class="evidence">(신규 · high)</span></h3>
+<p>W34 리뷰가 없다. <code>history.json</code> 에 W33 한 건뿐이고 <code>2026-W34.html</code> 은 존재하지 않는다. P1 의 세 고장은 전부 "정기적으로 상태를 확인하는 장치"가 잡았어야 할 것들이고, 이 레포에서 그 장치는 주간 리뷰다. <strong>자기 검증 장치를 만든 Phase 에서 그 장치를 거른 것</strong>이 이번 주의 가장 아이러니한 항목이다.</p>
+</div>
+</section>
+
+<section>
+<h2>4. 완성도</h2>
+<div class="tablewrap">
+<table>
+<thead><tr><th>판정</th><th>영역</th><th>비고</th></tr></thead>
+<tbody>
+<tr><td>완료</td><td>토큰 귀속 파이프라인</td><td>개인 토큰 owner 판정, 일자별 분해, 증분 push, 두 머신 등록, Windows 지원</td></tr>
+<tr><td>완료</td><td>검증 장치</td><td>232 tests, CI 3버전 매트릭스 + 린트</td></tr>
+<tr><td>부분</td><td>스킬 4종</td><td>포장은 테스트됨, 규칙 내용은 미검증. 실제 신규 프로젝트 적용 증거를 레포에서 찾지 못함</td></tr>
+<tr><td>부분</td><td>운영</td><td>배포·CI 는 있으나 파이프라인 상태 알림 없음. 롤백 절차 미문서화</td></tr>
+<tr><td>없음</td><td>커버리지 측정</td><td>도구 미설정</td></tr>
+</tbody>
+</table>
+</div>
+<p>도구로서는 사내 배포 가능 수준(팀 내 실사용 중, 두 머신·다수 프로젝트). 공개 제품으로는 스킬 내용 검증과 운영 가시성이 남아 60~70% 수준으로 본다.</p>
+</section>
+
+<section>
+<h2>5. 다음 주 완료 조건</h2>
+<ol>
+<li><strong>수집 파이프라인 상태를 한 곳에서 볼 수 있게 한다.</strong> <code>reconcile</code> 마지막 성공 시각과 exit status 를 보드나 <code>/context</code> 에 노출하고, N시간 이상 성공이 없으면 세션 시작 시 경고한다. 문서가 아니라 화면이어야 한다 — 문서로 한 번 실패했다.</li>
+<li><strong>스킬 내용에 대한 테스트를 최소 1종 만든다.</strong> 예: 각 SKILL.md 가 선언한 커맨드·산출물 경로가 실제 코드/스크립트에 존재하는지 대조. 포장이 아니라 규칙과 구현의 일치를 본다.</li>
+<li><strong>커버리지를 측정한다.</strong> 도구를 붙이고 현재 수치를 <code>docs/PROGRESS.md</code> 에 기록한다. 목표치는 다음 주에 정한다 — 이번 주는 숫자를 아는 것까지.</li>
+<li><strong>다른 클론의 동기화 상태를 확인한다.</strong> 히스토리 재작성 이후 각 머신이 정렬돼 있는지 점검하고, 재작성 시 다른 클론에 무엇을 해야 하는지(<code>pull</code> 아님, <code>reset --hard</code>)를 스킬 문서에 넣는다.</li>
+<li><strong>W36 리뷰를 거르지 않는다.</strong> 이번 리뷰가 늦어 13일치를 한 번에 다룬 탓에 W34 구간의 판단이 뭉개졌다.</li>
+</ol>
+</section>
+
+<section>
+<h2>6. 이해도 점검</h2>
+<p class="evidence">찾아보지 않고 답할 수 있어야 한다. 답하지 못하면 그 코드는 green 이어도 본인 것이 아니다.</p>
+<ol>
+<li><strong>왜 로컬 <code>runs.json</code> 은 세션 단위이고 중앙만 일자별인가?</strong> 통과하는 답에는 "기존 dateless 레코드와의 이중 계상"과 "바이트 동일성 불변식"이 나와야 한다. 정밀도를 양쪽에 다 주지 않은 이유를 설명할 수 있어야 한다.</li>
+<li><strong><code>secret</code> 과 <code>runs_token</code> 을 한 필드로 두면 정확히 무엇이 깨지는가?</strong> 통과하는 답은 어느 엔드포인트가 어느 자격증명만 인정하는지, 그리고 폴백 방향이 왜 <code>runs_token → secret</code> 인지(반대가 아니라)를 말해야 한다.</li>
+<li><strong>증분 push 에서 상태를 저장하는 시점이 전송 전인가 후인가, 왜인가?</strong> 통과하는 답에는 "전송 실패한 행을 보냈다고 적으면 영구 유실"이 나와야 한다. 이 규칙을 강제하는 테스트 이름을 댈 수 있으면 더 좋다.</li>
+</ol>
+</section>
+
+<section class="card verdict">
+<h2>CTO 종합 판정</h2>
+<p><strong>W33 의 지적에 제대로 답했다.</strong> critical 두 개 중 하나는 완전히, 하나는 절반 닫혔고, AI 통제 역량 3 → 7 은 이번 기간에서 가장 실질적인 변화다. 실패를 주입해 확인하고, 설계가 반박당한 기록을 지우지 않고 남긴 것은 신입 기준이 아니라 그냥 좋은 엔지니어링이다.</p>
+<p>그러나 <strong>무인 운전은 아직 맡길 수 없다.</strong> 이 제품이 반복해서 실패하는 방식은 코드 결함이 아니라 <em>성공한 것처럼 보이는 침묵</em>이다 — 종료코드 0으로 아무것도 안 하고, 보드는 정상으로 보이고, 크래시 루프는 정상 잡과 구별되지 않는다. 세 번 겪었고 세 번 다 사람이 우연히 발견했다. 문서로 한 번 대응했다가 재발했으므로, 다음 대응은 반드시 <strong>실행되는 장치</strong>여야 한다.</p>
+<p>그리고 그 장치를 만드는 Phase 에서 자기 점검 루틴(W34 리뷰)을 걸렀다는 사실이, 지금 이 프로젝트의 가장 정확한 자화상이다.</p>
+</section>
+
+<section>
+<h2>검증 근거</h2>
+<ul class="evidence">
+<li>기간: 2026-08-17 – 2026-08-29 (13일, W34 7커밋 + W35 15커밋)</li>
+<li>Git: 22 commits, +4,535 / −270 (net +4,265), 35 unique files</li>
+<li>테스트 경로 건드린 커밋 12/22 · CI·배포 설정 7/22 · AI 공동저자 17/22</li>
+<li>커밋 유형: feat 7, fix 7, docs 5, test 1, chore 1, merge 1</li>
+<li>테스트 직접 실행: <code>Ran 232 tests in 61.527s — OK</code></li>
+<li>테스트 파일 15개 (enroll 46, daily 23, enroll_install 22, push 21, runtime 15, reconcile 14, codex 13, integrity 11, alias 10, skills 10, rates 9, setup 9, windows 17, recost 7, collect 5)</li>
+<li><code>compileall scripts tests</code>: OK</li>
+<li>ruff: 로컬 미설치로 직접 실행 불가 — CI(<code>ruff==0.16.3 check scripts tests</code>) 최근 5회 전부 success</li>
+<li>CI: c3be992·735625c·f0b9721·33ac586·07b1718 모두 success</li>
+<li><code>skills/</code> 1,987줄, 기간 중 +106 / −0</li>
+<li><code>.gitignore</code>:36 <code>test_temp/</code> — e2e 산출물 여전히 비추적</li>
+</ul>
+<h3>관측 범위</h3>
+<div class="tablewrap">
+<table>
+<thead><tr><th>소스</th><th>상태</th><th>근거</th></tr></thead>
+<tbody>
+<tr><td>git</td><td class="up">observed</td><td>22커밋 전량 열람</td></tr>
+<tr><td>tests</td><td class="up">observed</td><td>직접 실행 232 OK</td></tr>
+<tr><td>ci</td><td class="up">observed</td><td>W33 missing → 이번 주 실행 확인</td></tr>
+<tr><td>docs</td><td class="up">observed</td><td>설계문서 451줄, PROGRESS·PHASES 갱신</td></tr>
+<tr><td>deployment</td><td class="same">unverified</td><td>설치본 배포는 확인, 중앙(zestim) 리비전은 타 레포라 이 리뷰 범위 밖</td></tr>
+<tr><td>coverage</td><td class="down">missing</td><td>도구 미설정 — 232개가 무엇을 덮는지 미측정</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+
+<footer>Vibe Engineering AI CTO Review · vibe-engineering · origin/main · 2026-W35</footer>
+</main></body></html>
