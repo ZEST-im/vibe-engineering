@@ -19,6 +19,22 @@ HOOKS_DIR = os.path.expanduser("~/.claude/hooks")
 REPO_URL = "https://raw.githubusercontent.com/ZEST-im/vibe-engineering/main"
 
 SKILLS_ROOT = os.path.expanduser("~/.claude/skills")
+
+# 설치본이 갖춰야 할 런타임 파일. **이 목록이 정본이다.**
+# 같은 목록이 세 군데(로컬 복사·원격 업그레이드·enroll --update-skill)에 흩어져 있었고
+# 서로 달랐다. 로컬 복사에서 reconcile_runs.py 가 빠져 있어, setup.py 로만 설치한
+# 머신은 수집기가 아예 없는 채로 남았다 — 실제로 그 상태를 만났다.
+# tests/test_skill_claims.py 가 세 목록의 일치를 강제한다.
+SKILL_RUNTIME_FILES = (
+    "server.py",
+    "vibe_runtime.py",
+    "worker.py",
+    "kanban.html",
+    "reconcile_runs.py",
+    "enroll.py",
+    "setup.py",
+)
+
 # 설치 대상 스킬 디렉토리 — repo skills/<name>/SKILL.md 가 원본
 SKILLS = ["vibe-harness", "vibe-planning", "vibe-design", "vibe-review"]
 # 언인스톨 시 디렉토리째 지워도 되는 스킬
@@ -133,7 +149,7 @@ def copy_server_files():
 
     copy_skill_files()
 
-    files = ["server.py", "vibe_runtime.py", "worker.py", "kanban.html", "setup.py"]
+    files = list(SKILL_RUNTIME_FILES)
     for f in files:
         src = os.path.join(SRC, f)
         dst = os.path.join(DEST, f)
@@ -331,15 +347,7 @@ def upgrade():
     # enroll.py 의 SKILL_CODE_FILES 와 같은 집합이어야 한다. 두 목록이 갈라져 있어
     # reconcile_runs.py 가 여기서 빠져 있었고, 그 결과 `setup.py upgrade` 만 돌린
     # 머신은 단가표·수집기 수정이 반영되지 않은 채로 남았다.
-    files = {
-        "server.py": f"{REPO_URL}/scripts/server.py",
-        "vibe_runtime.py": f"{REPO_URL}/scripts/vibe_runtime.py",
-        "worker.py": f"{REPO_URL}/scripts/worker.py",
-        "kanban.html": f"{REPO_URL}/scripts/kanban.html",
-        "reconcile_runs.py": f"{REPO_URL}/scripts/reconcile_runs.py",
-        "enroll.py": f"{REPO_URL}/scripts/enroll.py",
-        "setup.py": f"{REPO_URL}/scripts/setup.py",
-    }
+    files = {f: f"{REPO_URL}/scripts/{f}" for f in SKILL_RUNTIME_FILES}
 
     os.makedirs(DEST, exist_ok=True)
     downloaded = 0
