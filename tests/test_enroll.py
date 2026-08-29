@@ -336,9 +336,21 @@ class AddProjectTest(unittest.TestCase):
     def test_parses_key_equals_path_pairs(self):
         self.assertEqual(("codebook", "/x/y"), enroll.parse_project_arg("codebook=/x/y"))
 
-    def test_rejects_pair_without_equals(self):
+    def test_bare_path_now_derives_the_key(self):
+        """계약이 바뀌었다 — 예전에는 '=' 없는 인자를 거부했다.
+
+        키를 사람이 손으로 정하게 두는 것이 문제의 원인이었다. 같은 리포가 머신마다
+        다른 키(`pante` vs `pante_bde`)로 등록돼 인별 합계가 이중 계상됐다. 그래서
+        키 생략을 허용하고 git remote 에서 뽑는다. 자세한 계약은
+        tests/test_project_key.py 에 있다.
+        """
+        key, path = enroll.parse_project_arg(SCRIPTS)     # 이 레포 안이라 remote 가 있다
+        self.assertTrue(key)
+        self.assertEqual(SCRIPTS, path)
+
+    def test_still_rejects_an_empty_argument(self):
         with self.assertRaises(ValueError):
-            enroll.parse_project_arg("codebook")
+            enroll.parse_project_arg("   ")
 
 
 class ResolveScriptPathTest(unittest.TestCase):

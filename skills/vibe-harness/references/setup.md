@@ -104,3 +104,30 @@ stops meaning "passes in CI".
 
 And after pushing, check the run **for that commit** — `gh run list` shows the newest run
 first, which is not necessarily yours yet.
+
+## Project keys come from the remote, not the directory
+
+The key is how the central store identifies a project. Directory names are not — they differ
+per person and per machine, and the same repo was registered as `pante` on one machine and
+`pante_bde` on another. Central de-duplication runs *within* a project while per-person totals
+sum *across* projects, so the same rows under two keys are counted twice. Merging four such
+pairs removed 4.69B tokens of double counting in one pass.
+
+Fixing the central store alone does not hold: the next push recreates the stale key. The key
+is minted here.
+
+```bash
+python3 scripts/enroll.py --add-project ~/dev/some-repo   # key derived from origin
+python3 scripts/enroll.py --add-project chosen=~/dev/repo # explicit, when you must
+python3 scripts/enroll.py --check-keys                    # report drift, change nothing
+```
+
+Two rules the tooling enforces:
+
+- **Drift is reported, never auto-corrected.** Renaming a key severs the central history at
+  that point with no way back. `--check-keys` prints and exits non-zero; a human decides.
+- **One key may not point at two directories.** Worktrees share a remote, so they derive the
+  same key; registering one would silently replace the main checkout and drop it from
+  collection. Registration refuses instead. Register the main checkout only.
+
+Where there is no remote (a local-only repo), the directory name is the fallback.

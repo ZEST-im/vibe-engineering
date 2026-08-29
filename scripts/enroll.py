@@ -125,11 +125,64 @@ def bootstrap_projects(path):
     return "kept"
 
 
+def derive_project_key(repo_path):
+    """프로젝트 키를 `git remote get-url origin` 의 리포 이름에서 뽑는다.
+
+    **왜 디렉토리명이 아닌가.** 키는 중앙에서 프로젝트를 식별하는 값인데, 로컬
+    디렉토리명은 사람과 머신마다 다르다. 같은 리포가 mac-studio 에서는 `pante`,
+    macbook 에서는 `pante_bde` 로 등록돼 있었다. 중앙의 중복 제거는 프로젝트 **안에서만**
+    돌고 인별 합계는 프로젝트를 가로질러 더하므로, 두 키에 같은 행이 있으면 그대로
+    이중 계상된다. 2026-08-29 에 4쌍을 통합해 46.9억 토큰 / $8,476 을 걷어냈다.
+
+    중앙만 고치면 다음 push 때 stale 키가 되살아난다. 키를 만드는 쪽이 여기다.
+
+    remote 가 없으면(로컬 전용 리포, 초기화 직후) 디렉토리명으로 떨어진다.
+    워크트리는 같은 remote 를 공유하므로 같은 키가 나온다 — 의도한 것이다.
+    같은 리포의 워크트리는 같은 프로젝트다.
+    """
+    repo = os.path.abspath(os.path.expanduser(str(repo_path or "")))
+    try:
+        out = subprocess.run(["git", "-C", repo, "remote", "get-url", "origin"],
+                             capture_output=True, text=True, timeout=5)
+        url = out.stdout.strip() if out.returncode == 0 else ""
+    except (OSError, subprocess.SubprocessError):
+        url = ""
+    if url:
+        tail = url.rstrip("/").rsplit("/", 1)[-1].rsplit(":", 1)[-1]
+        name = re.sub(r"\.git$", "", tail).strip()
+        if name:
+            return name
+    return os.path.basename(repo.rstrip(os.sep)) or None
+
+
+def audit_project_keys(registry):
+    """등록된 키와 remote 에서 뽑은 키가 어긋난 곳.
+
+    **자동으로 바꾸지 않는다.** 키를 바꾸면 중앙의 이력이 그 지점에서 끊기고, 되돌릴
+    방법이 없다. 알리기만 하고 판단은 사람에게 남긴다.
+    """
+    drift = []
+    for key, meta in sorted((registry or {}).items()):
+        kdir = meta.get("kanban_dir") if isinstance(meta, dict) else meta
+        if not kdir:
+            continue
+        derived = derive_project_key(os.path.dirname(os.path.abspath(kdir)))
+        if derived and derived != key:
+            drift.append({"key": key, "derived": derived, "kanban_dir": kdir})
+    return drift
+
+
 def parse_project_arg(pair):
     """'<키>=<리포경로>' 를 쪼갠다."""
-    text = str(pair or "")
+    text = str(pair or "").strip()
+    if not text:
+        raise ValueError("형식은 <리포경로> 또는 <키>=<리포경로> 다")
     if "=" not in text:
-        raise ValueError("형식은 <키>=<리포경로> 다 (예: codebook=~/dev/codebook_vibe)")
+        # 키를 생략하면 remote 에서 뽑는다. 손으로 정하면 머신마다 갈라진다.
+        derived = derive_project_key(text)
+        if not derived:
+            raise ValueError(f"키를 뽑지 못했다 — <키>=<리포경로> 로 지정한다: {text}")
+        return derived, text
     key, path = text.split("=", 1)
     return key.strip(), path.strip()
 
@@ -155,7 +208,20 @@ def add_project(registry_path, key, repo_path):
     if not isinstance(data, dict):
         raise SystemExit("projects.json 최상위가 object 가 아니다")
 
-    data[key] = {"name": key, "kanban_dir": os.path.join(repo, "vibe-harness")}
+    kdir = os.path.join(repo, "vibe-harness")
+    existing = data.get(key)
+    if isinstance(existing, dict):
+        prev = os.path.abspath(existing.get("kanban_dir") or "")
+        if prev and prev != os.path.abspath(kdir):
+            # 같은 키가 다른 디렉토리를 가리키고 있다. 조용히 덮으면 앞의 프로젝트가
+            # 수집에서 사라진다 — 워크트리는 remote 가 같아 같은 키가 나오므로
+            # 실제로 일어나는 일이다.
+            raise SystemExit(
+                f"키 '{key}' 가 이미 다른 경로에 등록돼 있다.\n"
+                f"  기존: {prev}\n  요청: {os.path.abspath(kdir)}\n"
+                "  같은 리포의 워크트리라면 등록하지 않는다 — 본체 하나면 충분하다.\n"
+                "  정말 옮기려면 projects.json 에서 기존 항목을 먼저 지운다.")
+    data[key] = {"name": key, "kanban_dir": kdir}
     parent = os.path.dirname(registry_path)
     if parent:
         os.makedirs(parent, exist_ok=True)
@@ -347,11 +413,33 @@ def main(argv=None):
                     help="레포의 코드를 설치본으로 반영 (서버는 설치본에서 돈다)")
     ap.add_argument("--repair", action="store_true",
                     help="토큰 변경 없이 에이전트 경로만 교정")
+    ap.add_argument("--check-keys", action="store_true",
+                    help="등록된 키와 git remote 에서 뽑은 키가 어긋난 곳을 보고한다 "
+                         "(바꾸지는 않는다 — 키는 되돌릴 수 없다)")
     ap.add_argument("--dry-run", action="store_true", help="변경 없이 계획만 출력")
     a = ap.parse_args(argv)
 
+    if a.check_keys:
+        try:
+            registry = read_json(PROJECTS_CONFIG) or {}
+        except Exception as exc:
+            raise SystemExit(f"projects.json 파싱 실패: {exc}") from exc
+        drift = audit_project_keys(registry)
+        if not drift:
+            print("키 드리프트 없음 — 등록 %d개 전부 remote 와 일치" % len(registry))
+            return 0
+        print("키 드리프트 %d건 — 머신마다 다른 키로 보내면 인별 합계가 이중 계상된다:"
+              % len(drift))
+        for row in drift:
+            print(f"  등록 '{row['key']}'  vs  remote '{row['derived']}'")
+            print(f"    {row['kanban_dir']}")
+        print("\n자동으로 바꾸지 않는다 — 키를 바꾸면 중앙 이력이 끊기고 되돌릴 수 없다.")
+        print("통합하려면 중앙에서 두 키의 run 을 합친 뒤 여기 등록을 정리한다.")
+        return 1
+
     if not a.repair and not a.token and not a.add_project and not a.update_skill:
-        ap.error("--token 이 필요하다 (또는 --repair / --add-project / --update-skill)")
+        ap.error("--token 이 필요하다 (또는 --repair / --add-project / "
+                 "--update-skill / --check-keys)")
 
     # 코드 반영은 다른 단계와 독립이다. 서버가 최신이어야 나머지가 의미를 갖는다.
     if a.update_skill:
