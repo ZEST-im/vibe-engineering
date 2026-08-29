@@ -820,14 +820,21 @@ def _reconcile_all(a):
     return {"done": done, "failed": failed}
 
 
-def _run_all(a):
-    """--all 경로. 결과를 pipeline-status.json 에 남기고 예외는 그대로 올린다."""
+def _run_all(a, status_path=None):
+    """--all 경로. 결과를 pipeline-status.json 에 남기고 예외는 그대로 올린다.
+
+    `status_path` 를 주입받는 이유: 이 함수는 사용자의 실제 운영 상태를 쓴다.
+    테스트가 경로를 갈아끼우지 못하면 테스트 실행이 실제 파이프라인 건강 신호를
+    "degraded" 로 오염시킨다. 실제로 그렇게 만들었다 — 감시 신호를 테스트가
+    더럽힐 수 있으면 그 신호는 곧 무시된다.
+    """
     try:
         result = _reconcile_all(a)
     except SystemExit as exc:
-        record_pipeline_status(False, error=exc)
+        record_pipeline_status(False, error=exc, path=status_path)
         raise
-    record_pipeline_status(True, done=result["done"], failed=result["failed"])
+    record_pipeline_status(True, done=result["done"], failed=result["failed"],
+                           path=status_path)
     return result
 
 

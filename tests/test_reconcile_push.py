@@ -23,6 +23,13 @@ reconcile_runs = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(reconcile_runs)
 
 
+# 이 파일의 테스트는 `--all` 을 돌린다. 그 경로가 사용자의 실제
+# pipeline-status.json 을 써서 운영 신호를 "degraded" 로 오염시켰다.
+# 모듈 단위로 임시 경로에 묶는다.
+_STATUS_TMP = tempfile.mkdtemp()
+reconcile_runs.PIPELINE_STATUS_PATH = os.path.join(_STATUS_TMP, "pipeline-status.json")
+
+
 class Sender:
     """전송된 payload 를 기록하는 가짜 전송자. 네트워크를 타지 않는다."""
 

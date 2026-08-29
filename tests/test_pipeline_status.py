@@ -190,3 +190,48 @@ class HookAgreesWithServerTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestsMustNotTouchRealStateTest(unittest.TestCase):
+    """테스트 실행이 사용자의 실제 파이프라인 상태를 건드리면 안 된다.
+
+    실제로 그렇게 만들었다. `--all` 을 돌리는 테스트들이 `PIPELINE_STATUS_PATH` 만
+    격리하지 않아, 테스트를 한 번 돌릴 때마다 실제 `pipeline-status.json` 에 실패가
+    기록되고 `/context` 가 `degraded` 로 바뀌었다.
+
+    **감시 신호를 테스트가 더럽힐 수 있으면 그 신호는 곧 무시된다.** 그러면 감시가
+    없는 것보다 나쁘다 — 없으면 최소한 없는 줄은 안다.
+    """
+
+    def test_run_all_writes_only_to_the_injected_path(self):
+        import tempfile as _tf
+        target = os.path.join(_tf.mkdtemp(), "injected.json")
+        default = rr.PIPELINE_STATUS_PATH
+        before = os.path.getmtime(default) if os.path.exists(default) else None
+
+        def boom(_a):
+            raise SystemExit("의도된 실패")
+
+        orig, rr._reconcile_all = rr._reconcile_all, boom
+        try:
+            with self.assertRaises(SystemExit):
+                rr._run_all(object(), status_path=target)
+        finally:
+            rr._reconcile_all = orig
+
+        self.assertTrue(os.path.exists(target), "주입한 경로에 기록되지 않았다")
+        after = os.path.getmtime(default) if os.path.exists(default) else None
+        self.assertEqual(before, after,
+                         "기본 경로(사용자의 실제 상태)가 변경됐다 — 테스트가 운영 신호를 오염시킨다")
+
+    def test_reconcile_test_modules_isolate_the_path(self):
+        """`--all` 을 돌리는 테스트 파일은 경로를 갈아끼워야 한다."""
+        import glob
+        offenders = []
+        for path in sorted(glob.glob(os.path.join(ROOT, "tests", "test_reconcile*.py"))):
+            with open(path, encoding="utf-8") as fh:
+                body = fh.read()
+            if '"--all"' in body and "PIPELINE_STATUS_PATH" not in body:
+                offenders.append(os.path.basename(path))
+        self.assertEqual([], offenders,
+                         "--all 을 돌리면서 상태 경로를 격리하지 않는 파일: " + ", ".join(offenders))

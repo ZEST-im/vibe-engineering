@@ -57,6 +57,13 @@ def transcript_run(**updates):
     return run
 
 
+# 이 파일의 테스트는 `--all` 을 돌린다. 그 경로가 사용자의 실제
+# pipeline-status.json 을 써서 운영 신호를 "degraded" 로 오염시켰다.
+# 모듈 단위로 임시 경로에 묶는다.
+_STATUS_TMP = tempfile.mkdtemp()
+reconcile_runs.PIPELINE_STATUS_PATH = os.path.join(_STATUS_TMP, "pipeline-status.json")
+
+
 class MergeRunsTest(unittest.TestCase):
     def test_keeps_existing_run_that_has_no_transcript(self):
         existing = {"version": 1, "runs": [hook_run()]}
