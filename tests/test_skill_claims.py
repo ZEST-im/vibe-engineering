@@ -75,7 +75,7 @@ class DocumentedEndpointsAreRoutedTest(unittest.TestCase):
 
     def documented(self):
         found = set()
-        for path, text in doc_text():
+        for _path, text in doc_text():
             for first, rest in self.ENDPOINT.findall(text):
                 if first == "projects":
                     found.add(("projects",) + tuple(p for p in rest.split("/") if p))
@@ -118,7 +118,7 @@ class DocumentedScriptsAndFlagsTest(unittest.TestCase):
 
     def invocations(self):
         seen = {}
-        for path, text in doc_text():
+        for _path, text in doc_text():
             for script, flags in self.INVOCATION.findall(text):
                 bucket = seen.setdefault(script, set())
                 bucket.update(re.findall(r"--[a-z][a-z-]*", flags))

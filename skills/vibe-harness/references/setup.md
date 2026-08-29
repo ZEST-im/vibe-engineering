@@ -83,3 +83,24 @@ git clone <url> /tmp/verify && cd /tmp/verify && <your search>
 Deleting a branch is not enough on GitHub: `refs/pull/N/head` survives branch
 deletion and keeps the old commits fetchable with one command. Purging those
 requires recreating the repository (or asking the host to garbage-collect).
+
+## Running the same checks CI runs
+
+The test suite is not the whole gate. CI also lints, and a green local `unittest` run says
+nothing about that half — a lint-only failure looks exactly like a passing build until you
+open the run. It happened: four commits went in with a red pipeline because ruff was not
+installed locally and only the aggregate status of an *older* run was checked.
+
+Reproduce both halves before pushing:
+
+```bash
+python3 -m unittest discover -s tests          # what CI runs on 3.11 / 3.12 / 3.13
+python3 -m venv /tmp/lintenv && /tmp/lintenv/bin/pip install -q ruff==0.16.3
+/tmp/lintenv/bin/ruff check scripts tests      # the exact CI command and version
+```
+
+Pin the same version CI pins. A newer ruff finds different things, so "passes locally"
+stops meaning "passes in CI".
+
+And after pushing, check the run **for that commit** — `gh run list` shows the newest run
+first, which is not necessarily yours yet.
