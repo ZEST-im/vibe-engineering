@@ -201,24 +201,61 @@ def _kst_date(ts):
     return dt.astimezone(KST).date().isoformat()
 
 
+def recost_rows(rows):
+    """기록된 cost_usd 를 현행 단가로 다시 계산한다. (rows, 변경건수) 반환.
+
+    낡은 단가로 계산된 과거 행을 고치기 위한 것이다. 파괴적이므로 규칙을 좁게 잡는다.
+
+    - 토큰 분해가 없는 행은 건드리지 않는다. 총 tokens 만으로 되돌리려면 당시 단가를
+      알아야 하는데 그건 추정이다.
+    - agent 가 claude 가 아니면 건드리지 않는다. codex 는 단가가 아직 없다.
+    - 토큰 값 자체는 절대 바꾸지 않는다. 여기서 하는 일은 비용을 다시 세는 것뿐이다.
+    """
+    fields = ("input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens")
+    changed = 0
+    for row in rows:
+        if (row.get("agent") or "").lower() != "claude":
+            continue
+        if not any(row.get(f) is not None for f in fields):
+            continue
+        parts = cost_breakdown(row.get("model"),
+                               int(row.get("input_tokens") or 0),
+                               int(row.get("output_tokens") or 0),
+                               int(row.get("cache_read_tokens") or 0),
+                               int(row.get("cache_write_tokens") or 0))
+        total = round(parts.pop("total"), 6)
+        breakdown = {k: round(v, 6) for k, v in parts.items()}
+        if row.get("cost_usd") != total or row.get("cost_breakdown") != breakdown:
+            changed += 1
+        row["cost_usd"] = total
+        row["cost_breakdown"] = breakdown
+    return rows, changed
+
+
 # ── Codex(OpenAI) ────────────────────────────────────
-# 단가표는 비워둔다. 채우기 전까지 cost_usd 는 0 이고 cost_breakdown 은 기록하지 않는다.
-#
-# 추정치를 넣지 말 것. Claude 쪽에서 낡은 단가($15/$75)가 3배 부풀린 비용을 몇 달간
-# 내보낸 전례가 있다. 모르는 값은 0 으로 두는 편이 틀린 값보다 낫다 — 0 은 "아직 없음"
-# 으로 읽히지만 틀린 값은 사실로 읽힌다.
-#
-# 채울 때 형식: {"gpt-5.6-codex": _tier(입력단가, 출력단가), ...}  ($ per token)
-CODEX_RATES = {}
+# OpenAI 공식 API 단가, USD/token (2026-08-29 확인).
+# _tier 는 cached input 0.1x, cache write 1.25x 정책도 함께 반영한다.
+# GPT-5.6 Sol의 $4/$20은 2026-11-21까지 최소 유지되는 프로모션 단가다.
+# 공식 단가가 없는 모델은 추정하지 않고 cost_usd=0으로 남긴다.
+CODEX_RATES = {
+    "gpt-5.6-terra": _tier(0.000002, 0.000012),
+    "gpt-5.6-luna": _tier(0.0000002, 0.0000012),
+    "gpt-5.6-sol": _tier(0.000004, 0.000020),
+    "gpt-5.3-codex": _tier(0.00000175, 0.000014),
+    "gpt-5.6": _tier(0.000004, 0.000020),  # official alias → GPT-5.6 Sol
+    "gpt-5.5": _tier(0.000005, 0.000030),
+    "gpt-5.4": _tier(0.0000025, 0.000015),
+}
 
 CODEX_SESSIONS = os.path.expanduser("~/.codex/sessions")
 
 
 def _codex_rates(model):
     ml = (model or "").lower()
-    for key, rates in CODEX_RATES.items():
+    # alias `gpt-5.6` 가 `gpt-5.6-luna` 보다 먼저 맞지 않게 구체적인 키 우선.
+    for key in sorted(CODEX_RATES, key=len, reverse=True):
         if key.lower() in ml:
-            return rates
+            return CODEX_RATES[key]
     return None
 
 
@@ -616,6 +653,47 @@ def _push(project, transcripts, runs, sender=None, force_full=False):
     print(f"  중앙 전송: {res} ({len(outgoing)}/{len(rows)}행)")
 
 
+def recost_all(dry_run=False):
+    """등록된 모든 프로젝트의 runs.json 을 현행 단가로 재계산한다. 0=정상.
+
+    단가표가 낡은 채로 굴러간 기간의 행을 고치기 위한 것이다. 토큰은 건드리지 않고
+    비용만 다시 센다. 멱등이므로 여러 번 돌려도 안전하다.
+    """
+    total_before = total_after = 0.0
+    changed_rows = touched = 0
+    for key, meta in (_projects() or {}).items():
+        kd = meta.get("kanban_dir") if isinstance(meta, dict) else meta
+        if not kd:
+            continue
+        path = os.path.join(kd, "runs.json")
+        if not os.path.exists(path):
+            continue
+        try:
+            with open(path, encoding="utf-8") as fh:
+                data = json.load(fh)
+        except (OSError, ValueError) as exc:
+            print(f"[{key}] 건너뜀: {exc}")
+            continue
+        runs = data.get("runs") or []
+        if not runs:
+            continue
+        before = sum(float(r.get("cost_usd") or 0) for r in runs)
+        rows, changed = recost_rows(runs)
+        after = sum(float(r.get("cost_usd") or 0) for r in rows)
+        total_before += before
+        total_after += after
+        changed_rows += changed
+        if changed and not dry_run:
+            shutil.copy(path, path + ".bak-recost")
+            data["runs"] = rows
+            _atomic_json(path, data)
+            touched += 1
+        print(f"  {key:<24} {len(runs):>4}행 변경 {changed:>4}  ${before:>9,.0f} → ${after:>9,.0f}")
+    mode = "(dry-run — 파일 미변경)" if dry_run else f"(파일 {touched}개 갱신, 백업 *.bak-recost)"
+    print(f"  합계: {changed_rows}행  ${total_before:,.0f} → ${total_after:,.0f}  {mode}")
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("project", nargs="?", help="projects.json의 프로젝트 키")
@@ -626,7 +704,12 @@ def main():
     ap.add_argument("--push", action="store_true", help="중앙 저장소로 전송")
     ap.add_argument("--force-full-push", action="store_true",
                     help="증분 상태를 무시하고 전량 재전송 (복구용)")
+    ap.add_argument("--recost", action="store_true",
+                    help="등록된 모든 프로젝트의 runs.json cost_usd 를 현행 단가로 재계산")
     a = ap.parse_args()
+
+    if a.recost:
+        raise SystemExit(recost_all(dry_run=a.dry_run))
 
     if a.all:
         failed = []
