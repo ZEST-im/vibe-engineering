@@ -24,7 +24,7 @@ except ImportError:
     fcntl = _FcntlShim()
 import re
 import glob as glob_module
-from datetime import datetime
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 KST = ZoneInfo("Asia/Seoul")
@@ -182,6 +182,57 @@ def _write_kanban(kanban_dir, data):
         fcntl.flock(f, fcntl.LOCK_UN)
     os.replace(tmp, kp)
     _schedule_remote_sync(kanban_dir)
+
+PIPELINE_STATUS_PATH = os.path.join(SKILL_DIR, "pipeline-status.json")
+# 수집은 3시간마다 돈다. 노트북이 밤새 잠들면 10시간쯤 비므로 그보다 넉넉히 잡는다.
+# 실제 사고는 4일이었다 — 24시간이면 첫날에 잡힌다.
+PIPELINE_STALE_HOURS = 24
+
+
+def _pipeline_health(now=None):
+    """수집 파이프라인이 살아 있는지.
+
+    판단 기준은 "기록된 오류"가 아니라 **마지막 성공이 얼마나 오래됐나**다.
+    실제로 겪은 고장 세 건은 전부 프로세스가 아예 돌지 않은 경우여서 오류를
+    남길 주체가 없었다. 그래서 파일이 아예 없는 것도 stale 로 본다.
+    """
+    now = now or datetime.now(timezone.utc)
+    try:
+        with open(PIPELINE_STATUS_PATH, encoding="utf-8") as fh:
+            doc = json.load(fh)
+        if not isinstance(doc, dict):
+            raise ValueError("not an object")
+    except (FileNotFoundError, ValueError, OSError):
+        return {"state": "unknown", "reason": "상태 파일 없음 — 수집이 한 번도 돌지 않았을 수 있다"}
+
+    last = doc.get("last_success")
+    try:
+        seen = datetime.fromisoformat(str(last))
+    except (TypeError, ValueError):
+        return {"state": "stale", "last_success": None,
+                "reason": "성공 기록이 없다", "last_error": doc.get("last_error")}
+    if seen.tzinfo is None:
+        seen = seen.replace(tzinfo=timezone.utc)
+    hours = (now - seen).total_seconds() / 3600.0
+    out = {
+        "last_success": last,
+        "hours_since_success": round(hours, 1),
+        "projects_done": doc.get("projects_done"),
+        "last_error": doc.get("last_error"),
+    }
+    if hours > PIPELINE_STALE_HOURS:
+        out["state"] = "stale"
+        out["reason"] = ("마지막 수집 성공이 %.0f시간 전 — 3시간마다 돌아야 한다. "
+                         "잡이 죽었는지 확인할 것" % hours)
+    elif doc.get("last_error"):
+        # 성공은 최근인데 그 뒤 시도가 실패했다. 이것을 ok 로 부르면
+        # 정확히 이 장치가 잡으려는 "성공처럼 보이는 침묵"이 된다.
+        out["state"] = "degraded"
+        out["reason"] = "최근 성공은 있으나 그 이후 시도가 실패했다"
+    else:
+        out["state"] = "ok"
+    return out
+
 
 def _task_digest(task):
     """세션 시작 컨텍스트용 요약. details 를 뺀 최소 필드만 남긴다.
@@ -817,6 +868,8 @@ def _get_context(kanban_dir):
         # 요약 응답의 절반 이상을 차지했다. 필요하면 /api/{key}/tasks/{id} 로 개별 조회.
         "recent_done": [_task_digest(t) for t in all_done[:3]],
         "stats": stats,
+        # 보드가 정상으로 보여도 수집은 죽어 있을 수 있다. 세 번 겪었다.
+        "pipeline": _pipeline_health(),
     }
 
 

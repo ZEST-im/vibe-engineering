@@ -4,6 +4,42 @@
 
 CWD=$(pwd)
 
+# 수집 파이프라인이 살아 있는지. 보드가 정상으로 보여도 수집은 죽어 있을 수 있고,
+# 실제로 세 번 그랬다 — 세 번 다 사람이 우연히 발견했다. 여기서 먼저 말한다.
+#
+# 서버에 묻지 않고 상태 파일을 직접 읽는다. 서버가 죽은 것도 알아야 할 상황이라
+# 서버를 경유하면 같은 고장에 같이 눈이 먼다.
+warn_if_pipeline_stale() {
+  local status_file="$HOME/.claude/skills/vibe-harness/pipeline-status.json"
+  [[ -f "$status_file" ]] || return 0
+  local msg
+  msg=$(python3 - "$status_file" <<'PYEOF' 2>/dev/null
+import datetime, json, sys
+STALE_HOURS = 24
+try:
+    with open(sys.argv[1], encoding="utf-8") as fh:
+        doc = json.load(fh)
+    seen = datetime.datetime.fromisoformat(str(doc.get("last_success")))
+except Exception:
+    raise SystemExit(0)
+if seen.tzinfo is None:
+    seen = seen.replace(tzinfo=datetime.timezone.utc)
+hours = (datetime.datetime.now(seen.tzinfo) - seen).total_seconds() / 3600
+if hours > STALE_HOURS:
+    err = doc.get("last_error")
+    print("%.0f시간|%s" % (hours, (err or "")[:80]))
+PYEOF
+)
+  [[ -z "$msg" ]] && return 0
+  local hours="${msg%%|*}" err="${msg#*|}"
+  echo ""
+  echo "  ⚠ 토큰 수집이 ${hours} 동안 성공하지 못했습니다 (3시간마다 돌아야 함)"
+  [[ -n "$err" ]] && echo "    마지막 오류: $err"
+  echo "    확인: python3 scripts/reconcile_runs.py --all --push"
+  echo "    잡 상태: launchctl list | grep vibe-harness   (2열이 마지막 exit status)"
+  echo ""
+}
+
 find_phase_file() {
   local dir="$1"
   local depth=0
@@ -60,6 +96,7 @@ if [[ -z "$PHASE_FILE" ]]; then
       echo ""
     fi
   fi
+  warn_if_pipeline_stale
   exit 0
 fi
 
@@ -77,4 +114,5 @@ echo ""
 echo "  📌 Phase 파일: $PHASE_FILE"
 echo "  Do NOT touch 목록을 반드시 준수하세요."
 echo ""
+warn_if_pipeline_stale
 exit 0

@@ -40,6 +40,10 @@ CONFIG = os.path.expanduser("~/.claude/skills/vibe-harness/projects.json")
 SYNC_CONFIG = os.path.expanduser("~/.claude/skills/vibe-harness/sync.json")
 # 증분 push 상태 — 프로젝트별로 "이미 보낸 행"을 기억한다 (테스트에서 교체)
 PUSH_STATE_PATH = os.path.expanduser("~/.claude/skills/vibe-harness/push-state.json")
+# 수집이 마지막으로 성공한 시각. 이 파일이 없거나 오래됐다는 것 자체가 신호다 —
+# 실제로 겪은 고장은 스크립트 경로가 어긋나 **아예 실행되지 않은** 것이라, 오류를
+# 기록할 주체가 없었다. 그래서 "기록된 실패"가 아니라 "성공의 부재"를 본다.
+PIPELINE_STATUS_PATH = os.path.expanduser("~/.claude/skills/vibe-harness/pipeline-status.json")
 KST = datetime.timezone(datetime.timedelta(hours=9))
 
 # 컴포넌트별 $/token. 캐시 읽기 0.1x · 캐시 쓰기 1.25x 는 입력 단가에서 파생된다.
@@ -740,6 +744,93 @@ def recost_all(dry_run=False):
     return 0
 
 
+def read_pipeline_status(path=None):
+    """마지막 수집 결과. 파일이 없으면 빈 dict — "한 번도 안 돌았다"도 정보다."""
+    path = path or PIPELINE_STATUS_PATH
+    try:
+        with open(path, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (FileNotFoundError, ValueError):
+        return {}
+    return doc if isinstance(doc, dict) else {}
+
+
+def record_pipeline_status(ok, error=None, done=0, failed=(), path=None):
+    """수집 시도 결과를 남긴다.
+
+    `last_success` 는 성공했을 때만 갱신한다. 실패해도 지우지 않는 이유는, 이 값의
+    쓸모가 "마지막으로 데이터가 들어온 게 언제냐"이기 때문이다. 실패로 덮으면
+    그 질문에 답할 수 없다.
+    """
+    path = path or PIPELINE_STATUS_PATH
+    now = datetime.datetime.now(KST).isoformat(timespec="seconds")
+    doc = read_pipeline_status(path)
+    doc["version"] = 1
+    doc["last_attempt"] = now
+    doc["projects_done"] = int(done)
+    doc["projects_failed"] = list(failed)
+    if ok:
+        doc["last_success"] = now
+        doc["last_error"] = None
+    else:
+        doc["last_error"] = str(error)[:500] if error else "unknown"
+    tmp = path + ".tmp"
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(doc, fh, ensure_ascii=False, indent=2)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp, path)
+    return doc
+
+
+def _reconcile_all(a):
+    """등록된 전 프로젝트 수집. 성공/실패 집계를 돌려준다."""
+    failed = []
+    done = 0
+    projects = _projects()
+    if not projects:
+        raise SystemExit(
+            "projects.json 이 비어 있다 — 수집할 프로젝트가 없다.\n"
+            "  등록: python3 scripts/enroll.py --add-project <키>=<리포경로>\n"
+            f"  파일: {CONFIG}")
+    for key, meta in projects.items():
+        kd = meta.get("kanban_dir") if isinstance(meta, dict) else meta
+        if not kd:
+            continue
+        td = _transcript_dir(os.path.dirname(os.path.abspath(kd)))
+        if not os.path.isdir(td) or not glob.glob(td + "/*.jsonl"):
+            continue
+        # 한 프로젝트가 실패해도 나머지는 계속 — 단, 마지막에 비정상 종료로 알린다
+        try:
+            reconcile(key, kd, td, dry_run=a.dry_run, push=a.push,
+                      force_full=a.force_full_push)
+            done += 1
+        except SystemExit as exc:
+            print(f"[{key}] 건너뜀: {exc}")
+            failed.append(key)
+    if failed:
+        raise SystemExit("실패한 프로젝트: " + ", ".join(failed))
+    # 조용한 0건은 "성공했는데 데이터가 없는" 상태를 만든다. 크게 실패시킨다.
+    if done == 0:
+        raise SystemExit(
+            f"등록된 {len(projects)}개 프로젝트 중 transcript 가 잡힌 것이 0개다.\n"
+            "  kanban_dir 경로가 이 머신의 실제 리포와 맞는지 확인한다.\n"
+            f"  파일: {CONFIG}")
+    return {"done": done, "failed": failed}
+
+
+def _run_all(a):
+    """--all 경로. 결과를 pipeline-status.json 에 남기고 예외는 그대로 올린다."""
+    try:
+        result = _reconcile_all(a)
+    except SystemExit as exc:
+        record_pipeline_status(False, error=exc)
+        raise
+    record_pipeline_status(True, done=result["done"], failed=result["failed"])
+    return result
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("project", nargs="?", help="projects.json의 프로젝트 키")
@@ -758,37 +849,7 @@ def main():
         raise SystemExit(recost_all(dry_run=a.dry_run))
 
     if a.all:
-        failed = []
-        done = 0
-        projects = _projects()
-        if not projects:
-            raise SystemExit(
-                "projects.json 이 비어 있다 — 수집할 프로젝트가 없다.\n"
-                "  등록: python3 scripts/enroll.py --add-project <키>=<리포경로>\n"
-                f"  파일: {CONFIG}")
-        for key, meta in projects.items():
-            kd = meta.get("kanban_dir") if isinstance(meta, dict) else meta
-            if not kd:
-                continue
-            td = _transcript_dir(os.path.dirname(os.path.abspath(kd)))
-            if not os.path.isdir(td) or not glob.glob(td + "/*.jsonl"):
-                continue
-            # 한 프로젝트가 실패해도 나머지는 계속 — 단, 마지막에 비정상 종료로 알린다
-            try:
-                reconcile(key, kd, td, dry_run=a.dry_run, push=a.push,
-                          force_full=a.force_full_push)
-                done += 1
-            except SystemExit as exc:
-                print(f"[{key}] 건너뜀: {exc}")
-                failed.append(key)
-        if failed:
-            raise SystemExit("실패한 프로젝트: " + ", ".join(failed))
-        # 조용한 0건은 "성공했는데 데이터가 없는" 상태를 만든다. 크게 실패시킨다.
-        if done == 0:
-            raise SystemExit(
-                f"등록된 {len(projects)}개 프로젝트 중 transcript 가 잡힌 것이 0개다.\n"
-                "  kanban_dir 경로가 이 머신의 실제 리포와 맞는지 확인한다.\n"
-                f"  파일: {CONFIG}")
+        _run_all(a)
         return
 
     kd = a.kanban_dir or (_kanban_dir_for(a.project) if a.project else None)

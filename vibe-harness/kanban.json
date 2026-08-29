@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "next_id": 63,
+  "next_id": 64,
   "tasks": [
     {
       "id": 47,
@@ -331,6 +331,25 @@
       "updated_at": "2026-08-29T19:20:00+09:00",
       "started_at": null,
       "completed_at": null
+    },
+    {
+      "id": 63,
+      "title": "PMF08 착수 — 공개 위생 게이트 + 수집 파이프라인 관측",
+      "description": "조용한 실패를 소리나게 만드는 장치 두 개. 둘 다 문서가 아니라 실행되는 검사",
+      "status": "done",
+      "priority": "high",
+      "category": "infra",
+      "phase": "PHASE_PMF08",
+      "created_at": "2026-08-29T20:40:00+09:00",
+      "updated_at": "2026-08-29T20:40:00+09:00",
+      "started_at": "2026-08-29T19:00:00+09:00",
+      "completed_at": "2026-08-29T20:40:00+09:00",
+      "position": 0,
+      "lines_added": 0,
+      "lines_removed": 0,
+      "created_by": "hogun",
+      "assigned_to": "hogun",
+      "details": "## 배경\nW35 리뷰 진단: 반복 실패의 형태는 코드 결함이 아니라 \"성공한 것처럼 보이는 침묵\".\n수집 중단 3회 + 공개 유출 2회 — 다섯 번 다 규율은 있었고 검사가 없었다.\n\n## 1. 공개 위생 게이트 (tests/test_public_hygiene.py)\n공개 유출이 두 번째라 사후 재작성을 반복할 수 없었다.\n\n**설계 핵심** — 금칙어 목록을 레포에 적으면 그 목록이 곧 유출이다.\n\"우리 제품은 A·B·C 이고 토큰을 이만큼 쓴다\"를 검사기에 적으면 검사기가 유출원이 된다.\n그래서 값이 아니라 **모양**을 검사한다: R1 대형 수치 · R2 사내 소스 경로 ·\nR3 채팅 uid · R4 인사 DB 컬럼. 정확 문자열은 private/DENY.txt 에 두고 로컬에서만.\n검사 대상은 git ls-files — 경계를 코드가 아니라 git 에게 묻는다.\n\n**도입 즉시 수동 점검이 놓친 3건 검출** (사내 모듈 2종).\n알려진 이름을 열거하는 방식의 한계가 그 자리에서 증명됐다.\n\n## 2. 수집 파이프라인 관측\n**판단 기준을 뒤집은 것이 전부다.** \"기록된 실패\"가 아니라 **\"성공의 부재\"** 를 본다.\n실제 고장 세 건은 스크립트 경로가 어긋나 프로세스가 아예 뜨지 않았다 — 오류를 적을\n주체가 없었다. 그래서 상태 파일이 없는 것도 stale 로 판정한다.\n\n- reconcile: pipeline-status.json 에 last_success/last_attempt/last_error 원자적 기록.\n  실패해도 last_success 는 덮지 않는다 — 덮으면 \"마지막으로 데이터가 들어온 게 언제냐\"에\n  답할 수 없다\n- server: /context 에 pipeline 블록. ok / degraded / stale / unknown\n  **degraded** = 최근 성공은 있으나 그 이후 시도가 실패. 이걸 ok 로 부르면\n  잡으려던 침묵이 그대로 된다\n- 세션 시작 훅: 24시간 무성공이면 경고. **서버를 경유하지 않고 파일을 직접 읽는다** —\n  서버가 죽은 것도 알아야 할 상황이라 경유하면 같은 고장에 같이 눈이 먼다\n- 임계값이 훅과 서버 두 곳에 있어 드리프트 테스트로 묶었다\n\ne2e 확인: degraded 상태 → 실제 수집 1회 → ok(projects_done 11, last_error None).\n\n## 테스트\n256개 (신규 24). 위반 주입으로 실제 검출 확인:\n- 파일 없을 때 ok 로 판정 → 잡힘\n- 실패가 last_success 를 덮음 → 잡힘\n- 훅 임계값만 48로 변경 → 잡힘\n- degraded 를 ok 로 되돌림 → 잡힘\n\n## 부수\nPhase 전환 PMF07 → PMF08. 판단 기준에 이번에 배운 것 3개 추가 —\n문서 대응은 대응이 아니다 / 밖에서 확인한다 / 검색이 비면 검색기를 의심한다."
     }
   ]
 }
