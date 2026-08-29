@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>2026-W35 개발자 리뷰 (정정) — hoarchi</title>
+<style>
+:root{--bg:#f3f6f4;--card:#fff;--line:#d8e1db;--text:#17221c;--dim:#5d6e64;--green:#118c6b;--amber:#b46d0d;--red:#b83b62;--violet:#5b50b8;--mono:ui-monospace,SFMono-Regular,Menlo,monospace}
+@media(prefers-color-scheme:dark){:root{--bg:#111613;--card:#182019;--line:#2c3a31;--text:#e6efe9;--dim:#93a89c;--green:#3fbf97;--amber:#dda13f;--red:#e2708f;--violet:#9a8ff0}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.65}.wrap{max-width:980px;margin:auto;padding:56px 24px 90px}h1{font-size:42px;line-height:1.15;margin:8px 0 12px}h2{margin-top:46px;font-size:24px}h3{margin-top:28px;font-size:18px}.eyebrow,.meta{font:12px var(--mono);color:var(--dim)}.eyebrow{color:var(--green);letter-spacing:.14em}.lede{font-size:18px;color:var(--dim);max-width:75ch}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:28px 0}.card{background:var(--card);border:1px solid var(--line);border-radius:15px;padding:22px}.metric b{display:block;font:700 30px var(--mono);color:var(--green)}.metric span{font-size:12px;color:var(--dim)}.tablewrap{overflow-x:auto}table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line)}th,td{padding:12px;border-bottom:1px solid var(--line);text-align:left}th{font-size:12px;color:var(--dim)}.score{font:700 18px var(--mono)}.up{color:var(--green)}.same{color:var(--amber)}.down{color:var(--red)}.priority{border-left:4px solid var(--amber);margin:12px 0}.critical{border-left-color:var(--red)}.good{border-left-color:var(--green)}.note{border-left-color:var(--violet)}code{font-family:var(--mono);font-size:.92em}li{margin:7px 0}.evidence{font:12px var(--mono);color:var(--dim)}.verdict{border-top:4px solid var(--green);font-size:16px}footer{margin-top:50px;text-align:center;color:var(--dim);font:11px var(--mono)}@media(max-width:720px){.grid{grid-template-columns:repeat(2,1fr)}h1{font-size:34px}}
+</style>
+</head>
+<body><main class="wrap">
+<p class="eyebrow">VIBE ENGINEERING · AI CTO WEEKLY REVIEW</p>
+<h1>hoarchi · 2026-W35 <span style="font-size:22px;color:var(--dim)">(정정)</span></h1>
+<p class="meta">@hoarchi · 2026-08-17–2026-08-29 · <code>origin/main</code> @ <code>823094f</code> · supersedes 2026-W35</p>
+
+<div class="card note">
+<h3>왜 같은 주를 다시 쓰는가</h3>
+<p>W35 리뷰는 <strong>2026-08-29 18:52 에 쓰였는데 그 기간이 08-29 까지였다.</strong> 리뷰가 나간 뒤 같은 날 안에서 11커밋이 더 들어갔고, 리뷰가 P1·P2 로 올린 두 지적이 그 몇 시간 안에 닫혔다. 근거로 쓴 "232 tests" 는 지금 353 이다.</p>
+<p><strong>자기 기간에 대해 틀린 리뷰다.</strong> 없는 주(W36)를 만들어 덧붙이면 시리즈의 비교 가능성이 깨지므로, 같은 기간을 다시 채점해 앞의 항목을 대체한다. 다음 정기 리뷰는 W36(08-31~)이다.</p>
+</div>
+
+<div class="grid">
+  <div class="card metric"><b>35</b><span>커밋</span></div>
+  <div class="card metric"><b>+7,179</b><span>순증 라인</span></div>
+  <div class="card metric"><b>353</b><span>테스트</span></div>
+  <div class="card metric"><b>7/10</b><span>종합 평가</span></div>
+</div>
+
+<p class="lede">W33 이 남긴 critical 두 개에 이어 W35 초안이 남긴 critical 두 개도 같은 기간 안에 닫혔다. 실행되는 검사 여덟 개가 들어갔고, 그 검사들이 도입 당일에 저자를 두 번 잡았다. 그런데 <strong>같은 기간에 사내 데이터가 공개 레포로 두 번째 새어 레포를 삭제·재생성해야 했고, CI 가 네 커밋 동안 빨간 것을 알아채지 못했다.</strong> 만드는 능력과 지키는 능력의 격차가 이 주의 이야기다.</p>
+
+<section>
+<h2>1. W35 초안 대비 (같은 기간, 나중 상태)</h2>
+<div class="tablewrap">
+<table>
+<thead><tr><th>영역</th><th>W33</th><th>W35 초안</th><th>W35 정정</th><th>판정</th></tr></thead>
+<tbody>
+<tr><td>종합</td><td>5</td><td class="score">7</td><td class="score">7</td><td class="same">유지 — 아래 참조</td></tr>
+<tr><td>요구사항</td><td>7</td><td>8</td><td>8</td><td class="same">PMF08 종료·PMF09 이관 기록 일관</td></tr>
+<tr><td>아키텍처</td><td>7</td><td>8</td><td>8</td><td class="same">키를 발급 지점에서 고침(증상 아님)</td></tr>
+<tr><td>구현</td><td>6</td><td>8</td><td>8</td><td class="same">장치 8개 전부 e2e 확인</td></tr>
+<tr><td>테스트</td><td>3</td><td>7</td><td>8</td><td class="up">232 → 353, 전부 위반 주입 검증</td></tr>
+<tr><td>Git 변경관리</td><td>6</td><td>6</td><td>6</td><td class="same">히스토리 2회 재작성 + 레포 재생성</td></tr>
+<tr><td>운영</td><td>1</td><td>5</td><td>6</td><td class="up">관측 도입, 그러나 CI 4커밋 red 미인지</td></tr>
+<tr><td>AI 활용 강도</td><td>8</td><td>9</td><td>9</td><td class="same">두 머신·두 에이전트</td></tr>
+<tr><td>AI 통제 역량</td><td>3</td><td>7</td><td>7</td><td class="same">자기 교정 늘었으나 CI 확인 실패</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+
+<section>
+<h2>2. 잘된 부분</h2>
+<div class="card good">
+<h3>검사가 도입 당일에 저자를 두 번 잡았다</h3>
+<p>공개 위생 게이트는 <strong>자기 도입 커밋에서</strong> 칸반 details 에 적힌 사내 모듈명 2건을 잡았다. 아카이브 검사는 이 레포가 52KB 인 것을 잡았고 시키는 대로 정리해 53,666B → 2,190B 가 됐다. 규칙을 만든 사람이 첫 번째로 걸리는 규칙은 실제로 도는 규칙이다.</p>
+</div>
+<div class="card good">
+<h3>위반 주입이 자기 테스트 3개가 공허한 것을 드러냈다</h3>
+<ul>
+<li>예외 시 잠금 해제 — CPython 참조 카운팅이 대신 해줘 <code>finally</code> 를 지워도 통과. 구현이 아니라 성질을 고정한다고 주석에 명시</li>
+<li>아카이브를 완료로 세기 — 테스트 데이터가 이미 <code>status=done</code> 이라 다른 경로로 통과. 실제 방어 대상을 추가</li>
+<li>설치 목록 일치 — 문자열 개수 세기라 표기만 바뀌어도 깨짐. AST 참조 검사로 교체</li>
+</ul>
+<p>셋 다 <strong>통과하고 있었다.</strong> 주입하지 않았으면 커버리지가 있는 것처럼 남았을 것이다.</p>
+</div>
+<div class="card good">
+<h3>증상이 아니라 발급 지점을 고쳤다</h3>
+<p>중복 프로젝트 키는 중앙에서 4쌍을 합쳐 46.9억 토큰의 이중 계상을 걷어냈지만, <strong>키를 만드는 쪽이 로컬 디렉토리명이라 다음 push 때 되살아난다.</strong> <code>git remote</code> 에서 뽑도록 바꿨고, 드리프트는 보고만 하고 자동으로 바꾸지 않는다 — 키를 바꾸면 중앙 이력이 끊기고 되돌릴 수 없다. 이 머신에서 즉시 2건이 잡혔고 그중 하나가 문제의 그 쌍이었다.</p>
+</div>
+<div class="card good">
+<h3>스킬 문서의 주장을 코드와 대조하기 시작했다</h3>
+<p>기존 <code>test_skills.py</code> 10개는 전부 포장(frontmatter·참조 파일·README)을 봤다. 신규 <code>test_skill_claims.py</code> 10개가 문서의 엔드포인트·스크립트·플래그가 실재하는지 본다. <strong>도입하면서 실버그가 나왔다</strong> — 설치 목록이 세 곳에 흩어져 <code>setup.py</code> 단독 설치가 수집기를 빠뜨렸고, 그래서 어떤 머신은 수집기 없이 며칠을 보냈다.</p>
+</div>
+</section>
+
+<section>
+<h2>3. 안 된 부분</h2>
+<div class="card critical">
+<h3>P1 · 사내 데이터가 공개 레포로 두 번째 유출 <span class="evidence">(2주 연속 · critical)</span></h3>
+<p>제품별 토큰 소비 실수치(65억·82억·55억)와 사내 애플리케이션의 모듈 경로·인증 함수·토큰 저장 위치가 공개 히스토리에 있었다. 공개 단가표로 곱하면 제품별 개발 지출이 역산된다.</p>
+<p>정리에 세 단계가 필요했다 — 히스토리 재작성, 머지된 PR 브랜치 삭제, 그리고 <strong>레포 삭제·재생성</strong>. <code>refs/pull/1/head</code> 는 push 로 지울 수 없기 때문이다. 재작성 도중 <code>filter-repo</code> 가 Codex 체크포인트 ref 를 <em>경고 한 줄로</em> 건너뛴 것도 나중에 밖에서 clone 해서야 발견했다.</p>
+<p>W33 의 실명 유출에 이어 두 번째다. 이번엔 게이트를 만들었으므로 세 번째는 다른 형태여야 한다.</p>
+</div>
+<div class="card critical">
+<h3>P2 · CI 가 네 커밋 동안 빨간 것을 몰랐다 <span class="evidence">(신규 · high)</span></h3>
+<p><code>f52f87e</code>~<code>8a147a4</code> 가 lint 실패 상태로 들어갔다. 테스트는 3버전 전부 통과하고 ruff 만 실패했는데, <strong>로컬에 ruff 가 없어 "전체 테스트 OK" 가 CI 의 절반만 본 것이었다.</strong></p>
+<p>여기에 두 번째 실수가 겹쳤다 — 푸시 후 <code>gh run list</code> 맨 위를 봤는데 그게 아직 <em>이전 커밋</em>의 실행이었다. 초록을 봤지만 내 커밋의 초록이 아니었다.</p>
+<p>이 Phase 가 여덟 개의 검사를 만드는 동안, <strong>검사를 돌리는 쪽에 같은 종류의 구멍이 있었다.</strong></p>
+</div>
+<div class="card priority">
+<h3>P3 · 커버리지가 여전히 측정되지 않는다 <span class="evidence">(3주 연속 · medium)</span></h3>
+<p>W33·W35 초안에 이어 세 번째다. 353개가 무엇을 덮는지 아무도 모른다. 이번 주에 자기 테스트 3개가 공허했던 것을 <em>주입으로</em> 발견했는데, 커버리지 수치가 있었다면 더 싸게 찾았을 수도 있다. e2e 산출물 경로 <code>test_temp/</code> 도 <code>.gitignore</code> 36행에 그대로다.</p>
+</div>
+<div class="card priority">
+<h3>P4 · 병렬 세션이 같은 워킹트리를 공유한다 <span class="evidence">(2주 연속 · high)</span></h3>
+<p>다른 세션이 이 세션의 미커밋 작업을 커밋하고 푸시했다(<code>d331893</code>, 18:52). 그 커밋에 W35 리뷰 HTML 이 들어 있었고, <strong>거기 적힌 사내 수치가 그렇게 공개됐다</strong> — P1 의 경로 중 하나가 이것이다. 잠금은 <code>kanban.json</code> 에만 걸었지 워킹트리 전체에는 걸 수 없다.</p>
+</div>
+<div class="card priority">
+<h3>P5 · 히스토리를 두 번 재작성했다 <span class="evidence">(신규 · medium)</span></h3>
+<p>모두 필요한 조치였지만 대가가 있다. 다른 머신이 <code>ahead 36 / behind 42</code> 로 갈라진 채 방치돼 있었고, 그대로 <code>pull</code> 했으면 스크럽한 내용이 되돌아갔다. <strong>재작성 이후 다른 클론이 어떤 상태인지 추적하는 장치가 없다.</strong></p>
+</div>
+</section>
+
+<section>
+<h2>4. W35 초안의 지적은 어떻게 됐나</h2>
+<div class="tablewrap">
+<table>
+<thead><tr><th>초안 항목</th><th>상태</th><th>근거</th></tr></thead>
+<tbody>
+<tr><td>P1 운영 실패의 무징후성</td><td class="up">닫힘</td><td><code>pipeline-status.json</code> + <code>/context</code> + 세션 시작 경고. 판단 기준을 "기록된 실패"가 아니라 <strong>성공의 부재</strong>로</td></tr>
+<tr><td>P2 제품 본체 미검증</td><td class="up">닫힘</td><td><code>test_skill_claims.py</code> — 문서 선언 vs 코드 대조. 실버그 1건 검출</td></tr>
+<tr><td>P3 병렬 세션 쓰기 경합</td><td class="same">부분</td><td><code>kanban_edit.py</code> 로 파일 단위는 해결. 워킹트리 공유는 미해결 → P4</td></tr>
+<tr><td>P4 검증 결과 비재현성</td><td class="down">미해결</td><td>3주 연속. 커버리지 도구 없음</td></tr>
+<tr><td>P5 리뷰 루틴 미실행</td><td class="up">닫힘</td><td>W35 실행. 다만 기간 종료 전에 써서 이 정정이 필요해졌다</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+
+<section>
+<h2>5. 다음 주(W36) 완료 조건</h2>
+<ol>
+<li><strong>커버리지를 측정한다.</strong> 3주 연속 지적이다. 도구를 붙이고 현재 수치를 <code>docs/PROGRESS.md</code> 에 적는다. 목표치는 그 다음에 정한다 — 이번엔 숫자를 아는 것까지.</li>
+<li><strong>푸시 전 검사를 하나의 명령으로 만든다.</strong> 테스트와 린트를 따로 기억해야 하는 한 또 절반만 본다. <code>make check</code> 든 스크립트든, CI 와 같은 것을 한 번에 돌리는 진입점을 둔다.</li>
+<li><strong>다른 클론의 정렬 상태를 확인한다.</strong> 재작성이 두 번 있었다. mac-studio 가 지금 어떤 상태인지 확인하고, 재작성 시 다른 클론에 무엇을 해야 하는지를 스킬 문서가 아니라 <em>실행되는 점검</em>으로 만든다.</li>
+<li><strong>리뷰를 기간이 끝난 뒤에 쓴다.</strong> 이번 정정의 원인이다. W36 리뷰는 09-06(일) 이후에 쓴다.</li>
+<li><strong>남은 드리프트 2건을 정리한다.</strong> <code>AGENT-TIPS-RND</code>·<code>pante_bde</code>. 중앙 통합이 선행이므로 zestim 쪽과 순서를 맞춘다.</li>
+</ol>
+</section>
+
+<section>
+<h2>6. 이해도 점검</h2>
+<p class="evidence">찾아보지 않고 답할 수 있어야 한다.</p>
+<ol>
+<li><strong>수집 파이프라인 관측에서 "기록된 실패"가 아니라 "성공의 부재"를 보기로 한 이유는?</strong> 통과하는 답은 실제 고장 세 건이 왜 오류를 남기지 못했는지를 말해야 한다. 상태 파일이 <em>없는</em> 것을 어떻게 판정하는지도.</li>
+<li><strong><code>kanban_edit.py</code> 가 원자적 쓰기만으로 부족한 이유는?</strong> 통과하는 답에는 두 프로세스의 읽기-수정-쓰기가 겹치는 시나리오와, 그것이 어떤 관측된 손상(id 두 개)으로 이어졌는지가 나와야 한다.</li>
+<li><strong>키 드리프트를 발견하고도 자동으로 고치지 않는 이유는?</strong> 통과하는 답은 "되돌릴 수 없다"에 그치지 않고, 중앙 집계가 어느 단위로 중복 제거를 하는지까지 설명해야 한다.</li>
+</ol>
+</section>
+
+<section class="card verdict">
+<h2>CTO 종합 판정</h2>
+<p><strong>만드는 쪽은 이번 주에 확실히 올라갔다.</strong> 여덟 개의 장치가 들어갔고 전부 위반 주입으로 검증됐으며, 자기 테스트가 공허한 것을 스스로 세 번 찾아 고쳤다. 증상이 아니라 발급 지점을 고친 판단, 그리고 "재현됐으니 스킬로 뽑자"가 아니라 "문서로는 안 되니 검사로 바꾸자"로 간 판단은 신입 기준이 아니라 그냥 좋은 판단이다.</p>
+<p><strong>그러나 지키는 쪽이 따라오지 못했다.</strong> 같은 기간에 사내 데이터가 두 번째로 공개됐고 레포를 지웠다 다시 만들어야 했다. CI 가 네 커밋 동안 빨갰는데 몰랐고, 그 원인은 검사를 만드는 동안 <em>검사를 돌리는 쪽</em>에 같은 구멍을 둔 것이었다.</p>
+<p>판정은 <strong>여전히 조건부</strong>다. 이 레포는 자기 결함을 잘 찾지만, 찾는 장치와 그것을 돌리는 규율 사이의 간격이 계속 사고를 만든다. 종합을 7로 유지하는 이유가 그것이다 — 8은 "그 범위에서 운영 준비가 됐다"는 뜻인데, 자기 CI 상태를 네 커밋 동안 몰랐던 주에 붙일 수 없다.</p>
+</section>
+
+<section>
+<h2>검증 근거</h2>
+<ul class="evidence">
+<li>기간: 2026-08-17 – 2026-08-29 (전 기간. 초안은 08-29 18:52 기준이었다)</li>
+<li>Git: 35 commits, +7,863 / −684 (net +7,179), 48 unique files</li>
+<li>테스트 경로 22/35 · CI·배포 설정 10/35 · AI 공동저자 30/35</li>
+<li>유형: feat 16, fix 8, docs 8, test 1, chore 1, merge 1</li>
+<li>직접 실행: <code>Ran 353 tests — OK</code> (23개 파일)</li>
+<li>린트: <code>ruff==0.16.3 check scripts tests</code> — All checks passed (CI 와 동일 버전을 venv 에 설치해 실행)</li>
+<li>CI: 823094f·68c818d·460871c success / <strong>8a147a4 외 3건 failure</strong></li>
+<li><code>skills/</code> 2,088줄 — 포장 검사 10 + 선언 대조 10</li>
+<li>커버리지 도구: 미설정 · <code>.gitignore:36 test_temp/</code> 유지</li>
+</ul>
+<h3>관측 범위</h3>
+<div class="tablewrap">
+<table>
+<thead><tr><th>소스</th><th>상태</th><th>근거</th></tr></thead>
+<tbody>
+<tr><td>git</td><td class="up">observed</td><td>35커밋 열람 (재작성 후 SHA 기준)</td></tr>
+<tr><td>tests</td><td class="up">observed</td><td>직접 실행 353 OK</td></tr>
+<tr><td>ci</td><td class="up">observed</td><td>잡 단위로 확인 — 이번엔 커밋을 특정해서 봤다</td></tr>
+<tr><td>docs</td><td class="up">observed</td><td>PHASES·CURRENT_PHASE·PROGRESS·references 갱신</td></tr>
+<tr><td>deployment</td><td class="up">observed</td><td>설치본 배포·서버 재기동·수집 e2e 확인</td></tr>
+<tr><td>coverage</td><td class="down">missing</td><td>도구 미설정 — 3주 연속</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+
+<footer>Vibe Engineering AI CTO Review · vibe-engineering · origin/main · 2026-W35 (정정)</footer>
+</main></body></html>

@@ -316,6 +316,183 @@
         "delivery_files_touched": 7,
         "ai_attributed_commits": 17
       }
+    },
+    {
+      "period": {
+        "label": "2026-W35r",
+        "start": "2026-08-17",
+        "end": "2026-08-29",
+        "supersedes": "2026-W35",
+        "note": "초안이 08-29 18:52 에 쓰였는데 기간이 08-29 까지였다. 이후 같은 날 11커밋이 더 들어갔고 초안의 P1·P2 가 그 안에서 닫혔다. 없는 주(W36)를 만들지 않고 같은 기간을 다시 채점한다. 다음 정기 리뷰는 W36(08-31~)."
+      },
+      "scores": {
+        "overall": 7,
+        "requirements": 8,
+        "architecture": 8,
+        "implementation": 8,
+        "testing": 8,
+        "git_change_management": 6,
+        "operations": 6,
+        "ai_utilization": 9,
+        "ai_supervision": 7
+      },
+      "score_evidence": {
+        "testing": {
+          "anchor": "8",
+          "confidence": "high",
+          "supports": [
+            "직접 실행 353 OK (초안 시점 232)",
+            "신규 장치 8개 전부 위반 주입으로 검출 확인 (장치당 3~5종)",
+            "동시성은 대조군을 함께 돌린다 — 잠금 없는 같은 작업이 실제로 깨지는 것 확인",
+            "22/35 커밋이 tests/ 를 건드림"
+          ],
+          "concerns": [
+            "자기 테스트 3개가 공허했고 주입으로만 발견됐다 — 통과하고 있었다"
+          ],
+          "unknowns": [
+            "커버리지 도구 미설정 — 353개가 무엇을 덮는지 미측정 (3주 연속)"
+          ]
+        },
+        "operations": {
+          "anchor": "6",
+          "confidence": "high",
+          "supports": [
+            "수집 관측 도입 — 판단 기준을 성공의 부재로",
+            "아카이브 검사·키 드리프트 감사 도입, 둘 다 실제 문제를 즉시 검출",
+            "설치본 배포·서버 재기동·수집 e2e 확인"
+          ],
+          "concerns": [
+            "CI 가 4커밋 동안 red 였는데 몰랐다 — 로컬에 ruff 가 없어 절반만 봤고, gh run list 맨 위(이전 커밋)를 초록으로 읽었다",
+            "롤백 절차 문서 없음",
+            "히스토리 재작성 2회 + 레포 재생성 — 다른 클론 상태 추적 장치 없음"
+          ],
+          "unknowns": []
+        },
+        "ai_supervision": {
+          "anchor": "7",
+          "confidence": "high",
+          "supports": [
+            "장치마다 위반 주입으로 검출 확인",
+            "자기 테스트가 공허한 것을 3회 스스로 찾아 고침",
+            "단위 불일치(자 vs 바이트)를 발견하고 단언을 한계비용으로 교체",
+            "검증 한계를 숨기지 않고 주석에 명시(참조 카운팅이 대신 해주는 성질)",
+            "히스토리 재작성을 새 clone 으로 밖에서 검증"
+          ],
+          "concerns": [
+            "CI red 4커밋 미인지 — 가장 기본적인 확인 실패",
+            "빈 검색 결과를 '없음'으로 읽음(git grep 이 조용히 0건)"
+          ],
+          "unknowns": []
+        },
+        "git_change_management": {
+          "anchor": "6",
+          "confidence": "medium",
+          "supports": [
+            "35커밋 목적형 분할, conventional prefix 일관",
+            "재작성 시 SHA 참조 갱신을 별도 커밋으로"
+          ],
+          "concerns": [
+            "히스토리 2회 재작성 + 레포 삭제·재생성",
+            "4커밋이 red 인 채로 푸시됨",
+            "다른 세션이 이 세션의 미커밋 작업을 커밋·푸시했고 그 경로로 사내 수치가 공개됐다"
+          ],
+          "unknowns": [
+            "mac-studio 의 현재 정렬 상태 미확인"
+          ]
+        }
+      },
+      "source_coverage": {
+        "git": "observed",
+        "tests": "observed",
+        "ci": "observed",
+        "docs": "observed",
+        "deployment": "observed",
+        "coverage": "missing"
+      },
+      "verdict": "만드는 쪽은 올라갔고 지키는 쪽이 따라오지 못했다. 장치 8개가 전부 위반 주입으로 검증됐고 자기 테스트의 공허함을 3회 스스로 찾았다. 그러나 같은 기간에 사내 데이터가 두 번째로 공개돼 레포를 재생성했고, CI 가 4커밋 동안 빨간 것을 몰랐다. 종합 8은 '그 범위에서 운영 준비가 됐다'는 뜻인데 자기 CI 상태를 모르던 주에 붙일 수 없다.",
+      "priorities": [
+        {
+          "category": "공개 레포 사내 정보 유출",
+          "dimension": "operations",
+          "status": "repeated",
+          "consecutive_weeks": 2,
+          "severity": "critical",
+          "actions": [
+            "위생 게이트 도입 완료 — 세 번째가 다른 형태로 나오는지 관찰",
+            "refs/pull 은 push 로 못 지운다는 것을 전제로 사전 차단에 의존한다"
+          ]
+        },
+        {
+          "category": "검증 루프가 CI 의 절반만 본다",
+          "dimension": "operations",
+          "status": "new",
+          "consecutive_weeks": 1,
+          "severity": "high",
+          "actions": [
+            "푸시 전 테스트+린트를 한 명령으로 묶는다",
+            "푸시 후에는 그 커밋의 실행을 특정해서 본다"
+          ]
+        },
+        {
+          "category": "커버리지 미측정",
+          "dimension": "testing",
+          "status": "repeated",
+          "consecutive_weeks": 3,
+          "severity": "medium",
+          "actions": [
+            "도구를 붙이고 현재 수치를 docs/PROGRESS.md 에 기록"
+          ]
+        },
+        {
+          "category": "병렬 세션이 워킹트리를 공유",
+          "dimension": "git_change_management",
+          "status": "repeated",
+          "consecutive_weeks": 2,
+          "severity": "high",
+          "actions": [
+            "kanban.json 은 잠금으로 해결됐다. 워킹트리 공유 자체를 어떻게 다룰지 정한다"
+          ]
+        },
+        {
+          "category": "재작성 후 다른 클론 추적 부재",
+          "dimension": "git_change_management",
+          "status": "new",
+          "consecutive_weeks": 1,
+          "severity": "medium",
+          "actions": [
+            "mac-studio 정렬 상태 확인",
+            "재작성 시 대응을 실행되는 점검으로"
+          ]
+        }
+      ],
+      "resolved": [
+        {
+          "category": "운영 실패의 무징후성",
+          "resolved_in": "2026-W35r",
+          "evidence": "pipeline-status.json + /context + 세션 시작 경고. 성공의 부재를 신호로"
+        },
+        {
+          "category": "제품 본체 미검증",
+          "resolved_in": "2026-W35r",
+          "evidence": "test_skill_claims.py — 문서 선언 vs 코드 대조. 도입 중 실버그 1건 검출"
+        },
+        {
+          "category": "리뷰 루틴 미실행",
+          "resolved_in": "2026-W35r",
+          "evidence": "W35 실행. 다만 기간 종료 전에 써서 이 정정이 필요해졌다"
+        }
+      ],
+      "git": {
+        "commits": 35,
+        "additions": 7863,
+        "deletions": 684,
+        "net_lines": 7179,
+        "files_touched": 48,
+        "test_files_touched": 22,
+        "migration_files_touched": 0,
+        "delivery_files_touched": 10,
+        "ai_attributed_commits": 30
+      }
     }
   ]
 }
