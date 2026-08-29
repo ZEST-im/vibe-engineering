@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "next_id": 59,
+  "next_id": 60,
   "tasks": [
     {
       "id": 47,
@@ -252,6 +252,28 @@
       "review": "",
       "created_by": "hogun",
       "assigned_to": ""
+    },
+    {
+      "id": 59,
+      "title": "Codex 모델별 공식 토큰 단가 반영",
+      "description": "",
+      "details": "## Changes\n- scripts/reconcile_runs.py: OpenAI 공식 단가표에 GPT-5.6 Sol/Terra/Luna, GPT-5.5, GPT-5.4, GPT-5.3-Codex 입력·출력·캐시 단가 반영\n- scripts/reconcile_runs.py: 실제 Codex rollout의 turn_context 모델 식별 및 혼합 모델 세션 보수적 0원 처리\n- scripts/reconcile_runs.py: recost 경로의 원자적 JSON 저장 누락 보완\n- tests/test_codex_runs.py: 공식 단가 계산, 모델 별칭 우선순위, 실제 rollout 형식, 미등록/혼합 모델 회귀 테스트 추가\n\n## Decisions\n- 2026-08-29 OpenAI 공식 모델 문서의 API 단가만 사용하고 미등록 모델은 추정하지 않음\n- GPT-5.6 Sol 프로모션 단가의 최소 유지일(2026-11-21)을 코드 주석에 기록\n- 한 세션에서 모델이 바뀌면 누적 토큰을 단일 단가로 왜곡하지 않고 미산정 처리\n\n## Verification\n- 전체 unittest 226개 통과\n- 관련 unittest 20개 통과\n- ruff 0.16.3 clean\n- 실제 현재 프로젝트 Codex 세션: 1행 전부 가격 산정, gpt-5.6-sol, $2.148972",
+      "status": "done",
+      "priority": "medium",
+      "category": "backend",
+      "target_date": "",
+      "started_at": "2026-08-29T12:35:05+09:00",
+      "completed_at": "2026-08-29T12:39:49+09:00",
+      "lines_added": 75,
+      "lines_removed": 3,
+      "tokens_used": 0,
+      "created_at": "2026-08-29T12:35:01+09:00",
+      "updated_at": "2026-08-29T12:39:49+09:00",
+      "position": 0,
+      "phase": "PHASE_PMF07",
+      "review": "",
+      "created_by": "hoarchi",
+      "assigned_to": "hoarchi"
     }
   ]
 }

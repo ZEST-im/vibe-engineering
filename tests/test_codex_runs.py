@@ -32,6 +32,10 @@ def _meta(cwd, ts="2026-08-19T01:00:00.000Z", model="gpt-5.6-codex"):
                         "session_id": "01a0-test"}}
 
 
+def _turn(model):
+    return {"type": "turn_context", "payload": {"model": model}}
+
+
 class CodexRunsTest(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.mkdtemp()
@@ -76,10 +80,62 @@ class CodexRunsTest(unittest.TestCase):
         self.assertEqual(500, rows[0]["input_tokens"])
         self.assertEqual(50, rows[0]["output_tokens"])
 
+    def test_known_model_uses_official_component_pricing(self):
+        self.write("rollout-2026-08-19T10-00-00-abc.jsonl",
+                   [_meta("/x/proj", model="gpt-5.6-sol"),
+                    _event(inp=1_000_000, cached=600_000, out=100_000, cw=20_000)])
+
+        row = reconcile_runs.build_codex_daily_runs(self.dir)[0]
+
+        # uncached input $4/MTok, cached input $0.40/MTok, output $20/MTok,
+        # cache write 1.25x input. input_tokens already excludes cached input.
+        self.assertAlmostEqual(3.94, row["cost_usd"], places=6)
+        self.assertEqual({"in", "out", "cr", "cw"}, set(row["cost_breakdown"]))
+
+    def test_real_rollout_reads_model_from_turn_context(self):
+        meta = _meta("/x/proj", model=None)
+        self.write("rollout.jsonl", [meta, _turn("gpt-5.5"), _event(1_000_000, 0, 0)])
+
+        row = reconcile_runs.build_codex_daily_runs(self.dir)[0]
+
+        self.assertEqual("gpt-5.5", row["model"])
+        self.assertAlmostEqual(5.00, row["cost_usd"], places=6)
+
+    def test_mixed_model_session_is_not_priced_as_one_model(self):
+        meta = _meta("/x/proj", model=None)
+        self.write("rollout.jsonl", [meta, _turn("gpt-5.5"), _turn("gpt-5.6-sol"),
+                                      _event(1_000_000, 0, 0)])
+
+        row = reconcile_runs.build_codex_daily_runs(self.dir)[0]
+
+        self.assertEqual("codex-mixed", row["model"])
+        self.assertEqual(0, row["cost_usd"])
+        self.assertNotIn("cost_breakdown", row)
+
+    def test_rate_table_covers_models_seen_in_local_codex_sessions(self):
+        expected_input_per_token = {
+            "gpt-5.6-sol": 0.000004,
+            "gpt-5.6-luna": 0.0000002,
+            "gpt-5.5": 0.000005,
+            "gpt-5.4": 0.0000025,
+            "gpt-5.3-codex": 0.00000175,
+        }
+        for model, expected in expected_input_per_token.items():
+            with self.subTest(model=model):
+                self.assertAlmostEqual(expected, reconcile_runs._codex_rates(model)["in"])
+
+    def test_specific_5_6_tier_wins_over_sol_alias(self):
+        self.write("rollout-2026-08-19T10-00-00-abc.jsonl",
+                   [_meta("/x/proj", model="gpt-5.6-luna"), _event(1_000_000, 0, 0)])
+
+        row = reconcile_runs.build_codex_daily_runs(self.dir)[0]
+
+        self.assertAlmostEqual(0.20, row["cost_usd"], places=6)
+
     def test_cost_is_not_fabricated_when_pricing_unknown(self):
         """OpenAI 단가를 모르면 비용을 지어내지 않는다 — 0 으로 두고 토큰만 기록한다."""
         self.write("rollout-2026-08-19T10-00-00-abc.jsonl",
-                   [_meta("/x/proj"), _event(1000, 0, 100)])
+                   [_meta("/x/proj", model="some-future-codex"), _event(1000, 0, 100)])
 
         rows = reconcile_runs.build_codex_daily_runs(self.dir)
 

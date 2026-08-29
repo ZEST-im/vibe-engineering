@@ -103,6 +103,15 @@ def _projects():
         return {}
 
 
+def _atomic_json(path, data):
+    """JSON을 같은 디렉토리의 임시 파일에 쓴 뒤 원자적으로 교체한다."""
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, ensure_ascii=False, indent=2)
+        fh.write("\n")
+    os.replace(tmp, path)
+
+
 def _kanban_dir_for(key):
     p = _projects().get(key)
     if not p:
@@ -289,7 +298,7 @@ def build_codex_daily_runs(sessions_dir=None, cwd=None, machine=None):
     files = sorted(set(glob.glob(root + "/*.jsonl")
                        + glob.glob(root + "/**/*.jsonl", recursive=True)))
     for path in files:
-        meta, last = {}, None
+        meta, last, turn_models = {}, None, set()
         try:
             with open(path, encoding="utf-8", errors="replace") as fh:
                 for line in fh:
@@ -300,6 +309,8 @@ def build_codex_daily_runs(sessions_dir=None, cwd=None, machine=None):
                     payload = obj.get("payload") or {}
                     if obj.get("type") == "session_meta" and not meta:
                         meta = payload
+                    elif obj.get("type") == "turn_context" and payload.get("model"):
+                        turn_models.add(payload["model"])
                     elif payload.get("type") == "token_count":
                         usage = (payload.get("info") or {}).get("total_token_usage")
                         if usage:
@@ -315,7 +326,12 @@ def build_codex_daily_runs(sessions_dir=None, cwd=None, machine=None):
         cached = int(last.get("cached_input_tokens") or 0)
         out = int(last.get("output_tokens") or 0)
         cw = int(last.get("cache_write_input_tokens") or 0)
-        model = meta.get("model") or "codex"
+        # 실제 Codex rollout은 모델을 session_meta가 아니라 turn_context에 둔다.
+        # 세션 중 모델이 바뀐 경우 누적 토큰을 한 단가로 추정하지 않는다.
+        model = meta.get("model")
+        if not model and len(turn_models) == 1:
+            model = next(iter(turn_models))
+        model = model or ("codex-mixed" if turn_models else "codex")
 
         row = {
             "session_id": meta.get("session_id") or os.path.basename(path),

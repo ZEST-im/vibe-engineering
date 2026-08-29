@@ -13,7 +13,14 @@
       "time_seconds": null,
       "commit": "030afa5",
       "session_id": "71a08bd7-b829-4333-9a42-c0ddf7b39df1",
-      "ts": "2026-07-07T16:30:21"
+      "ts": "2026-07-07T16:30:21",
+      "cost_usd": 82.696011,
+      "cost_breakdown": {
+        "in": 0.33315,
+        "out": 13.830225,
+        "cr": 43.190955,
+        "cw": 25.341681
+      }
     },
     {
       "task_id": null,
@@ -28,22 +35,34 @@
       "commit": "030afa5",
       "session_id": "7d886a6b-c069-40df-add2-3eae529b8efa",
       "ts": "2026-07-10T18:56:48",
-      "cost_usd": 10.7425
+      "cost_usd": 35.808241,
+      "cost_breakdown": {
+        "in": 0.15809,
+        "out": 9.0149,
+        "cr": 15.139963,
+        "cw": 11.495287
+      }
     },
     {
       "task_id": null,
       "agent": "claude",
       "model": "claude-opus-5",
-      "tokens": 507121333,
-      "input_tokens": 2408,
-      "output_tokens": 1555859,
-      "cache_read_tokens": 500885128,
-      "cache_write_tokens": 4677938,
-      "cost_usd": 955.7646,
+      "tokens": 529801179,
+      "input_tokens": 2640,
+      "output_tokens": 1652265,
+      "cache_read_tokens": 522804562,
+      "cache_write_tokens": 5341712,
+      "cost_usd": 336.1078,
       "session_id": "8d3d8ee8-73d7-4ee2-8033-ceafb47c8791",
       "commit": "",
       "ts": "2026-08-15T10:58:31+09:00",
-      "source": "transcript-reconcile"
+      "source": "transcript-reconcile",
+      "cost_breakdown": {
+        "in": 0.01204,
+        "out": 38.896475,
+        "cr": 250.442564,
+        "cw": 29.237113
+      }
     },
     {
       "task_id": null,
@@ -54,11 +73,17 @@
       "output_tokens": 269192,
       "cache_read_tokens": 36209080,
       "cache_write_tokens": 1478481,
-      "cost_usd": 102.2323,
+      "cost_usd": 34.077426,
       "session_id": "5b7ab925-7ad9-464c-9de3-6c068fe4fd8b",
       "commit": "",
       "ts": "2026-08-21T22:24:16+09:00",
-      "source": "transcript-reconcile"
+      "source": "transcript-reconcile",
+      "cost_breakdown": {
+        "in": 0.00258,
+        "out": 6.7298,
+        "cr": 18.10454,
+        "cw": 9.240506
+      }
     },
     {
       "task_id": null,
@@ -69,11 +94,17 @@
       "output_tokens": 1103282,
       "cache_read_tokens": 359337678,
       "cache_write_tokens": 3586263,
-      "cost_usd": 689.022,
+      "cost_usd": 229.673993,
       "session_id": "f4f7b48b-bc89-418e-9fd9-3e62dd7322ad",
       "commit": "",
       "ts": "2026-08-24T12:09:13+09:00",
-      "source": "transcript-reconcile"
+      "source": "transcript-reconcile",
+      "cost_breakdown": {
+        "in": 0.00896,
+        "out": 27.58205,
+        "cr": 179.668839,
+        "cw": 22.414144
+      }
     }
   ]
 }
