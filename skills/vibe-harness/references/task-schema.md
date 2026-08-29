@@ -57,6 +57,21 @@ The default path for an agent is to read and edit `vibe-harness/kanban.json` and
   - **Append a run to `runs.json`** — `{agent, model, tokens, time_seconds, commit, ts}` for the agent that did the work (see runs.json section). Agent-agnostic: record it whether the work was done by Codex, Claude, Gemini, or any other agent.
   - Any verification notes (tests run, manual checks) belong in `details`.
 - **Atomic writes**: Write to `kanban.json.tmp` first, then rename over `kanban.json`. The server does this; agents editing directly should do the same to avoid leaving the file half-written.
+- **Concurrent edits**: atomicity alone is not enough. Two agents that each read, modify, and
+  write will have the later one silently overwrite the earlier, and both may take the same
+  `next_id` — that is how ids 409 and 410 ended up on two tasks each. Git makes it worse, not
+  better: two tasks at different offsets merge cleanly and one disappears from the board with
+  no error. Hold a lock across the whole read-modify-write, or use the helper that does:
+
+  ```bash
+  python3 scripts/kanban_edit.py add "제목" --category infra   # 서버 없이도 안전
+  python3 scripts/kanban_edit.py set 42 --status done
+  ```
+
+  It reuses the server's id allocation (prefix handling and `next_id` self-correction), reads
+  the archive so an archived id is never reissued, and takes a `kanban.lock` for the duration.
+  On platforms without `fcntl` the lock degrades to a no-op — pass `--require-lock` to fail
+  instead of proceeding unprotected.
 - **Don't reorder the file just to reorder it.** Append new tasks; sort only via `position` if needed.
 
 ### decisions.json shape and rules
