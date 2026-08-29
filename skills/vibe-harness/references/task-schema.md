@@ -57,6 +57,21 @@ The default path for an agent is to read and edit `vibe-harness/kanban.json` and
   - **Append a run to `runs.json`** — `{agent, model, tokens, time_seconds, commit, ts}` for the agent that did the work (see runs.json section). Agent-agnostic: record it whether the work was done by Codex, Claude, Gemini, or any other agent.
   - Any verification notes (tests run, manual checks) belong in `details`.
 - **Atomic writes**: Write to `kanban.json.tmp` first, then rename over `kanban.json`. The server does this; agents editing directly should do the same to avoid leaving the file half-written.
+- **`depends_on`** (optional, `[id, ...]`): tasks that must be done first. The board is a
+  flat list, so before this the relation could only be written in prose — 22 of 484 tasks
+  across the fleet did exactly that, which people read and the board did not.
+
+  The point is not the notation, it is the distinction: without it a blocked task and a task
+  you can start right now look identical. `/context` returns a `dependencies` block with
+  `blocked` (id → the deps still outstanding), `ready` (todo/backlog with nothing pending),
+  `unknown_refs`, and `cycles`.
+
+  - An **archived** dependency counts as done — archive membership is the evidence, not the
+    `status` field. Skip this and every task in an old project looks blocked.
+  - A **cycle** (`A → B → A`) can never finish, and a flat board says nothing about it.
+    It is reported rather than enforced away.
+  - An **unknown id** is reported but does *not* block. Waiting forever on something that
+    does not exist is a silent stop; saying so is better than enforcing it.
 - **Concurrent edits**: atomicity alone is not enough. Two agents that each read, modify, and
   write will have the later one silently overwrite the earlier, and both may take the same
   `next_id` — that is how ids 409 and 410 ended up on two tasks each. Git makes it worse, not

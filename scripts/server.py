@@ -234,6 +234,80 @@ def _pipeline_health(now=None):
     return out
 
 
+# 칸반은 평면 목록이라 "이걸 하려면 저게 먼저"가 표현되지 않는다. 484건 중 22건이
+# 그 관계를 제목·설명에 말로 적고 있었다 — 사람은 읽지만 보드는 모른다.
+#
+# 그래서 선택 필드 `depends_on: [id, ...]` 을 둔다. 핵심은 표현이 아니라 **구별**이다.
+# 지금은 막힌 태스크와 지금 당장 할 수 있는 태스크가 보드에서 똑같아 보인다.
+def _dependency_report(tasks, archived=()):
+    """의존 관계를 훑어 막힌 것·없는 참조·순환을 돌려준다.
+
+    아카이브된 태스크는 **완료로 친다.** 아카이브는 done 을 옮겨둔 것이므로,
+    이걸 빼먹으면 오래된 프로젝트에서 멀쩡한 태스크가 전부 막힌 것으로 보인다.
+    """
+    done_ids, by_id = set(), {}
+    for t in list(tasks) + list(archived):
+        tid = t.get("id")
+        if tid is None:
+            continue
+        by_id[str(tid)] = t
+        if t.get("status") == "done":
+            done_ids.add(str(tid))
+    for t in archived:
+        if t.get("id") is not None:
+            done_ids.add(str(t["id"]))          # 아카이브 = 완료
+
+    blocked, unknown = {}, {}
+    edges = {}
+    for t in tasks:
+        tid = str(t.get("id"))
+        deps = t.get("depends_on") or []
+        if isinstance(deps, (str, int)):
+            deps = [deps]
+        edges[tid] = [str(d) for d in deps]
+        missing = [str(d) for d in deps if str(d) not in by_id]
+        if missing:
+            unknown[tid] = missing
+        unmet = [str(d) for d in deps
+                 if str(d) in by_id and str(d) not in done_ids]
+        if unmet and t.get("status") not in ("done",):
+            blocked[tid] = unmet
+
+    return {
+        "blocked": blocked,
+        "unknown_refs": unknown,
+        "cycles": _dependency_cycles(edges),
+        "ready": sorted(
+            str(t.get("id")) for t in tasks
+            if t.get("status") in ("todo", "backlog") and str(t.get("id")) not in blocked
+        ),
+    }
+
+
+def _dependency_cycles(edges):
+    """순환을 찾는다. 순환이 있으면 어떤 순서로도 끝나지 않는데 보드는 조용하다."""
+    seen, stack, found = set(), [], []
+
+    def walk(node):
+        if node in stack:
+            cycle = stack[stack.index(node):] + [node]
+            if cycle not in found:
+                found.append(cycle)
+            return
+        if node in seen:
+            return
+        seen.add(node)
+        stack.append(node)
+        for nxt in edges.get(node, []):
+            if nxt in edges:
+                walk(nxt)
+        stack.pop()
+
+    for node in sorted(edges):
+        walk(node)
+    return found
+
+
 # in_progress details 는 "지금 뭘 하고 있나"라 세션 시작에 실제로 필요하다. 그래서
 # 일괄 절삭은 답이 아니다 — 필요한 것을 깎는 방향이다.
 #
@@ -913,6 +987,7 @@ def _get_context(kanban_dir):
         # 요약 응답의 절반 이상을 차지했다. 필요하면 /api/{key}/tasks/{id} 로 개별 조회.
         "recent_done": [_task_digest(t) for t in all_done[:3]],
         "stats": stats,
+        "dependencies": _dependency_report(all_tasks, archived),
         "in_progress_note": in_progress_note,
         "in_progress_over_limit": over,
         # 보드가 정상으로 보여도 수집은 죽어 있을 수 있다. 세 번 겪었다.
