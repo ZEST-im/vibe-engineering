@@ -234,6 +234,44 @@ def _pipeline_health(now=None):
     return out
 
 
+# in_progress details 는 "지금 뭘 하고 있나"라 세션 시작에 실제로 필요하다. 그래서
+# 일괄 절삭은 답이 아니다 — 필요한 것을 깎는 방향이다.
+#
+# 다만 규율(담당자당 1건)이 깨지면 이 자리가 무한정 커진다. 실측에서 한 프로젝트가
+# in_progress 6건으로 /context 36KB 중 20,899B 를 차지했다.
+#
+# 그래서 예산제로 간다. 최근 착수한 것부터 details 를 온전히 싣고, 예산을 넘긴 나머지는
+# digest 로 떨어뜨리되 **떨어졌다는 사실을 payload 에 남긴다.** 조용히 사라지면
+# 이 레포가 반복해 온 실패와 같은 종류가 된다.
+IN_PROGRESS_DETAIL_BUDGET = 4000
+
+
+def _in_progress_payload(tasks):
+    """최근 착수 순으로 예산만큼 원문, 나머지는 digest. 무엇이 줄었는지 함께 돌려준다."""
+    ordered = sorted(
+        tasks,
+        key=lambda t: (t.get("started_at") or t.get("updated_at") or ""),
+        reverse=True,
+    )
+    out, spent, trimmed = [], 0, 0
+    for task in ordered:
+        size = len(task.get("details") or "")
+        if spent == 0 or spent + size <= IN_PROGRESS_DETAIL_BUDGET:
+            out.append(task)          # 첫 건은 예산을 넘겨도 온전히 싣는다
+            spent += size
+        else:
+            digest = _task_digest(task)
+            digest["details_omitted_chars"] = size
+            out.append(digest)
+            trimmed += 1
+    note = None
+    if trimmed:
+        note = ("in_progress %d건 중 %d건은 details 를 뺐다 (예산 %d자). "
+                "개별 조회: /api/{key}/tasks/{id}" % (len(ordered), trimmed,
+                                                     IN_PROGRESS_DETAIL_BUDGET))
+    return out, note
+
+
 def _task_digest(task):
     """세션 시작 컨텍스트용 요약. details 를 뺀 최소 필드만 남긴다.
 
@@ -854,6 +892,13 @@ def _get_context(kanban_dir):
             stats[s] += 1
 
     done_checks = sum(1 for c in checklist_items if c["done"])
+    in_progress_payload, in_progress_note = _in_progress_payload(in_progress)
+    # 담당자당 1건이 규율이다. 깨진 것을 조용히 넘기지 않고 세션 시작에 말한다.
+    owners = {}
+    for t in in_progress:
+        who = t.get("assigned_to") or t.get("created_by") or "?"
+        owners[who] = owners.get(who, 0) + 1
+    over = sorted(k for k, v in owners.items() if v > 1)
     return {
         "phase": phase_name,
         "scope": scope,
@@ -863,11 +908,13 @@ def _get_context(kanban_dir):
             "items": checklist_items,
         },
         "do_not_touch": do_not_touch,
-        "in_progress": in_progress,
+        "in_progress": in_progress_payload,
         # 세션 시작 컨텍스트에는 제목만 싣는다. details 는 태스크당 수천 자라
         # 요약 응답의 절반 이상을 차지했다. 필요하면 /api/{key}/tasks/{id} 로 개별 조회.
         "recent_done": [_task_digest(t) for t in all_done[:3]],
         "stats": stats,
+        "in_progress_note": in_progress_note,
+        "in_progress_over_limit": over,
         # 보드가 정상으로 보여도 수집은 죽어 있을 수 있다. 세 번 겪었다.
         "pipeline": _pipeline_health(),
     }
