@@ -256,7 +256,7 @@ zestim 실제 구조를 확인하고 나서 위 설계의 세 가지를 정정�
 
 ## 정정 1 — DB 가 아니라 GCS JSON 이다
 
-`중앙 `/runs` 핸들러` → `중앙 수집 모듈` → `중앙 오브젝트 스토리지 모듈`.
+중앙 `/runs` 핸들러 → `중앙 수집 모듈` → `중앙 오브젝트 스토리지 모듈`.
 저장은 `vibe-harness/runs/{project}.json` 이고 동시성은 GCS precondition(generation)으로
 직렬화된다. **마이그레이션이 없다.** 위에서 "신규 컬럼" 이라 쓴 것은 JSON 필드 추가로
 읽으면 된다. zestim 은 Next.js 앱이다(Rails 아님).
@@ -296,8 +296,8 @@ legacy 세션 행을 지우지 않기로 했으므로, 같은 세션에 일자�
 |---|---|
 | `중앙 토큰 레지스트리 모듈` | 개인 토큰 레지스트리. GCS `vibe-harness/tokens.json`, **sha256 해시만 저장**, 폐기는 `revoked_at` 기록(레코드 유지) |
 | `중앙 병합 모듈` | `runKey` / `mergeRuns`(max-merge) / `prepareIncomingRuns`(owner 도장·필드 화이트리스트) / `effectiveRuns`(이중 계상 제거) |
-| `중앙 `/runs` 핸들러` | 개인 토큰 → owner 판정. schema 2 는 개인 토큰만. 공유 secret 은 schema 1 로 계속 동작 |
-| `중앙 `/tokens` 핸들러` | 발급(POST)·조회(GET)·폐기(DELETE). 관리자(공유 secret)만. **개인 토큰에는 발급 권한 없음** |
+| 중앙 `/runs` 핸들러 | 개인 토큰 → owner 판정. schema 2 는 개인 토큰만. 공유 secret 은 schema 1 로 계속 동작 |
+| 중앙 `/tokens` 핸들러 | 발급(POST)·조회(GET)·폐기(DELETE). 관리자(공유 secret)만. **개인 토큰에는 발급 권한 없음** |
 | `중앙 수집 모듈` | `HarnessRun` 에 `owner`/`date`/`machine` 추가, `ingestRuns`·`tokenVelocityFromRuns` 수정 |
 
 테스트 88개 추가 (전체 258 passed). 라우트를 직접 실행하는 테스트로 인가 배선을
