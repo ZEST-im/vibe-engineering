@@ -73,6 +73,33 @@ find_kanban() {
   return 1
 }
 
+# 아카이브가 밀렸는지. 문서(qq 5단계)로 규정해 뒀는데 2주 뒤 22개 중 4개가 다시
+# 30건을 넘겼다. 규율이 아니라 검사가 필요하다는 뜻이라 여기서 말한다.
+warn_if_archive_overdue() {
+  local kb; kb=$(find_kanban "$CWD") || return 0
+  [[ -n "$kb" ]] || return 0
+  local msg
+  msg=$(python3 - "$kb" <<'PYEOF' 2>/dev/null
+import json, os, sys
+DONE, BYTES = 30, 50 * 1024
+try:
+    with open(sys.argv[1], encoding="utf-8") as fh:
+        tasks = json.load(fh).get("tasks", [])
+except Exception:
+    raise SystemExit(0)
+done = sum(1 for t in tasks if t.get("status") == "done")
+size = os.path.getsize(sys.argv[1])
+if done >= DONE or size >= BYTES:
+    print("%d|%d" % (done, size // 1024))
+PYEOF
+)
+  [[ -z "$msg" ]] && return 0
+  echo ""
+  echo "  ⚠ 완료 태스크 ${msg%%|*}건(${msg#*|}KB)이 kanban.json 에 쌓였습니다 — 세션마다 읽힙니다"
+  echo "    정리: /vibe-harness archive   (보드에서는 계속 보입니다)"
+  echo ""
+}
+
 PHASE_FILE=$(find_phase_file "$CWD")
 if [[ -z "$PHASE_FILE" ]]; then
   # No CURRENT_PHASE.md. Nudge only if this is an active vibe-harness project
@@ -97,6 +124,7 @@ if [[ -z "$PHASE_FILE" ]]; then
     fi
   fi
   warn_if_pipeline_stale
+  warn_if_archive_overdue
   exit 0
 fi
 
@@ -115,4 +143,5 @@ echo "  📌 Phase 파일: $PHASE_FILE"
 echo "  Do NOT touch 목록을 반드시 준수하세요."
 echo ""
 warn_if_pipeline_stale
+warn_if_archive_overdue
 exit 0

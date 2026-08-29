@@ -234,6 +234,31 @@ def _pipeline_health(now=None):
     return out
 
 
+# 아카이브는 문서로 규정돼 있었다(qq 5단계, done 30건 또는 50KB 초과 시). 2주 뒤
+# 다시 재보니 22개 중 4개가 다시 30건을 넘겼고 9개는 아카이브가 아예 없었다.
+# **패턴이 재현됐다** — 그런데 그 사실은 "별도 스킬로 뽑자"가 아니라 "문서로는 안 된다"를
+# 가리킨다. 스킬을 하나 더 만드는 것은 문서를 하나 더 만드는 것이다. 그래서 검사로 바꾼다.
+ARCHIVE_HINT_DONE = 30
+ARCHIVE_HINT_BYTES = 50 * 1024
+
+
+def _archive_hint(kanban_dir, tasks):
+    """hot 에 done 이 쌓였는지. 세션 시작에 말하지 않으면 아무도 알아채지 않는다."""
+    done = sum(1 for t in tasks if t.get("status") == "done")
+    try:
+        size = os.path.getsize(_kanban_path(kanban_dir))
+    except OSError:
+        size = 0
+    if done < ARCHIVE_HINT_DONE and size < ARCHIVE_HINT_BYTES:
+        return None
+    return {
+        "done_in_hot": done,
+        "bytes": size,
+        "reason": ("완료 태스크 %d건(%.0fKB)이 kanban.json 에 남아 세션마다 읽힌다. "
+                   "`/vibe-harness archive` 로 월별로 옮긴다" % (done, size / 1024)),
+    }
+
+
 # 칸반은 평면 목록이라 "이걸 하려면 저게 먼저"가 표현되지 않는다. 484건 중 22건이
 # 그 관계를 제목·설명에 말로 적고 있었다 — 사람은 읽지만 보드는 모른다.
 #
@@ -988,6 +1013,7 @@ def _get_context(kanban_dir):
         "recent_done": [_task_digest(t) for t in all_done[:3]],
         "stats": stats,
         "dependencies": _dependency_report(all_tasks, archived),
+        "archive_hint": _archive_hint(kanban_dir, all_tasks),
         "in_progress_note": in_progress_note,
         "in_progress_over_limit": over,
         # 보드가 정상으로 보여도 수집은 죽어 있을 수 있다. 세 번 겪었다.

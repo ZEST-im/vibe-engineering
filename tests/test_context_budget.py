@@ -146,3 +146,54 @@ class DisciplineIsSurfacedTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ArchiveHintTest(unittest.TestCase):
+    """아카이브는 문서로 규정돼 있었는데 2주 뒤 22개 중 4개가 다시 30건을 넘겼다.
+
+    그 사실이 가리키는 결론은 "별도 스킬로 뽑자"가 아니다 — 스킬을 하나 더 만드는 것은
+    문서를 하나 더 만드는 것이다. 규율이 아니라 검사로 바꾼다.
+    """
+
+    def setUp(self):
+        import tempfile
+        self.dir = tempfile.mkdtemp()
+        with open(os.path.join(self.dir, "kanban.json"), "w", encoding="utf-8") as fh:
+            fh.write("{}")
+
+    def done(self, n):
+        return [{"id": i, "status": "done"} for i in range(n)]
+
+    def test_quiet_below_threshold(self):
+        self.assertIsNone(srv._archive_hint(self.dir, self.done(5)))
+
+    def test_fires_on_done_count(self):
+        hint = srv._archive_hint(self.dir, self.done(srv.ARCHIVE_HINT_DONE))
+        self.assertIsNotNone(hint)
+        self.assertEqual(srv.ARCHIVE_HINT_DONE, hint["done_in_hot"])
+
+    def test_fires_on_size_even_with_few_tasks(self):
+        """태스크 수가 적어도 details 가 길면 비싸다. 개수만 보면 놓친다."""
+        with open(os.path.join(self.dir, "kanban.json"), "w", encoding="utf-8") as fh:
+            fh.write("x" * (srv.ARCHIVE_HINT_BYTES + 1))
+        self.assertIsNotNone(srv._archive_hint(self.dir, self.done(2)))
+
+    def test_only_done_tasks_count(self):
+        """진행 중인 것은 옮길 대상이 아니다. 세면 옮길 수 없는 것을 옮기라고 한다."""
+        active = [{"id": i, "status": "todo"} for i in range(100)]
+        self.assertIsNone(srv._archive_hint(self.dir, active))
+
+    def test_missing_file_does_not_crash(self):
+        srv._archive_hint("/nonexistent-path", self.done(1))
+
+    def test_hook_threshold_matches_server(self):
+        """임계값이 훅과 서버 두 곳에 있다. 갈라지면 한쪽만 경고한다."""
+        hook = os.path.join(ROOT, "scripts", "hooks", "vibe-harness-session-start.sh")
+        with open(hook, encoding="utf-8") as fh:
+            body = fh.read()
+        self.assertIn("DONE, BYTES = %d, %d * 1024"
+                      % (srv.ARCHIVE_HINT_DONE, srv.ARCHIVE_HINT_BYTES // 1024), body)
+
+    def test_context_exposes_the_hint(self):
+        with open(os.path.join(SCRIPTS, "server.py"), encoding="utf-8") as fh:
+            self.assertIn('"archive_hint": _archive_hint(', fh.read())
