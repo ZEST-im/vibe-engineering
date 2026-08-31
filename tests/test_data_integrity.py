@@ -4,6 +4,7 @@ CLAUDE.md 가 규정한 규율(id 재사용 금지, 완료 시 details·lines �
 runs.json append-only)은 문서에만 있고 어디서도 강제되지 않았다. 여기서 강제한다.
 """
 import json
+import re
 import os
 import unittest
 
@@ -38,6 +39,17 @@ def archived_tasks():
     return out
 
 
+def id_number(task_id):
+    """id 에서 번호만 뽑는다. 접두어가 붙어도(hg67) 같은 수열이다.
+
+    server.py 의 _numeric_ids 와 같은 규칙 — 읽을 수 없으면 None 이고 비교에서 빠진다.
+    """
+    if isinstance(task_id, int):
+        return task_id
+    m = re.search(r"(\d+)$", str(task_id or ""))
+    return int(m.group(1)) if m else None
+
+
 class KanbanIntegrityTest(unittest.TestCase):
     def setUp(self):
         self.kanban = load("kanban.json")
@@ -50,12 +62,18 @@ class KanbanIntegrityTest(unittest.TestCase):
         dupes = {i for i in ids if ids.count(i) > 1}
         self.assertEqual(set(), dupes, "중복 id(아카이브 포함): " + str(sorted(dupes)))
 
-    def test_next_id_is_above_every_used_id(self):
-        used = [t["id"] for t in self.all_tasks]
+    def test_next_id_is_above_every_used_number(self):
+        """접두어가 붙어도 번호는 하나의 수열에서 나온다.
+
+        id_prefix 를 켜면 id 가 "hg67" 같은 문자열이 된다. 그래도 next_id 가 세는 것은
+        같은 번호이므로, 접두어를 떼고 비교해야 한다. 정수와 문자열을 그대로 비교하면
+        TypeError 로 죽는다 — 실제로 그렇게 깨졌다.
+        """
+        used = [n for n in (id_number(t["id"]) for t in self.all_tasks) if n is not None]
         if not used:
-            self.skipTest("태스크가 하나도 없음")
+            self.skipTest("번호를 읽을 수 있는 태스크가 없음")
         self.assertGreater(self.kanban["next_id"], max(used),
-                           "next_id 가 아카이브된 id 보다 작거나 같음 — 재사용 위험")
+                           "next_id 가 이미 쓴 번호보다 작거나 같음 — 재사용 위험")
 
     def test_status_is_a_known_value(self):
         for t in self.all_tasks:

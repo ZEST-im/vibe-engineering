@@ -52,16 +52,16 @@
       "output_tokens": 2325326,
       "cache_read_tokens": 768682416,
       "cache_write_tokens": 6812650,
-      "cost_usd": 485.072,
+      "cost_usd": 485.072031,
       "session_id": "8d3d8ee8-73d7-4ee2-8033-ceafb47c8791",
       "commit": "",
       "ts": "2026-08-15T10:58:31+09:00",
       "source": "transcript-reconcile",
       "cost_breakdown": {
-        "in": 0.0132,
-        "out": 41.306625,
-        "cr": 261.402281,
-        "cw": 33.3857
+        "in": 0.01861,
+        "out": 58.13315,
+        "cr": 384.341208,
+        "cw": 42.579062
       }
     },
     {

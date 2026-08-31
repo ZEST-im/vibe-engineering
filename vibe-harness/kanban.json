@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "next_id": 67,
+  "next_id": 68,
   "tasks": [
     {
       "id": 62,
@@ -77,6 +77,28 @@
       "created_by": "hogun",
       "assigned_to": "hogun",
       "details": "## 어떻게 발견했나\ncc 마무리 검증에서 `/context` 의 pipeline 이 **degraded** 로 나왔다. 내가 만든 검사가\n실제로 무언가를 말하고 있길래 들여다봤더니, 원인이 그 검사 자신이었다.\n\n`last_error` 가 \"등록된 1개 프로젝트 중 transcript 가 잡힌 것이 0개다\" — 테스트 픽스처다.\n\n## 원인\nPMF08 에서 `_run_all` 에 상태 기록을 붙이면서 경로를 모듈 상수로 고정했다.\n`--all` 을 돌리는 테스트들이 CONFIG 는 갈아끼우는데 `PIPELINE_STATUS_PATH` 는 안 바꿔서,\n**테스트를 한 번 돌릴 때마다 사용자의 실제 파이프라인 건강 신호에 실패가 기록됐다.**\n\n감시 신호를 테스트가 더럽힐 수 있으면 그 신호는 곧 무시된다. 그러면 감시가 없는 것보다\n나쁘다 — 없으면 최소한 없는 줄은 안다.\n\n## 고친 것\n- `_run_all(a, status_path=None)` — 경로 주입 가능. 왜 주입받아야 하는지 docstring 에 기록\n- `--all` 을 돌리는 테스트 2개 모듈이 임시 경로에 묶이도록\n- 가드 2개: 주입한 경로에만 쓰는지, 그리고 `--all` 을 돌리면서 경로를 격리하지 않는\n  테스트 파일이 있는지\n\n## 도중에 낸 실수 하나\n격리 코드를 삽입할 때 모듈 별칭을 확인하지 않고 `reconcile` 이라고 썼다. 실제 이름은\n`reconcile_runs` 여서 두 모듈이 **임포트조차 실패**했고, 그 결과 테스트가 353 → 322 로\n줄었는데 \"오염 없음(clean)\"으로 보였다. **위양성이었다** — 테스트가 안 돌았으니 당연히\n오염도 없다. 수가 줄어든 것을 보고서야 알았다.\n\n교훈: \"깨끗해졌다\"를 확인할 때 **표본이 그대로인지 함께 본다.**\n\n## 검증\n355 tests · ruff clean · 실제 상태 clean.\n격리를 제거하면 오염이 재현되고(\"실패한 프로젝트: broken\") 가드가 잡는 것까지 확인."
+    },
+    {
+      "id": "hg67",
+      "title": "비용 재계산이 대시보드에 반영되지 않던 구조 수정 + 칸반 테스트 격리",
+      "description": "",
+      "details": "## 한 일\n\n`--recost` 실행과, 그 결과가 대시보드에 도달하지 못하던 구조를 고쳤다.\n\n### 과거 비용 재계산 (로컬)\n`reconcile_runs.py --recost` — 463행 $27,964 → $13,359, 11개 파일 갱신(백업 *.bak-recost).\n행 수·토큰은 그대로고 단가만 바뀐다(codebook 14행 41.7억 토큰 유지, $8,187 → $2,729).\n구 요율이 opus 입력을 $15/1M 로 잡던 것이 $5/1M 로 정정된 결과다.\n\n### 재계산이 반영되지 않던 구조 (zestim a2764f3)\n로컬에서 아무리 재계산해도 대시보드는 안 바뀌는 상태였다. 병합이 `cost_usd` 를 max 로\n합쳐서 낮아진 $2,729 가 저장된 $8,187 을 덮지 못했다. 두 머신 모두에서 재계산하고\n밀어도 마찬가지였다.\n\nmax 규칙 자체는 옳았다 — 세션 도중 기록된 과소집계가 완전한 값을 덮지 않게 하려던 것.\n문제는 \"값이 정당하게 내려가는 경우\"를 구분하지 못한다는 점이었다.\n\n비용은 토큰의 함수이므로 토큰만 max 로 지키고 비용은 중앙이 다시 계산한다. 요율표를\n한 곳에만 두면 머신마다 코드 버전이 달라도 값이 갈리지 않는다 — 이번 문제의 원인이\n정확히 \"머신마다 요율표가 달랐다\" 였다.\n\n세 지점: 수집(prepareIncomingRuns)에서 클라이언트 cost_usd 를 버리고 다시 찍고,\n레이스 집계와 프로젝트 비용은 읽을 때 다시 센다. 읽기에서 계산하므로 **백필 없이\n과거 행도 교정**된다. 컴포넌트 토큰이 없는 구 행은 재계산하면 0 이 되므로 저장값을\n유지하는 폴백을 뒀다.\n\n### 칸반 테스트가 머신 설정을 집어오던 것\n`test_kanban_edit` 2건이 이 머신에서 실패했다. id 발급이 server.py `_mint_id` 를 쓰고,\n그게 실제 sync.json 의 `id_prefix` 를 읽어 id 가 \"hg51\" 문자열이 되면서 정수 가정이\n무너졌다. CI 에는 sync.json 이 없어 초록이라 조용했다.\n\nimport 전에 `VIBE_HARNESS_SYNC_CONFIG` 를 없는 경로로 돌린다(상수가 import 시점에\n잡히므로 순서가 중요하다). 격리만 넣으면 다음에 누가 지웠을 때 다시 조용히 지나가므로\n가드 2개를 함께 뒀다.\n\n직접 확인: 실제 설정 경로에서 `_id_prefix()` = 'hg', 격리 경로에서 None.\n\n## 운영\n\n- `ss` 중 원격 main 이 force-push(히스토리 재작성)된 것을 감지. 내용 기준으로 내 작업이\n  전부 보존된 것을 확인한 뒤 백업 ref 를 만들고 reset 했다.\n- 설치본 갱신(`enroll.py --update-skill`) 후 서버 재시작. sync.json 지문 동일 —\n  토큰·접두어 보존 확인.\n- `feat/per-person-id-prefix` 브랜치 정리(원격 삭제 완료분).\n\n## 검증\nvibe-engineering 357 tests · ruff clean · CI 4/4 green (b568d5e)\nzestim 428 tests · build exit 0 · tsc 0 · 리비전 zestim-web-00285-sb7 배포",
+      "status": "done",
+      "priority": "medium",
+      "category": "backend",
+      "target_date": "",
+      "started_at": "2026-08-31T09:19:46+09:00",
+      "completed_at": "2026-08-31T09:19:46+09:00",
+      "lines_added": 620,
+      "lines_removed": 40,
+      "tokens_used": 0,
+      "created_at": "2026-08-31T09:19:34+09:00",
+      "updated_at": "2026-08-31T09:20:26+09:00",
+      "position": 0,
+      "phase": "PHASE_PMF09",
+      "review": "",
+      "created_by": "hogun",
+      "assigned_to": "hogun"
     }
   ]
 }
