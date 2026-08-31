@@ -23,6 +23,13 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPTS = os.path.join(ROOT, "scripts")
 CLI = os.path.join(SCRIPTS, "kanban_edit.py")
 
+# id 발급은 server.py 의 _mint_id 를 쓰고, 그건 실제 sync.json 을 읽어 id_prefix 를 본다.
+# 접두어를 설정한 머신에서는 id 가 "hg51" 같은 문자열이 되어 이 파일의 정수 가정이 전부
+# 깨진다. CI 에는 sync.json 이 없어 초록이라 조용히 지나간다 — 그래서 여기서 못 박는다.
+# 없는 경로를 가리키면 설정이 빈 것으로 읽혀 정수 발급이 된다.
+os.environ["VIBE_HARNESS_SYNC_CONFIG"] = os.path.join(
+    tempfile.gettempdir(), "vibe-harness-tests-no-sync.json")
+
 sys.path.insert(0, SCRIPTS)
 import kanban_edit  # noqa: E402
 
@@ -223,3 +230,26 @@ class CliTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ConfigIsolationTest(unittest.TestCase):
+    """이 파일의 정수 id 가정은 머신 설정이 새어 들어오면 무너진다.
+
+    실제로 id_prefix 를 설정한 머신에서 두 테스트가 깨졌다. CI 는 sync.json 이 없어
+    초록이었고, 그래서 아무도 몰랐다. 격리가 풀리면 여기서 먼저 잡힌다.
+    """
+
+    def test_sync_config_points_away_from_the_machine(self):
+        configured = os.environ.get("VIBE_HARNESS_SYNC_CONFIG", "")
+
+        self.assertNotIn(".claude", configured)
+        self.assertFalse(os.path.exists(configured))
+
+    def test_minted_ids_are_integers(self):
+        kdir = fresh_board()
+
+        subprocess.run([sys.executable, CLI, "--kanban-dir", kdir, "add", "정수 확인"],
+                       check=True, capture_output=True)
+
+        task = board(kdir)["tasks"][-1]
+        self.assertIsInstance(task["id"], int)
