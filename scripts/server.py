@@ -24,10 +24,13 @@ except ImportError:
     fcntl = _FcntlShim()
 import re
 import glob as glob_module
-from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
+from datetime import datetime, timedelta, timezone
 
-KST = ZoneInfo("Asia/Seoul")
+# 고정 오프셋이다. ZoneInfo("Asia/Seoul") 은 Windows 에서 tzdata 패키지 없이 죽는다 —
+# 시스템 tz DB 가 없기 때문이다. 그리고 이 줄은 모듈 최상단이라 import 자체가 막혀
+# 서버가 아예 뜨지 않았다. KST 는 DST 가 없으니 고정 오프셋으로 잃는 것이 없다.
+# reconcile_runs.py 가 이미 같은 규율을 쓰고 있었는데 여기만 빠져 있었다.
+KST = timezone(timedelta(hours=9))
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, urlencode
 from urllib import request as urllib_request

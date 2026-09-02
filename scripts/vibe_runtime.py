@@ -13,6 +13,7 @@ import secrets
 import shlex
 import subprocess
 import threading
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -20,6 +21,49 @@ try:
     import fcntl
 except ImportError:
     fcntl = None
+
+try:
+    import msvcrt          # Windows 표준 모듈. POSIX 에는 없다
+except ImportError:
+    msvcrt = None
+
+
+# Windows 에는 fcntl 이 없다. 그동안 잠금을 그냥 포기했고, 그 결과 병렬 편집에서
+# 갱신이 유실됐다 (테스트에서 12개 중 1개만 살아남았다). msvcrt 는 Windows 표준
+# 모듈이라 이걸 쓰면 런타임 의존성은 여전히 0이다.
+def _lock_exclusive(fh, timeout=30.0):
+    if fcntl is not None:
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        return
+    if msvcrt is None:
+        return
+    # msvcrt 에는 쓸 만한 "기다리는 잠금"이 없다. LK_LOCK 은 1초 간격으로 10번만
+    # 재시도하고 포기하므로 짧은 편집이 여러 개 겹치면 그냥 실패한다. 직접 돈다.
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            fh.seek(0)
+            msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+            return
+        except OSError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.02)
+
+
+def _lock_release(fh):
+    if fcntl is not None:
+        fcntl.flock(fh, fcntl.LOCK_UN)
+        return
+    if msvcrt is None:
+        return
+    try:
+        fh.seek(0)
+        msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+    except OSError:
+        # 이미 풀렸거나 핸들이 닫히는 중이다. 여기서 예외를 올리면 원래 작업의
+        # 예외를 덮어써 원인을 잃는다.
+        pass
 
 
 DEFAULT_POLICY = {
@@ -132,13 +176,11 @@ def runtime_lock(kanban_dir):
         lock_name = hashlib.sha256(key.encode("utf-8")).hexdigest() + ".lock"
         lock_path = os.path.join(lock_root, lock_name)
         with open(lock_path, "a+", encoding="utf-8") as handle:
-            if fcntl:
-                fcntl.flock(handle, fcntl.LOCK_EX)
+            _lock_exclusive(handle)
             try:
                 yield
             finally:
-                if fcntl:
-                    fcntl.flock(handle, fcntl.LOCK_UN)
+                _lock_release(handle)
 
 
 def new_identity():

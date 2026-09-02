@@ -47,7 +47,10 @@ ALLOW_MARK = "public-ok"
 SKIP_SUFFIXES = (".png", ".jpg", ".jpeg", ".gif", ".ico", ".pdf", ".zip", ".woff", ".woff2")
 
 # 이 파일 자신은 규칙의 예시를 담고 있으므로 대상에서 뺀다.
-SELF = os.path.relpath(os.path.abspath(__file__), ROOT)
+# git ls-files 는 항상 "/" 로 구분된 경로를 준다. os.path.relpath 는 Windows 에서
+# 역슬래시를 쓰므로 정규화하지 않으면 이 비교가 영원히 어긋나고, 게이트가 자기
+# 픽스처를 위반으로 신고한다. 규칙이 진짜 깨진 것과 구분이 안 되는 오탐이다.
+SELF = os.path.relpath(os.path.abspath(__file__), ROOT).replace(os.sep, "/")
 
 RULES = (
     (
@@ -77,7 +80,7 @@ def tracked_files():
     """git 이 추적하는 파일. 경계를 코드가 아니라 git 에게 묻는다."""
     out = subprocess.run(
         ["git", "-C", ROOT, "ls-files", "-z"],
-        capture_output=True, text=True, check=True,
+        capture_output=True, text=True, encoding="utf-8", check=True,
     ).stdout
     return [p for p in out.split("\0") if p]
 

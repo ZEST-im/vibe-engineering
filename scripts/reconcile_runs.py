@@ -123,9 +123,38 @@ def _kanban_dir_for(key):
     return p.get("kanban_dir") if isinstance(p, dict) else p
 
 
+def _project_slug(cwd):
+    r"""Claude Code 가 ~/.claude/projects/ 아래에 만드는 디렉터리 이름.
+
+    구분자와 '.', '_' 를 '-' 로 치환한다. Windows 에서는 역슬래시(\) 와 드라이브 문자의
+    ':' 도 구분자다 — c:\dev\proj 는 c--dev-proj 가 된다.
+
+    POSIX 만 보고 쓴 규칙(`[/._]`)은 Windows 경로를 **한 글자도** 바꾸지 못해
+    없는 디렉터리를 가리켰다. 크래시가 아니라 "transcript 0개"라서 수집이 조용히
+    과소집계됐다 — test_windows_compat.py 가 경고한 바로 그 형태다.
+    """
+    if re.match(r"^[A-Za-z]:", cwd):
+        cwd = cwd[0].lower() + cwd[1:]
+    return re.sub(r"[/._:\\]", "-", cwd)
+
+
 def _transcript_dir(cwd):
-    # Claude Code는 cwd의 '/', '.', '_'를 '-'로 치환해 ~/.claude/projects/ 하위로 씀
-    return os.path.expanduser("~/.claude/projects/" + re.sub(r"[/._]", "-", cwd))
+    base = os.path.expanduser("~/.claude/projects")
+    slug = _project_slug(cwd)
+    exact = os.path.join(base, slug)
+    if os.path.isdir(exact):
+        return exact
+    # 드라이브 문자의 대소문자는 Claude Code 가 넘기는 cwd 문자열에 달려 있어
+    # 버전에 따라 흔들릴 수 있다. 정확히 맞는 것이 없을 때만 대소문자를 무시해
+    # 한 번 더 찾는다. 그래도 없으면 계산값을 돌려주어 호출부의 "0개" 진단이 뜨게
+    # 한다 — 조용히 다른 디렉터리를 집는 것보다 안 잡히는 게 낫다.
+    try:
+        for name in os.listdir(base):
+            if name.lower() == slug.lower():
+                return os.path.join(base, name)
+    except OSError:
+        pass
+    return exact
 
 
 def _summarize(path):

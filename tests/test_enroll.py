@@ -220,6 +220,9 @@ class WriteSyncConfigTest(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
+    @unittest.skipIf(os.name == "nt",
+                     "Windows 에는 POSIX 권한 비트가 없다 — enroll.py 가 "
+                     "그 사실을 사용자에게 경고한다")
     def test_file_is_owner_only_readable(self):
         """시크릿이 들어간다 — 다른 사용자가 읽을 수 있으면 안 된다."""
         enroll.write_sync_config(self.path, {"secret": "tok-1"})
@@ -300,8 +303,19 @@ class AddProjectTest(unittest.TestCase):
     def test_registers_key_with_kanban_dir_under_repo(self):
         enroll.add_project(self.path, "codebook", self.repo)
 
-        self.assertEqual(os.path.join(self.repo, "vibe-harness"),
-                         self.read()["codebook"]["kanban_dir"])
+        expected = os.path.join(self.repo, "vibe-harness").replace(os.sep, "/")
+        self.assertEqual(expected, self.read()["codebook"]["kanban_dir"])
+
+    def test_kanban_dir_is_stored_posix_style(self):
+        """projects.json 은 플랫폼과 무관하게 "/" 로 적는다.
+
+        역슬래시를 그대로 넣으면 JSON 이스케이프가 필요해져 손으로 고칠 때 깨지고,
+        한 파일 안에서 머신마다 표기가 갈린다. 읽는 쪽은 전부 os.path.abspath 를
+        거치므로 "/" 로 적어도 Windows 에서 그대로 동작한다.
+        """
+        enroll.add_project(self.path, "codebook", self.repo)
+
+        self.assertNotIn(chr(92), self.read()["codebook"]["kanban_dir"])
 
     def test_creates_registry_when_absent(self):
         enroll.add_project(self.path, "codebook", self.repo)

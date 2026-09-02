@@ -4,6 +4,35 @@
 
 CWD=$(pwd)
 
+# python3 를 그냥 부르면 Windows 에서 깨진다. python.exe 만 깔린 머신에는 python3 가
+# 아예 없고, PATH 에는 MS Store 앱 실행 별칭 스텁이 앉아 있어 "파일은 존재하는데
+# exit 49" 로 실패한다. 그래서 존재 여부가 아니라 실제로 도는지를 본다.
+# 못 찾으면 파이썬이 필요한 경고만 건너뛴다 — 세션 시작 자체를 막지는 않는다.
+vibe_python() {
+  local c
+  for c in python3 python py; do
+    if command -v "$c" >/dev/null 2>&1 && "$c" -c "" >/dev/null 2>&1; then
+      printf '%s\n' "$c"
+      return 0
+    fi
+  done
+  return 1
+}
+PY_BIN=$(vibe_python) || PY_BIN=""
+
+# 수집 잡 상태를 보는 방법은 OS 마다 다르다. Windows 에 launchctl 은 없고,
+# 없는 명령을 알려주는 안내는 없느니만 못하다.
+job_status_hint() {
+  case "$(uname -s 2>/dev/null)" in
+    Darwin)
+      echo "launchctl list | grep vibe-harness   (2열이 마지막 exit status)" ;;
+    MINGW*|MSYS*|CYGWIN*|Windows*)
+      echo "schtasks /Query /TN VibeHarnessReconcile /V /FO LIST" ;;
+    *)
+      echo "crontab -l | grep reconcile_runs" ;;
+  esac
+}
+
 # 수집 파이프라인이 살아 있는지. 보드가 정상으로 보여도 수집은 죽어 있을 수 있고,
 # 실제로 세 번 그랬다 — 세 번 다 사람이 우연히 발견했다. 여기서 먼저 말한다.
 #
@@ -12,8 +41,12 @@ CWD=$(pwd)
 warn_if_pipeline_stale() {
   local status_file="$HOME/.claude/skills/vibe-harness/pipeline-status.json"
   [[ -f "$status_file" ]] || return 0
+  [[ -n "$PY_BIN" ]] || return 0
   local msg
-  msg=$(python3 - "$status_file" <<'PYEOF' 2>/dev/null
+# Windows 의 Python 은 stdout 을 로케일 코드페이지(cp949)로 인코딩한다. 이 훅의
+# echo 는 UTF-8 이라 한 스트림에 두 인코딩이 섞이고, 읽는 쪽에서 통째로 깨진다.
+# -X utf8 로 못박아 둔다.
+  msg=$("$PY_BIN" -X utf8 - "$status_file" <<'PYEOF' 2>/dev/null
 import datetime, json, sys
 STALE_HOURS = 24
 try:
@@ -30,13 +63,16 @@ if hours > STALE_HOURS:
     print("%.0f시간|%s" % (hours, (err or "")[:80]))
 PYEOF
 )
+  # Windows 의 Python 은 stdout 에 CRLF 를 쓴다. 명령 치환은 개행만 떼므로 CR 이
+  # 값 끝에 남아 뒤의 문자열 자르기와 출력이 어긋난다.
+  msg=${msg%$'\r'}
   [[ -z "$msg" ]] && return 0
   local hours="${msg%%|*}" err="${msg#*|}"
   echo ""
   echo "  ⚠ 토큰 수집이 ${hours} 동안 성공하지 못했습니다 (3시간마다 돌아야 함)"
   [[ -n "$err" ]] && echo "    마지막 오류: $err"
-  echo "    확인: python3 scripts/reconcile_runs.py --all --push"
-  echo "    잡 상태: launchctl list | grep vibe-harness   (2열이 마지막 exit status)"
+  echo "    확인: $PY_BIN scripts/reconcile_runs.py --all --push"
+  echo "    잡 상태: $(job_status_hint)"
   echo ""
 }
 
@@ -78,8 +114,9 @@ find_kanban() {
 warn_if_archive_overdue() {
   local kb; kb=$(find_kanban "$CWD") || return 0
   [[ -n "$kb" ]] || return 0
+  [[ -n "$PY_BIN" ]] || return 0
   local msg
-  msg=$(python3 - "$kb" <<'PYEOF' 2>/dev/null
+  msg=$("$PY_BIN" -X utf8 - "$kb" <<'PYEOF' 2>/dev/null
 import json, os, sys
 DONE, BYTES = 30, 50 * 1024
 try:
@@ -93,6 +130,7 @@ if done >= DONE or size >= BYTES:
     print("%d|%d" % (done, size // 1024))
 PYEOF
 )
+  msg=${msg%$'\r'}
   [[ -z "$msg" ]] && return 0
   echo ""
   echo "  ⚠ 완료 태스크 ${msg%%|*}건(${msg#*|}KB)이 kanban.json 에 쌓였습니다 — 세션마다 읽힙니다"
@@ -106,7 +144,8 @@ if [[ -z "$PHASE_FILE" ]]; then
   # (kanban has tasks) — otherwise stay silent (not every dir uses phases).
   KANBAN=$(find_kanban "$CWD")
   if [[ -n "$KANBAN" ]]; then
-    NTASKS=$(python3 -c "import json,sys;print(len(json.load(open('$KANBAN')).get('tasks',[])))" 2>/dev/null || echo 0)
+    NTASKS=$("${PY_BIN:-python3}" -X utf8 -c "import json,sys;print(len(json.load(open('$KANBAN')).get('tasks',[])))" 2>/dev/null || echo 0)
+    NTASKS=${NTASKS%$'\r'}
     if [[ "$NTASKS" -gt 0 ]] 2>/dev/null; then
       PROOT=$(dirname "$(dirname "$KANBAN")")
       echo ""

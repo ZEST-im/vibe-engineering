@@ -104,7 +104,7 @@ class RepoShipsWhatItClaimsTest(unittest.TestCase):
     def _tracked(self, path):
         import subprocess
         out = subprocess.run(["git", "-C", ROOT, "ls-files", "--error-unmatch", path],
-                             capture_output=True, text=True)
+                             capture_output=True, text=True, encoding="utf-8")
         return out.returncode == 0
 
     def test_ci_workflow_is_tracked_by_git(self):

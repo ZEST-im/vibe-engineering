@@ -268,7 +268,8 @@ class RuntimeTest(unittest.TestCase):
                 "--project-root", self.project,
                 "--agent", "test", "--once", "--command",
                 sys.executable, "-c", "raise SystemExit(0)",
-            ], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env, timeout=20)
+            ], text=True, encoding="utf-8", stdout=subprocess.PIPE,
+               stderr=subprocess.STDOUT, env=env, timeout=20)
             self.assertEqual(completed.returncode, 0, completed.stdout)
             task = self._read_json("kanban.json")["tasks"][0]
             self.assertEqual(task["status"], "done")

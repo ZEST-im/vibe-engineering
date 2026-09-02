@@ -37,6 +37,7 @@ import importlib.util
 import json
 import os
 import sys
+import time
 
 try:
     import fcntl
@@ -44,6 +45,52 @@ try:
 except ImportError:  # Windows
     fcntl = None
     HAVE_FLOCK = False
+
+try:
+    import msvcrt          # Windows 표준 모듈. POSIX 에는 없다
+except ImportError:
+    msvcrt = None
+
+# 어느 쪽이든 프로세스 간 배타 잠금을 걸 수 있는가.
+HAVE_LOCK = HAVE_FLOCK or msvcrt is not None
+
+
+# Windows 에는 fcntl 이 없다. 그동안 잠금을 그냥 포기했고, 그 결과 병렬 편집에서
+# 갱신이 유실됐다 (테스트에서 12개 중 1개만 살아남았다). msvcrt 는 Windows 표준
+# 모듈이라 이걸 쓰면 런타임 의존성은 여전히 0이다.
+def _lock_exclusive(fh, timeout=30.0):
+    if fcntl is not None:
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        return
+    if msvcrt is None:
+        return
+    # msvcrt 에는 쓸 만한 "기다리는 잠금"이 없다. LK_LOCK 은 1초 간격으로 10번만
+    # 재시도하고 포기하므로 짧은 편집이 여러 개 겹치면 그냥 실패한다. 직접 돈다.
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            fh.seek(0)
+            msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+            return
+        except OSError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.02)
+
+
+def _lock_release(fh):
+    if fcntl is not None:
+        fcntl.flock(fh, fcntl.LOCK_UN)
+        return
+    if msvcrt is None:
+        return
+    try:
+        fh.seek(0)
+        msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+    except OSError:
+        # 이미 풀렸거나 핸들이 닫히는 중이다. 여기서 예외를 올리면 원래 작업의
+        # 예외를 덮어써 원인을 잃는다.
+        pass
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 LOCK_NAME = "kanban.lock"
@@ -68,22 +115,22 @@ def kanban_lock(kanban_dir, require=False, timeout_note=True):
     """
     os.makedirs(kanban_dir, exist_ok=True)
     path = os.path.join(kanban_dir, LOCK_NAME)
-    if not HAVE_FLOCK:
+    if not HAVE_LOCK:
         if require:
             raise SystemExit(
-                "이 환경에는 fcntl 이 없어 파일 잠금을 걸 수 없다.\n"
+                "이 환경에는 fcntl 도 msvcrt 도 없어 파일 잠금을 걸 수 없다.\n"
                 "  원자적 교체는 되지만 동시 편집의 갱신 유실은 막지 못한다.\n"
                 "  --require-lock 없이 실행하면 잠금 없이 진행한다.")
         yield None
         return
     fh = open(path, "a+")
     try:
-        fcntl.flock(fh, fcntl.LOCK_EX)
+        _lock_exclusive(fh)
         yield fh
     finally:
         # 예외로 빠져나가도 반드시 푼다. 안 그러면 다음 편집이 영영 막힌다.
         try:
-            fcntl.flock(fh, fcntl.LOCK_UN)
+            _lock_release(fh)
         finally:
             fh.close()
 

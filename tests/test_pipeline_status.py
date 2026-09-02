@@ -184,7 +184,7 @@ class HookAgreesWithServerTest(unittest.TestCase):
         with open(os.path.join(d, "pipeline-status.json"), "w", encoding="utf-8") as fh:
             json.dump({"last_success": last_success, "last_error": last_error}, fh)
         env = dict(os.environ, HOME=home)
-        return subprocess.run(["bash", HOOK], capture_output=True, text=True,
+        return subprocess.run(["bash", HOOK], capture_output=True, text=True, encoding="utf-8",
                               env=env, cwd=home).stdout
 
 

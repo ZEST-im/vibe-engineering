@@ -221,7 +221,11 @@ def add_project(registry_path, key, repo_path):
                 f"  기존: {prev}\n  요청: {os.path.abspath(kdir)}\n"
                 "  같은 리포의 워크트리라면 등록하지 않는다 — 본체 하나면 충분하다.\n"
                 "  정말 옮기려면 projects.json 에서 기존 항목을 먼저 지운다.")
-    data[key] = {"name": key, "kanban_dir": kdir}
+    # JSON 에는 항상 "/" 로 적는다. Windows 의 os.path.join 은 역슬래시를 주는데,
+    # 그대로 넣으면 JSON 이스케이프가 필요해지고 같은 파일 안에서 머신마다 표기가
+    # 갈린다. 읽는 쪽은 전부 os.path.abspath 를 거치므로 "/" 로 적어도 Windows 에서
+    # 그대로 동작한다.
+    data[key] = {"name": key, "kanban_dir": kdir.replace(os.sep, "/")}
     parent = os.path.dirname(registry_path)
     if parent:
         os.makedirs(parent, exist_ok=True)

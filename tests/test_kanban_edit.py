@@ -181,11 +181,17 @@ class LockBehaviourTest(unittest.TestCase):
             finally:
                 probe.close()
 
-    def test_require_lock_fails_loudly_without_fcntl(self):
-        """잠글 수 없으면 조용히 진행하지 않는다 — 조용한 진행이 이 레포의 반복 실패다."""
+    def test_require_lock_fails_loudly_without_any_lock_primitive(self):
+        """잠글 수 없으면 조용히 진행하지 않는다 — 조용한 진행이 이 레포의 반복 실패다.
+
+        Windows 는 fcntl 이 없어 잠금을 통째로 포기하고 있었고, 병렬 편집에서
+        12개 중 1개만 살아남았다. 이제 msvcrt 로 잠금을 거므로 "fcntl 없음"은
+        더 이상 "잠금 없음"이 아니다. 크게 실패해야 하는 조건은 둘 다
+        없을 때다 — 그것이 HAVE_LOCK 이다.
+        """
         kdir = fresh_board()
-        saved = kanban_edit.HAVE_FLOCK
-        kanban_edit.HAVE_FLOCK = False
+        saved = kanban_edit.HAVE_LOCK
+        kanban_edit.HAVE_LOCK = False
         try:
             with self.assertRaises(SystemExit):
                 with kanban_edit.kanban_lock(kdir, require=True):
@@ -194,7 +200,7 @@ class LockBehaviourTest(unittest.TestCase):
             with kanban_edit.kanban_lock(kdir, require=False):
                 pass
         finally:
-            kanban_edit.HAVE_FLOCK = saved
+            kanban_edit.HAVE_LOCK = saved
 
     def test_write_leaves_no_tmp_file(self):
         kdir = fresh_board()
@@ -206,7 +212,7 @@ class LockBehaviourTest(unittest.TestCase):
 class CliTest(unittest.TestCase):
     def run_cli(self, kdir, *args):
         return subprocess.run([sys.executable, CLI, "--kanban-dir", kdir, *args],
-                              capture_output=True, text=True)
+                              capture_output=True, text=True, encoding="utf-8")
 
     def test_add_then_set_then_show(self):
         kdir = fresh_board()

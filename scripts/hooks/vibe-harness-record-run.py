@@ -28,6 +28,24 @@ import sys
 import urllib.request
 import urllib.error
 
+try:
+    import fcntl
+except ImportError:
+    # Windows has no fcntl. flock becomes a no-op - the atomic .tmp then
+    # os.replace below is the real write guard, and this is a single-user
+    # local file. A bare "import fcntl" here used to raise inside
+    # append_direct(), which is the path taken whenever the localhost server
+    # is down. The SessionEnd hook swallows stderr, so that crash recorded
+    # nothing at all and said nothing: silent under-counting on every
+    # Windows machine without a running server.
+    class _FcntlShim:
+        LOCK_EX = LOCK_UN = 0
+
+        def flock(self, *args, **kwargs):
+            pass
+
+    fcntl = _FcntlShim()
+
 CONFIG_PATH = os.path.expanduser("~/.claude/skills/vibe-harness/projects.json")
 SERVER = "http://localhost:4242"
 
@@ -35,9 +53,13 @@ SERVER = "http://localhost:4242"
 def _now():
     # KST-aware ISO (…+09:00). datetime.now(KST) is correct on any host, so runs
     # recorded from a UTC cloud runner don't land in the wrong day's bucket.
-    from datetime import datetime
-    from zoneinfo import ZoneInfo
-    return datetime.now(ZoneInfo("Asia/Seoul")).isoformat(timespec="seconds")
+    #
+    # Fixed offset, not ZoneInfo("Asia/Seoul"): Windows ships no system tz database,
+    # so ZoneInfo raises ZoneInfoNotFoundError unless the tzdata package happens to
+    # be installed. The SessionEnd hook swallows stderr and exits 0, which turned
+    # that crash into silent under-counting. KST has no DST, so nothing is lost.
+    from datetime import datetime, timedelta, timezone
+    return datetime.now(timezone(timedelta(hours=9))).isoformat(timespec="seconds")
 
 
 def _git(args, cwd):
@@ -148,7 +170,6 @@ def already_recorded(kanban_dir, session_id, agent):
 
 def append_direct(kanban_dir, run):
     """Append run to runs.json (atomic) and sync the task's tokens_used."""
-    import fcntl
     rp = os.path.join(kanban_dir, "runs.json")
     data = {"version": 1, "runs": []}
     if os.path.exists(rp):
