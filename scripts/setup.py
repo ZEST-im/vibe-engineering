@@ -14,6 +14,8 @@ SRC = os.path.dirname(os.path.abspath(__file__))
 HOME = os.path.expanduser("~")
 PLIST_NAME = "com.vibe-harness.server.plist"
 LAUNCH_AGENTS = os.path.expanduser("~/Library/LaunchAgents")
+WINDOWS_SERVER_TASK = "VibeHarnessServer"
+WINDOWS_RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 SETTINGS_PATH = os.path.expanduser("~/.claude/settings.json")
 HOOKS_DIR = os.path.expanduser("~/.claude/hooks")
 REPO_URL = "https://raw.githubusercontent.com/ZEST-im/vibe-engineering/main"
@@ -170,8 +172,106 @@ def copy_server_files():
         print(f"  NOTE: Old directory {old_dir} still exists. You can remove it manually.")
 
 
+def _windowless_python():
+    """pythonw.exe runs without a console window. A server that pops a
+    terminal at every logon is a server people uninstall."""
+    cand = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
+    return cand if os.path.exists(cand) else sys.executable
+
+
+def build_server_schtasks_argv(python=None, task_name=WINDOWS_SERVER_TASK):
+    """Register the kanban server to start at logon on Windows.
+
+    Mirrors the discipline in enroll.py: /F overwrites the same fixed task
+    name so re-running setup never leaves two tasks behind, and every path
+    is quoted because spaces in paths are the norm on Windows.
+    """
+    py = python or _windowless_python()
+    run = '"%s" "%s" serve' % (py, os.path.join(DEST, "server.py"))
+    return ["schtasks", "/Create", "/F", "/SC", "ONLOGON",
+            "/TN", task_name, "/TR", run]
+
+
+def server_run_command():
+    return '"%s" "%s" serve' % (_windowless_python(),
+                                 os.path.join(DEST, "server.py"))
+
+
+def install_windows_run_key():
+    """Per-user logon autostart via HKCU Run.
+
+    schtasks /SC ONLOGON needs elevation, so on a normal account the task
+    cannot be created at all. The Run key is the per-user equivalent that
+    needs no admin rights, and it stays visible to the user in Task
+    Manager's Startup tab - which matters for something that starts a
+    server on every login.
+    """
+    import winreg
+
+    try:
+        with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, WINDOWS_RUN_KEY,
+                                0, winreg.KEY_SET_VALUE) as key:
+            winreg.SetValueEx(key, WINDOWS_SERVER_TASK, 0, winreg.REG_SZ,
+                              server_run_command())
+    except OSError as exc:
+        print(f"  WARN could not write the HKCU Run key ({exc})")
+        return False
+    print(f"  REGISTERED HKCU Run\\{WINDOWS_SERVER_TASK}"
+          " - server starts at logon")
+    return True
+
+
+def remove_windows_run_key():
+    import winreg
+
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, WINDOWS_RUN_KEY, 0,
+                            winreg.KEY_SET_VALUE) as key:
+            winreg.DeleteValue(key, WINDOWS_SERVER_TASK)
+    except FileNotFoundError:
+        return False
+    except OSError as exc:
+        print(f"  WARN could not remove the HKCU Run key ({exc})")
+        return False
+    print(f"  REMOVED HKCU Run\\{WINDOWS_SERVER_TASK}")
+    return True
+
+
+def install_windows_server_task():
+    argv = build_server_schtasks_argv()
+    try:
+        done = subprocess.run(argv, capture_output=True, text=True,
+                              encoding="utf-8", errors="replace",
+                              check=False)
+    except OSError as exc:
+        print(f"  schtasks unavailable ({exc}) - trying the HKCU Run key")
+        return install_windows_run_key()
+    if done.returncode != 0:
+        # The usual reason is that /SC ONLOGON requires elevation. Fall back
+        # rather than telling the user to run a command they would need an
+        # admin shell for.
+        detail = (done.stderr or done.stdout or "").strip()[-200:]
+        print(f"  schtasks refused ({detail}) - using the HKCU Run key")
+        return install_windows_run_key()
+    remove_windows_run_key()   # 두 경로가 동시에 서버를 띄우지 않게 한다
+    print(f"  REGISTERED {WINDOWS_SERVER_TASK} - server starts at logon")
+    return True
+
+
 def install_launchd():
-    """Install launchd agent for auto-starting kanban server on login"""
+    """Install an auto-start agent for the kanban server.
+
+    launchd is macOS-only. This used to call launchctl unconditionally, and
+    on Windows subprocess raises FileNotFoundError rather than returning a
+    non-zero code - which aborted main() before step 4, so the hooks were
+    never installed and token collection silently never ran.
+    """
+    if sys.platform != "darwin":
+        if os.name == "nt":
+            return install_windows_server_task()
+        print(f"  SKIP auto-start ({sys.platform} has no supported agent)")
+        print(f"       run it manually: {sys.executable} {DEST}/server.py serve")
+        return False
     os.makedirs(LAUNCH_AGENTS, exist_ok=True)
 
     # Read template and expand __HOME__
@@ -305,7 +405,21 @@ def uninstall_hooks():
 
 
 def uninstall_launchd():
-    """Uninstall launchd agent"""
+    """Uninstall the auto-start agent (launchd on macOS, a task on Windows)"""
+    if os.name == "nt":
+        try:
+            done = subprocess.run(
+                ["schtasks", "/Delete", "/F", "/TN", WINDOWS_SERVER_TASK],
+                capture_output=True, text=True, encoding="utf-8",
+                errors="replace", check=False)
+        except OSError:
+            print(f"  {WINDOWS_SERVER_TASK} not removed (schtasks unavailable)")
+            return
+        if done.returncode == 0:
+            print(f"  REMOVED {WINDOWS_SERVER_TASK}")
+        elif not remove_windows_run_key():
+            print(f"  {WINDOWS_SERVER_TASK} not installed")
+        return
     dst = os.path.join(LAUNCH_AGENTS, PLIST_NAME)
     if os.path.exists(dst):
         subprocess.run(["launchctl", "unload", dst], capture_output=True)
@@ -445,9 +559,14 @@ def main():
     migrate_projects_json()
     print()
 
-    # Step 3: Install launchd agent
-    print("[3/4] Installing launchd agent (auto-start on login)...")
-    install_launchd()
+    # Step 3: Install the auto-start agent
+    print("[3/4] Installing auto-start agent (server on login)...")
+    try:
+        install_launchd()
+    except Exception as exc:
+        # Never let auto-start take the hooks down with it. The hooks are the
+        # part that collects tokens; auto-start is a convenience.
+        print(f"  WARN auto-start step failed ({exc}) - continuing")
     print()
 
     # Step 4: Install hooks (scope guard, session start, stop gate, code review)

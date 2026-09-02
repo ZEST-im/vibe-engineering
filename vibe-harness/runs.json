@@ -126,6 +126,27 @@
         "cr": 1.3312,
         "cw": 0.0
       }
+    },
+    {
+      "task_id": null,
+      "agent": "claude",
+      "model": "claude-opus-5",
+      "tokens": 63585207,
+      "input_tokens": 764,
+      "output_tokens": 463220,
+      "cache_read_tokens": 62400148,
+      "cache_write_tokens": 721075,
+      "cost_usd": 47.2911,
+      "cost_breakdown": {
+        "in": 0.00382,
+        "out": 11.5805,
+        "cr": 31.200074,
+        "cw": 4.506719
+      },
+      "session_id": "2a4a6b28-2457-487b-91b3-1356d1a7515f",
+      "commit": "",
+      "ts": "2026-09-02T17:28:04+09:00",
+      "source": "transcript-reconcile"
     }
   ]
 }

@@ -17,6 +17,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import types
 import unittest
 
 
@@ -33,6 +34,11 @@ _rspec = importlib.util.spec_from_file_location(
     "reconcile_runs", os.path.join(SCRIPTS, "reconcile_runs.py"))
 reconcile = importlib.util.module_from_spec(_rspec)
 _rspec.loader.exec_module(reconcile)
+
+_sspec = importlib.util.spec_from_file_location(
+    "vh_setup", os.path.join(SCRIPTS, "setup.py"))
+setup = importlib.util.module_from_spec(_sspec)
+_sspec.loader.exec_module(setup)
 
 RECORDER = os.path.join(SCRIPTS, "hooks", "vibe-harness-record-run.py")
 COLLECTOR = os.path.join(SCRIPTS, "hooks", "vibe-harness-token-collector.sh")
@@ -390,3 +396,117 @@ class TokenCollectorHookTest(unittest.TestCase):
     def test_no_carriage_return_leaks_into_any_argument(self):
         for arg in self._run():
             self.assertNotIn(chr(13), arg, repr(arg))
+
+
+class SetupAutoStartTest(unittest.TestCase):
+    r"""setup.py 의 3단계가 Windows 에서 4단계(훅 설치)를 통째로 날려먹던 것.
+
+    launchd 는 macOS 전용인데 launchctl 을 조건 없이 불렀다. Windows 에서
+    subprocess 는 "0 아닌 종료코드"가 아니라 FileNotFoundError 를 던지므로 main()
+    이 훅 설치에 도달하지 못했다. 훅이 없으면 SessionEnd 수집이 아예 돌지 않는다 —
+    이 레포가 반복해서 당한 "조용한 실패"의 원형이다. 그래서 3단계는 무슨 일이
+    있어도 4단계를 막지 못해야 한다.
+    """
+
+    def test_server_task_overwrites_one_fixed_name(self):
+        """재실행이 작업을 두 개로 늘리면 안 된다 — enroll.py 와 같은 규율."""
+        argv = setup.build_server_schtasks_argv(
+            python=r"C:\Program Files\Python312\pythonw.exe")
+
+        self.assertEqual("schtasks", argv[0])
+        self.assertIn("/Create", argv)
+        self.assertIn("/F", argv)
+        self.assertEqual(setup.WINDOWS_SERVER_TASK, argv[argv.index("/TN") + 1])
+
+    def test_server_task_runs_at_logon(self):
+        argv = setup.build_server_schtasks_argv()
+
+        self.assertEqual("ONLOGON", argv[argv.index("/SC") + 1])
+
+    def test_server_task_quotes_paths_that_contain_spaces(self):
+        argv = setup.build_server_schtasks_argv(
+            python=r"C:\Program Files\Python312\pythonw.exe")
+        tr = argv[argv.index("/TR") + 1]
+
+        self.assertIn('"C:\\Program Files\\Python312\\pythonw.exe"', tr)
+        self.assertIn("server.py", tr)
+
+    def test_non_darwin_skips_instead_of_raising(self):
+        """예외가 새면 훅이 사라진다. macOS 아닌 곳에서는 조용히 건너뛴다."""
+        saved_platform, saved_name = setup.sys.platform, setup.os.name
+        setup.sys.platform, setup.os.name = "linux", "posix"
+        try:
+            self.assertFalse(setup.install_launchd())
+        finally:
+            setup.sys.platform, setup.os.name = saved_platform, saved_name
+
+    def test_non_darwin_does_not_create_a_mac_only_directory(self):
+        """~/Library/LaunchAgents 를 Windows 에 만들어 두는 것은 쓰레기다."""
+        saved_platform, saved_name = setup.sys.platform, setup.os.name
+        saved_agents = setup.LAUNCH_AGENTS
+        tmp = tempfile.mkdtemp()
+        setup.LAUNCH_AGENTS = os.path.join(tmp, "Library", "LaunchAgents")
+        setup.sys.platform, setup.os.name = "linux", "posix"
+        try:
+            setup.install_launchd()
+
+            self.assertFalse(os.path.exists(setup.LAUNCH_AGENTS))
+        finally:
+            setup.sys.platform, setup.os.name = saved_platform, saved_name
+            setup.LAUNCH_AGENTS = saved_agents
+
+    def test_windows_delegates_to_the_scheduled_task(self):
+        """Windows 에서는 건너뛰는 대신 로그온 작업으로 같은 목적을 이룬다."""
+        saved_platform, saved_name = setup.sys.platform, setup.os.name
+        saved_install = setup.install_windows_server_task
+        calls = []
+        setup.install_windows_server_task = lambda: calls.append(1) or True
+        setup.sys.platform, setup.os.name = "win32", "nt"
+        try:
+            self.assertTrue(setup.install_launchd())
+            self.assertEqual(1, len(calls))
+        finally:
+            setup.sys.platform, setup.os.name = saved_platform, saved_name
+            setup.install_windows_server_task = saved_install
+
+    def test_schtasks_refusal_falls_back_to_the_run_key(self):
+        """ONLOGON 은 관리자 권한을 요구한다.
+
+        일반 계정에서는 schtasks 가 "액세스가 거부되었습니다" 로 실패한다. 거기서
+        포기하면 서버가 로그온 때 뜨지 않고, 사용자에게는 관리자 셸이 필요한 명령을
+        직접 치라고 안내하게 된다. 권한 없이 되는 경로(HKCU Run)로 떨어져야 한다.
+        """
+        from unittest import mock
+
+        refused = types.SimpleNamespace(
+            returncode=1, stderr="ERROR: Access is denied.", stdout="")
+        with mock.patch.object(setup.subprocess, "run", return_value=refused), \
+                mock.patch.object(setup, "install_windows_run_key",
+                                  return_value=True) as fallback:
+            self.assertTrue(setup.install_windows_server_task())
+
+        fallback.assert_called_once_with()
+
+    def test_missing_schtasks_falls_back_to_the_run_key(self):
+        """schtasks 가 아예 없는 환경도 있다. 예외가 새면 setup 이 멈춘다."""
+        from unittest import mock
+
+        with mock.patch.object(setup.subprocess, "run",
+                               side_effect=OSError("no schtasks")), \
+                mock.patch.object(setup, "install_windows_run_key",
+                                  return_value=True) as fallback:
+            self.assertTrue(setup.install_windows_server_task())
+
+        fallback.assert_called_once_with()
+
+    def test_successful_task_drops_the_run_key(self):
+        """두 경로가 동시에 살아 있으면 로그온마다 서버가 두 번 뜬다."""
+        from unittest import mock
+
+        ok = types.SimpleNamespace(returncode=0, stderr="", stdout="")
+        with mock.patch.object(setup.subprocess, "run", return_value=ok), \
+                mock.patch.object(setup, "remove_windows_run_key",
+                                  return_value=False) as cleanup:
+            self.assertTrue(setup.install_windows_server_task())
+
+        cleanup.assert_called_once_with()
