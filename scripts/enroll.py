@@ -339,6 +339,34 @@ def resolve_script_path():
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), "reconcile_runs.py")
 
 
+def flush_dashboard_snapshot():
+    """대시보드 스냅샷을 중앙으로 밀어 새 프로젝트가 source 로 올라가게 한다.
+
+    스위치가 셋이었다. projects.json(수집) → sync.json.dashboards(대시보드 대상) →
+    **실제 push**. 앞의 둘만 켜도 중앙 sources 는 그대로다 — 화면은 여전히 그 프로젝트를
+    모른다. `--add-project` 는 파일만 고치고 push 를 트리거하지 않았다.
+
+    2026-09-05 실측: 두 프로젝트를 등록했는데도 중앙 sources 가 22개 그대로여서 참가
+    미완료 팝업이 계속 떴다. 수동 flush 후에야 24개가 되고 판정이 ok 로 바뀌었다.
+    등록의 마지막 한 걸음을 사람이 기억해야 하면 그건 또 조용히 빠진다.
+
+    설치본 server.py 의 `sync` 서브커맨드를 쓴다 — 서버는 리포가 아니라 설치본에서 돈다.
+    실패는 치명적이지 않다(스케줄 sync 가 나중에 밀어준다). 그래서 예외를 올리지 않고
+    무엇이 잘못됐는지만 알린다.
+    """
+    server = os.path.join(SKILL_DIR, "server.py")
+    if not os.path.isfile(server):
+        return False, f"설치본 server.py 를 찾지 못했다: {server}"
+    try:
+        out = subprocess.run([sys.executable, server, "sync"],
+                             capture_output=True, text=True, timeout=120)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return False, f"스냅샷 push 실행 실패: {exc}"
+    if out.returncode != 0:
+        return False, (out.stderr or out.stdout or "").strip() or "스냅샷 push 실패"
+    return True, (out.stdout or "").strip()
+
+
 SYSTEM_PYTHON = "/usr/bin/python3"
 
 
@@ -508,6 +536,7 @@ def main(argv=None):
 
     # 프로젝트 등록만 하는 경우 — 토큰 없이도 쓸 수 있다
     if a.add_project and not a.token and not a.repair:
+        changed_dashboard = False
         for pair in a.add_project:
             key, repo = parse_project_arg(pair)
             info = add_project(PROJECTS_CONFIG, key, repo)
@@ -515,7 +544,12 @@ def main(argv=None):
             # 수집(projects.json)과 대시보드 노출(sync.json)은 서로 다른 스위치다.
             # 둘 다 켜야 한다 — 하나만 켜면 사용량이 올라가는데 화면에는 없다.
             if add_project_to_dashboard(SYNC_CONFIG, key):
+                changed_dashboard = True
                 print(f"dashboard : {key} → {DEFAULT_DASHBOARD} 목록에 추가")
+        if changed_dashboard:
+            # 파일만 고치면 중앙 sources 는 그대로다 — 화면은 여전히 모른다.
+            ok, detail = flush_dashboard_snapshot()
+            print("snapshot  : %s" % ("중앙에 반영됨" if ok else f"push 실패 — {detail}"))
         print("\n확인:  python3 %s --all --dry-run" % resolve_script_path())
         return 0
 
@@ -550,12 +584,17 @@ def main(argv=None):
                   f", id_prefix={cfg.get('id_prefix') or '(없음 → 정수 발급)'}")
 
     # 2.5) 프로젝트 등록 — 수집(projects.json) + 대시보드 노출(sync.json) 둘 다
+    dashboard_changed = False
     for pair in (a.add_project or []):
         key, repo = parse_project_arg(pair)
         info = add_project(PROJECTS_CONFIG, key, repo)
         print(f"projects  : {key} → {info['kanban_dir']}")
         if add_project_to_dashboard(SYNC_CONFIG, key):
+            dashboard_changed = True
             print(f"dashboard : {key} → {DEFAULT_DASHBOARD} 목록에 추가")
+    if dashboard_changed:
+        ok, detail = flush_dashboard_snapshot()
+        print("snapshot  : %s" % ("중앙에 반영됨" if ok else f"push 실패 — {detail}"))
 
     # 3) 수집 에이전트
     script = resolve_script_path()

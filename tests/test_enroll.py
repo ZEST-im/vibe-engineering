@@ -463,5 +463,59 @@ class AddProjectToDashboardTest(unittest.TestCase):
         self.assertEqual(0o600, os.stat(self.path).st_mode & 0o777)
 
 
+class FlushDashboardSnapshotTest(unittest.TestCase):
+    """등록의 마지막 한 걸음. 파일만 고치면 중앙 sources 는 그대로다.
+
+    2026-09-05 실측: 두 프로젝트를 등록했는데도 중앙 sources 가 22개 그대로여서 참가
+    미완료 팝업이 계속 떴다. 수동 flush 후에야 24개가 되고 판정이 ok 로 바뀌었다.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self._skill = enroll.SKILL_DIR
+        enroll.SKILL_DIR = self.tmp.name
+
+    def tearDown(self):
+        enroll.SKILL_DIR = self._skill
+        self.tmp.cleanup()
+
+    def _server(self, body):
+        path = os.path.join(self.tmp.name, "server.py")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(body)
+        return path
+
+    def test_reports_success_when_sync_exits_zero(self):
+        self._server("print('Remote sync complete')\n")
+
+        ok, detail = enroll.flush_dashboard_snapshot()
+
+        self.assertTrue(ok)
+        self.assertIn("Remote sync complete", detail)
+
+    def test_passes_the_sync_subcommand(self):
+        self._server("import sys\nprint(' '.join(sys.argv[1:]))\n")
+
+        ok, detail = enroll.flush_dashboard_snapshot()
+
+        self.assertTrue(ok)
+        self.assertEqual("sync", detail)
+
+    def test_reports_failure_with_stderr(self):
+        self._server("import sys\nsys.stderr.write('not configured')\nsys.exit(2)\n")
+
+        ok, detail = enroll.flush_dashboard_snapshot()
+
+        self.assertFalse(ok)
+        self.assertIn("not configured", detail)
+
+    def test_missing_installed_server_is_reported_not_raised(self):
+        """설치본이 없어도 등록 자체를 실패로 만들면 안 된다 — 스케줄 sync 가 나중에 민다."""
+        ok, detail = enroll.flush_dashboard_snapshot()
+
+        self.assertFalse(ok)
+        self.assertIn("server.py", detail)
+
+
 if __name__ == "__main__":
     unittest.main()
