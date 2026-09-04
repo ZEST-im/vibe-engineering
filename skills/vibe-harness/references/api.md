@@ -82,6 +82,20 @@ curl -X POST http://localhost:4242/api/{project_key}/tasks/bulk \
   -H 'Content-Type: application/json' \
   -d '{"tasks":[{"title":"Task 1","status":"done"},{"title":"Task 2","status":"todo"}]}'
 
+# Search archived history, decisions and live tasks — returns snippets, not files
+curl -G http://localhost:4242/api/{project_key}/search \
+  --data-urlencode 'q=왜 이렇게 결정했나' --data-urlencode 'limit=5'
+#   → {"query":…, "total":N, "hits":[{source, id, title, phase, date, fields, snippet}]}
+#
+# Archiving made session start cheap by *not reading* history. That left the history
+# unreachable: answering "why did we decide this?" meant loading whole files again.
+# Search returns the matching span only, so the cost is paid per question rather than
+# per session. /context stays as small as it was — search is never embedded in it.
+#
+# An empty q is refused rather than dumping everything, `total` reports the real count
+# even when `limit` truncates, and one record yields one hit no matter how many of its
+# fields matched.
+
 # Archive done tasks to monthly files
 curl -X POST http://localhost:4242/api/{project_key}/archive
 ```

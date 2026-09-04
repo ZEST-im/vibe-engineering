@@ -8,8 +8,36 @@ Vibe coding is fast. But it drifts. Vibe Engineering gives Claude a frame: what 
 **How it got here.** It started as **vibe-kanban** — just a board to track what the agent was doing. Tracking alone
 turned out to be too little: the agent needed boundaries, gates, and a record, so the board grew into a session
 harness and the project became **vibe-harness**. What that harness actually does is engineer the conditions the
-agent works under, which is a broader job than holding a session together — hence **vibe-engineering**. Planning
-and design skills come first; loop engineering and graph engineering are next.
+agent works under, which is a broader job than holding a session together — hence **vibe-engineering**.
+
+---
+
+## What it engineers
+
+Prompt engineering shapes what you say to a model. Context engineering shapes what it knows. Neither says anything
+about the hours between — what the agent is allowed to touch, when it should stop, what survives the session. That
+gap is what this engineers, and it has turned out to be several distinct jobs rather than one.
+
+Each line below is a question the agent cannot answer on its own, and the machinery that answers it.
+
+| | Decides | Shipped as |
+|---|---|---|
+| **Harness** | What may I touch, when do I stop, what gets recorded | Scope guard, phase gates, kanban as the record |
+| **Planning** | What are we building, and for whom | `/vibe-planning` — six gated stages, north star first |
+| **Design** | What does it look like before it is built | `/vibe-design` — screens as HTML, reviewed before code |
+| **Review** | Is the work as good as I think it is | `/vibe-review` — the assessment you would give someone else |
+| **Loop** | When do I go again, when do I give up | Backoff, error budgets, idle distinguished from broken |
+| **Graph** | What is blocked, what can start now | `depends_on`, cycle and dangling-reference detection |
+
+### What is next
+
+| | Decides | Why it is not done |
+|---|---|---|
+| **Retrieval** | What does it cost to know something | Archiving made session start cheap by *not reading* history. That history is now unreachable — "why did we decide this?" has no answer short of loading everything. Saving more is not the next step; making the unread usable is. |
+| **Graph, part two** | What should I do *first* | Detection landed. Using it has not — critical path, what unblocks the most, dependencies that cross projects. Detection says "not this one"; the next step says "this one". |
+| **Knowledge** | What do we know at all | Decision logs already accumulate. What is missing is linkage — decisions, tasks, phases and reviews pointing at each other, so a lesson learned once is findable later instead of living in a commit message. |
+
+Retrieval comes first, because the corpus it would search already exists.
 
 ---
 

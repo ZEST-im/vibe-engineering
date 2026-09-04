@@ -237,6 +237,102 @@ def _pipeline_health(now=None):
     return out
 
 
+# 검색 엔지니어링 1단계 — 필요한 만큼만 값을 치른다.
+#
+# 아카이브를 도입해 세션 시작이 21,446 → 867 tok 이 됐는데, 싸진 이유가 **안 읽어서**다.
+# 그 결과 아카이브가 닿을 수 없는 곳에 있다 — "왜 그렇게 했더라"를 물으면 답이 없거나
+# 파일을 통째로 읽어야 한다. 절감의 다음 단계는 더 줄이는 게 아니라 안 읽으면서도
+# 쓸 수 있게 만드는 것이다.
+#
+# 그래서 **파일이 아니라 스니펫을 돌려준다.** qmd 검토에서 가져온 유일한 원칙이다.
+# 의존은 추가하지 않는다 — 몇 천 건짜리 JSON 에 검색 엔진은 과하고, npm 전역 설치가
+# zero-dependencies 를 깬다. 이게 그때 qmd 를 반려한 이유였다.
+SEARCH_SNIPPET_CHARS = 160
+SEARCH_DEFAULT_LIMIT = 10
+SEARCH_MAX_LIMIT = 50
+# 검색 대상 필드. 본문이 긴 것부터 — 여기 없는 필드는 매칭돼도 스니펫을 못 만든다.
+SEARCH_FIELDS = ("title", "description", "details", "why", "review")
+
+
+def _snippet(text, needle, width=SEARCH_SNIPPET_CHARS):
+    """매칭 지점 주변만 잘라낸다. 파일도 필드 전체도 아니다."""
+    body = " ".join(str(text or "").split())
+    at = body.lower().find(needle.lower())
+    if at < 0:
+        return None
+    half = max(0, (width - len(needle)) // 2)
+    start = max(0, at - half)
+    end = min(len(body), at + len(needle) + half)
+    return ("…" if start else "") + body[start:end] + ("…" if end < len(body) else "")
+
+
+def _search_records(kanban_dir):
+    """검색 대상. 어디서 왔는지(source)를 함께 들고 다닌다 — 없으면 찾아도 못 연다."""
+    out = []
+    data = _read_kanban(kanban_dir)
+    for task in data.get("tasks") or []:
+        out.append(("task", task))
+    for task in _list_archives(kanban_dir):
+        out.append(("archive", task))
+    try:
+        with open(os.path.join(kanban_dir, "decisions.json"), encoding="utf-8") as fh:
+            doc = json.load(fh)
+        for dec in doc.get("decisions") or []:
+            out.append(("decision", dec))
+    except (FileNotFoundError, ValueError, OSError):
+        pass
+    return out
+
+
+def _search(kanban_dir, query, limit=SEARCH_DEFAULT_LIMIT):
+    """스니펫 검색. 한 레코드가 여러 필드에서 걸려도 **한 번만** 돌려준다.
+
+    같은 태스크를 필드 수만큼 반복해 실으면 결과가 부풀어 검색의 목적이 사라진다.
+    """
+    q = str(query or "").strip()
+    if not q:
+        return {"query": "", "hits": [], "total": 0,
+                "note": "q 가 비었다 — 검색어 없이 부르면 전량을 돌려주게 되므로 거부한다"}
+    try:
+        limit = int(limit or SEARCH_DEFAULT_LIMIT)
+    except (TypeError, ValueError):
+        # 쿼리스트링은 사용자 입력이다. 숫자가 아니면 500 이 아니라 기본값으로 떨어진다.
+        limit = SEARCH_DEFAULT_LIMIT
+    limit = max(1, min(limit, SEARCH_MAX_LIMIT))
+
+    hits = []
+    for source, rec in _search_records(kanban_dir):
+        matched = []
+        snippet = None
+        for field in SEARCH_FIELDS:
+            frag = _snippet(rec.get(field), q)
+            if frag is None:
+                continue
+            matched.append(field)
+            if snippet is None:
+                snippet = frag
+        if not matched:
+            continue
+        hits.append({
+            "source": source,
+            "id": rec.get("id"),
+            "title": rec.get("title"),
+            "phase": rec.get("phase"),
+            "date": rec.get("completed_at") or rec.get("updated_at") or rec.get("created_at"),
+            "fields": matched,
+            "snippet": snippet,
+        })
+
+    # 최근 것이 대개 더 쓸모 있다. 날짜가 없는 레코드는 뒤로.
+    hits.sort(key=lambda h: h.get("date") or "", reverse=True)
+    total = len(hits)
+    out = {"query": q, "total": total, "hits": hits[:limit]}
+    if total > limit:
+        out["note"] = ("%d건 중 %d건만 실었다. limit 로 늘리거나 검색어를 좁힌다"
+                       % (total, limit))
+    return out
+
+
 # 아카이브는 문서로 규정돼 있었다(qq 5단계, done 30건 또는 50KB 초과 시). 2주 뒤
 # 다시 재보니 22개 중 4개가 다시 30건을 넘겼고 9개는 아카이브가 아예 없었다.
 # **패턴이 재현됐다** — 그런데 그 사실은 "별도 스킬로 뽑자"가 아니라 "문서로는 안 된다"를
@@ -2218,6 +2314,13 @@ class Handler(BaseHTTPRequestHandler):
 
             if rest == ["context"]:
                 return self._json(_get_context(kanban_dir))
+
+            if rest == ["search"]:
+                # 검색은 물었을 때만 값을 치른다 — /context 는 867 tok 그대로다.
+                qs = parse_qs(urlparse(self.path).query)
+                return self._json(_search(kanban_dir,
+                                          (qs.get("q") or [""])[0],
+                                          (qs.get("limit") or [SEARCH_DEFAULT_LIMIT])[0]))
 
             if rest == ["decisions"]:
                 data = _read_decisions(kanban_dir)
