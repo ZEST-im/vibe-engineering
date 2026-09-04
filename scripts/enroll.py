@@ -102,6 +102,51 @@ def write_sync_config(path, cfg):
     os.replace(tmp, path)
 
 
+DEFAULT_DASHBOARD = "ax-project"
+
+
+def add_project_to_dashboard(sync_path, key, dashboard=DEFAULT_DASHBOARD):
+    """프로젝트 키를 sync.json 의 dashboards 목록에 넣는다. 넣었으면 True.
+
+    왜 projects.json 만으로는 안 되나 — 두 곳이 서로 다른 것을 켠다.
+      projects.json          → 수집(reconcile_runs 가 훑는 대상). runs 가 중앙에 올라간다.
+      sync.json.dashboards   → 대시보드 source 목록. 화면이 그 runs 를 읽는다.
+
+    2026-09-04 실측: 박찬일의 pante_capture 는 projects.json 에만 등록돼 있어 runs
+    13.7억 토큰이 중앙에 올라왔는데 sources 에 없어 통째로 안 읽혔다. 드롭다운에도 안
+    나온다. 화면 어디에도 신호가 없어 본인도 관리자도 몰랐다.
+
+    더 나쁜 건 순환이었다 — 중앙이 참가 프롬프트에 제안하는 키 목록은 sources 에서
+    오므로 아직 등록되지 않은 신규 프로젝트는 그 목록에 아예 없다. 이 단계가 자동이
+    아니면 신규 프로젝트는 참가 플로우로 등록될 수가 없다.
+
+    dashboards 를 통째로 덮어쓰지 않는다(server.py configure-sync 는 덮어쓴다) —
+    그 머신이 이미 밀고 있는 다른 키가 날아간다.
+    """
+    key = str(key or "").strip()
+    if not key:
+        return False
+    try:
+        cfg = read_json(sync_path) or {}
+    except Exception as exc:
+        raise SystemExit(f"sync.json 파싱 실패 — 덮어쓰지 않고 중단: {exc}") from exc
+    if not isinstance(cfg, dict):
+        raise SystemExit("sync.json 최상위가 object 가 아니다")
+
+    dashboards = cfg.get("dashboards")
+    if not isinstance(dashboards, dict):
+        dashboards = {}
+    keys = dashboards.get(dashboard)
+    if not isinstance(keys, list):
+        keys = []
+    if key in keys:
+        return False
+    dashboards[dashboard] = keys + [key]
+    cfg["dashboards"] = dashboards
+    write_sync_config(sync_path, cfg)
+    return True
+
+
 def read_json(path):
     if not os.path.exists(path):
         return None
@@ -467,6 +512,10 @@ def main(argv=None):
             key, repo = parse_project_arg(pair)
             info = add_project(PROJECTS_CONFIG, key, repo)
             print(f"projects  : {key} → {info['kanban_dir']}")
+            # 수집(projects.json)과 대시보드 노출(sync.json)은 서로 다른 스위치다.
+            # 둘 다 켜야 한다 — 하나만 켜면 사용량이 올라가는데 화면에는 없다.
+            if add_project_to_dashboard(SYNC_CONFIG, key):
+                print(f"dashboard : {key} → {DEFAULT_DASHBOARD} 목록에 추가")
         print("\n확인:  python3 %s --all --dry-run" % resolve_script_path())
         return 0
 
@@ -500,11 +549,13 @@ def main(argv=None):
             print(f"sync.json : 기록 (0600) — machine={cfg.get('machine') or 'hostname'}"
                   f", id_prefix={cfg.get('id_prefix') or '(없음 → 정수 발급)'}")
 
-    # 2.5) 프로젝트 등록
+    # 2.5) 프로젝트 등록 — 수집(projects.json) + 대시보드 노출(sync.json) 둘 다
     for pair in (a.add_project or []):
         key, repo = parse_project_arg(pair)
         info = add_project(PROJECTS_CONFIG, key, repo)
         print(f"projects  : {key} → {info['kanban_dir']}")
+        if add_project_to_dashboard(SYNC_CONFIG, key):
+            print(f"dashboard : {key} → {DEFAULT_DASHBOARD} 목록에 추가")
 
     # 3) 수집 에이전트
     script = resolve_script_path()

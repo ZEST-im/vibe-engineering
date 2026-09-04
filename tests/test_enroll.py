@@ -377,5 +377,91 @@ class ResolveScriptPathTest(unittest.TestCase):
         self.assertTrue(os.path.isfile(enroll.resolve_script_path()))
 
 
+class AddProjectToDashboardTest(unittest.TestCase):
+    """수집(projects.json)과 대시보드 노출(sync.json)은 서로 다른 스위치다.
+
+    하나만 켜면 사용량이 중앙에 올라가는데 화면에는 없다 — 2026-09-04 실측으로
+    박찬일의 pante_capture 13.7억 토큰이 그 상태였다. 화면 어디에도 신호가 없다.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.path = os.path.join(self.tmp.name, "sync.json")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def write(self, cfg):
+        with open(self.path, "w", encoding="utf-8") as fh:
+            json.dump(cfg, fh)
+
+    def read(self):
+        with open(self.path, encoding="utf-8") as fh:
+            return json.load(fh)
+
+    def test_appends_key_to_existing_dashboard_list(self):
+        self.write({"secret": "s", "dashboards": {"ax-project": ["zestim"]}})
+
+        self.assertTrue(enroll.add_project_to_dashboard(self.path, "pante_capture"))
+        self.assertEqual(["zestim", "pante_capture"],
+                         self.read()["dashboards"]["ax-project"])
+
+    def test_preserves_other_keys_in_sync_config(self):
+        """dashboards 를 통째로 덮으면 그 머신의 토큰·머신명이 날아간다."""
+        self.write({"secret": "s", "runs_token": "t", "machine": "mac-main",
+                    "dashboards": {"ax-project": ["zestim"]}})
+
+        enroll.add_project_to_dashboard(self.path, "pante_capture")
+
+        cfg = self.read()
+        self.assertEqual("t", cfg["runs_token"])
+        self.assertEqual("mac-main", cfg["machine"])
+        self.assertEqual("s", cfg["secret"])
+
+    def test_preserves_other_dashboards(self):
+        self.write({"dashboards": {"ax-project": ["zestim"], "other": ["x"]}})
+
+        enroll.add_project_to_dashboard(self.path, "pante_capture")
+
+        self.assertEqual(["x"], self.read()["dashboards"]["other"])
+
+    def test_is_idempotent(self):
+        self.write({"dashboards": {"ax-project": ["pante_capture"]}})
+
+        self.assertFalse(enroll.add_project_to_dashboard(self.path, "pante_capture"))
+        self.assertEqual(["pante_capture"], self.read()["dashboards"]["ax-project"])
+
+    def test_creates_dashboards_when_absent(self):
+        self.write({"secret": "s"})
+
+        self.assertTrue(enroll.add_project_to_dashboard(self.path, "pante_capture"))
+        self.assertEqual(["pante_capture"], self.read()["dashboards"]["ax-project"])
+
+    def test_missing_sync_file_is_created(self):
+        self.assertTrue(enroll.add_project_to_dashboard(self.path, "pante_capture"))
+        self.assertEqual(["pante_capture"], self.read()["dashboards"]["ax-project"])
+
+    def test_blank_key_is_ignored(self):
+        self.write({"dashboards": {"ax-project": ["zestim"]}})
+
+        self.assertFalse(enroll.add_project_to_dashboard(self.path, "   "))
+        self.assertEqual(["zestim"], self.read()["dashboards"]["ax-project"])
+
+    def test_broken_sync_json_aborts_instead_of_overwriting(self):
+        """시크릿이 든 파일이다 — 파싱 실패 시 덮어쓰면 그 머신이 전송을 못 한다."""
+        with open(self.path, "w", encoding="utf-8") as fh:
+            fh.write("{not json")
+
+        with self.assertRaises(SystemExit):
+            enroll.add_project_to_dashboard(self.path, "pante_capture")
+
+    def test_written_file_is_owner_only(self):
+        self.write({"dashboards": {"ax-project": []}})
+
+        enroll.add_project_to_dashboard(self.path, "pante_capture")
+
+        self.assertEqual(0o600, os.stat(self.path).st_mode & 0o777)
+
+
 if __name__ == "__main__":
     unittest.main()
