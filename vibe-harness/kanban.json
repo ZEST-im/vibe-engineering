@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "next_id": 70,
+  "next_id": 71,
   "tasks": [
     {
       "id": 62,
@@ -137,6 +137,25 @@
       "created_by": "hogun",
       "assigned_to": "hogun",
       "details": "## 무엇이 문제였나\n`HARNESS_PLAN.md` 의 체크박스 12개가 **넉 달간** 미체크로 남아 있었다.\n그 12개는 전부 이미 구현돼 있었다 — context 엔드포인트·스코프 가드·decisions API·velocity.\n문서만 보면 안 한 일 12개가 있는 것처럼 보였다.\n\n찾아보니 더 있었다. 완료된 Phase 의 계획서 둘(`PHASE_PMF03_PLAN` 8개,\n`PHASE_PMF06_PLAN` 30개)도 같은 상태였다. **합쳐서 유령 항목 49개.**\n\n## 짐작으로 체크하지 않았다\n12개를 코드와 하나씩 대조했다. 짐작으로 닫으면 그게 또 죽은 문서가 된다.\n대조 결과를 각 항목 옆에 \"어디서 구현됐는지\"로 남겼다.\n\n**하나는 계획과 형태가 달랐다.** 스코프 가드를 git pre-commit hook 으로 계획했는데\n실제 구현은 Claude Code `PreToolUse` 훅이다. 커밋 시점이 아니라 **편집 시점에** 막는\n쪽이 낫다 — 커밋 전에 이미 파일이 바뀌어 있으면 되돌리는 비용이 든다.\n\"구현됨\"으로만 적었으면 이 판단이 사라졌을 것이다.\n\n## 검사로 만들었다 (tests/test_plan_docs.py)\n규칙 둘:\n- 닫힌 문서에 열린 항목이 있으면 안 된다\n- 완료 Phase 의 계획서는 첫머리에서 닫혔다고 말해야 한다 (안 그러면 또 열어본다)\n\n`private/` 는 gitignore 라 CI 에서는 skip — DENY.txt 와 같은 구조다.\n\n**검사가 즉시 하나를 더 찾았다**: `PHASE_PMF06_SPEC.md`. 내가 놓친 것이다.\n\n## 규칙을 한 번 잘못 잡았다\n처음엔 \"문서가 언급한 Phase 이름\"으로 판정했다. 그런데 `HARNESS_PLAN.md` 는 \"Phase 1\"\n같은 자체 번호를 써서 `PHASE_PMFxx` 가 한 번도 안 나온다 — **규칙이 통째로 비껴갔고\n위반을 주입해도 안 잡혔다.** 문서의 자기 선언(\"닫혔다\")으로 바꿔서 해결했다.\n표기에 의존하는 규칙은 표기가 다른 문서를 그냥 놓친다.\n\n## 부수\n구 브랜드·구 URL 정정 (`hoarchi/vibe-harness` → `ZEST-im/vibe-engineering`).\n슬래시 커맨드 `/vibe-harness` 는 호환성 때문에 유지 — Do NOT touch 항목이다.\n\n## 검증\n421 tests (신규 5) · ruff clean. 위반 3종 검출 확인 + 진행 중 Phase 오탐 없음."
+    },
+    {
+      "id": 70,
+      "title": "커버리지 측정 — 베이스라인 51%, 하한 50%",
+      "description": "3주 연속 지적이던 항목. 재고, 내려가는 것만 막고, 배선 자체를 테스트로 묶음",
+      "status": "done",
+      "priority": "medium",
+      "category": "qa",
+      "phase": "PHASE_PMF10",
+      "created_at": "2026-09-05T11:05:00+09:00",
+      "updated_at": "2026-09-05T11:05:00+09:00",
+      "started_at": "2026-09-05T10:35:00+09:00",
+      "completed_at": "2026-09-05T11:05:00+09:00",
+      "position": 0,
+      "lines_added": 0,
+      "lines_removed": 0,
+      "created_by": "hogun",
+      "assigned_to": "hogun",
+      "details": "## 베이스라인\n`coverage==7.13.0`, `--source=scripts`, 전체 스위트 기준 **51%** (3,499 문장 중 1,728 미실행).\n\n    install_reconcile.py    0%     ← 4일간 수집을 멈춘 그 스크립트\n    setup.py               25%\n    worker.py              41%\n    server.py              46%     (1,713 문장, 가장 큰 결손)\n    kanban_edit.py         50%\n    enroll.py              58%\n    reconcile_runs.py      77%\n    vibe_runtime.py        79%\n\n## 판단 셋\n\n**1. ruff 와 같은 취급.** 런타임 의존성 0 원칙은 유지하고 CI 전용 개발 도구로.\n버전 고정 — 도구가 바뀌면 숫자가 흔들린다.\n\n**2. 한 버전에서만 잰다.** 3.11/3.12/3.13 각각 재면 분기 커버리지가 미묘하게 달라\n숫자가 흔들리고, **흔들리는 숫자는 곧 무시된다.**\n\n**3. 목표치는 안 정하되 하한은 건다.** Phase 계획은 \"숫자를 아는 것까지\"였지만,\n측정만 하고 문턱이 없으면 그건 문서지 검사가 아니다 — 이 Phase 가 반복해서 배운 것이다.\n하한은 실측 51% 에서 한 칸 내린 50%. 플랫폼 차이로 한두 줄 흔들려도 빨개지지 않게.\n\n## CI 에만 있으면 조용히 사라진다\n3주 연속 지적이던 항목이라 배선 자체를 테스트로 묶었다 —\n`coverage run` 이 있는지, `--fail-under` 가 있는지, 버전이 고정됐는지.\n문턱을 지우는 주입으로 검출 확인.\n\n## 가장 낮은 곳이 말해주는 것\n`install_reconcile.py` 0%. 넉 달 전 이 스크립트가 옛 경로를 가리켜 28회 연속 실패했고\n수집이 4일간 멈췄다. **한 줄도 테스트되지 않은 채로 그 사고를 냈고, 지금도 그렇다.**\n다음 목표치를 정할 때 여기부터 봐야 한다.\n\n## 검증\n422 tests (신규 1) · ruff clean · coverage 51% ≥ 하한 50%."
     }
   ]
 }

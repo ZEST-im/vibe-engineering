@@ -107,6 +107,24 @@ class RepoShipsWhatItClaimsTest(unittest.TestCase):
                              capture_output=True, text=True, encoding="utf-8")
         return out.returncode == 0
 
+    def test_ci_measures_coverage_with_a_floor(self):
+        """커버리지는 CI 에만 있어서, 지워져도 로컬에서는 아무 일도 안 일어난다.
+
+        3주 연속 지적이었던 항목이라 다시 조용히 사라지지 않게 여기서 묶는다.
+        측정만 하고 문턱이 없으면 그건 문서지 검사가 아니므로 `--fail-under` 까지 본다.
+        """
+        path = os.path.join(ROOT, ".github", "workflows", "tests.yml")
+        if not os.path.exists(path):
+            self.skipTest("워크플로 없음")
+        with open(path, encoding="utf-8") as fh:
+            body = fh.read()
+        self.assertIn("coverage run --source=scripts", body,
+                      "CI 가 커버리지를 재지 않는다")
+        self.assertIn("--fail-under=", body,
+                      "커버리지를 재기만 하고 문턱이 없다 — 내려가도 아무도 모른다")
+        self.assertIn("coverage==", body,
+                      "버전을 고정하지 않으면 도구가 바뀔 때 숫자가 흔들린다")
+
     def test_ci_workflow_is_tracked_by_git(self):
         workflow_dir = os.path.join(ROOT, ".github", "workflows")
         if not os.path.isdir(workflow_dir):

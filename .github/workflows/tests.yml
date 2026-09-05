@@ -48,3 +48,30 @@ jobs:
 
       - name: Lint
         run: ruff check scripts tests
+
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      # ruff 와 같은 취급 — 런타임 의존성은 0으로 유지하고 CI 에서만 쓴다.
+      # 한 버전에서만 잰다. 버전마다 재면 분기 커버리지가 미묘하게 달라져
+      # 숫자가 흔들리고, 흔들리는 숫자는 곧 무시된다.
+      - name: Install coverage
+        run: pip install coverage==7.13.0
+
+      - name: Measure
+        run: |
+          coverage run --source=scripts -m unittest discover -s tests
+          coverage report --sort=cover
+
+      # 목표치는 아직 정하지 않았다. 다만 **내려가는 것**은 막는다 —
+      # 측정만 하고 아무 문턱이 없으면 그건 문서지 검사가 아니다.
+      # 하한은 도입 시점 실측(51%)에서 한 칸 내려 잡았다. 플랫폼 차이로
+      # 한두 줄 흔들려도 빨개지지 않게.
+      - name: Floor
+        run: coverage report --fail-under=50
