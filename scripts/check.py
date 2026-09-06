@@ -24,6 +24,7 @@ CI 는 세 갈래다 — 테스트(3버전), 린트, 커버리지. 로컬에서�
 """
 import argparse
 import os
+import platform
 import re
 import shutil
 import subprocess
@@ -37,6 +38,9 @@ VENV = os.path.join(ROOT, ".check-venv")
 
 PIN = re.compile(r"pip install\s+([a-z0-9_-]+)==([0-9][0-9a-zA-Z.]*)")
 FLOOR = re.compile(r"--fail-under=(\d+)")
+RUNS_ON = re.compile(r"runs-on:\s*(\S+)")
+MATRIX = re.compile(r"python-version:\s*\[([^\]]+)\]")
+VERSION = re.compile(r"[\"']([0-9]+\.[0-9]+)[\"']")
 
 
 def ci_pins():
@@ -58,6 +62,68 @@ def ci_pins():
             "워크플로에서 고정 버전을 못 읽었다: " + ", ".join(missing) + "\n"
             "  `pip install <도구>==<버전>` 형식이 바뀌었는지 확인한다.")
     return tools, int(floor.group(1)) if floor else None
+
+
+def ci_environment():
+    """CI 가 실제로 도는 환경. **여기에 적지 않고 워크플로에서 읽는다.**
+
+    핀 버전과 같은 이유다 — 두 곳에 적으면 갈라지고, 갈라진 유보 문구는 유보가 아니라
+    거짓말이 된다. 매트릭스가 늘었는데 이 목록이 그대로면 "확인 못 한 것"이 실제보다
+    적게 나온다.
+    """
+    with open(WORKFLOW, encoding="utf-8") as fh:
+        body = fh.read()
+    versions = sorted({v for block in MATRIX.findall(body)
+                       for v in VERSION.findall(block)})
+    runners = sorted(set(RUNS_ON.findall(body)))
+    return versions, runners
+
+
+def unverified_here(clone=None):
+    """이 실행이 **확인하지 못한 것**. 통과했을 때도 말한다.
+
+    없앨 수 없는 차이다 — 한 머신에서 파이썬 셋을 돌릴 수도, 러너의 git 설정을 가져올
+    수도 없다. 없앨 수 없으면 **매번 말하게 한다.** 유보를 실패할 때만 보여주면
+    정작 초록일 때 못 보는데, 사고는 초록일 때 난다.
+
+    실제로 그랬다: 다른 머신의 정렬을 확인하는 데 초록 다섯 개가 아무 도움이 안 됐고,
+    사람에게 물어서야 알아냈다. 그때 이 검사는 한마디도 하지 않았다.
+    """
+    notes = []
+    try:
+        versions, runners = ci_environment()
+    except (OSError, ValueError):
+        versions, runners = [], []
+
+    local_py = "%d.%d" % sys.version_info[:2]
+    others = [v for v in versions if v != local_py]
+    if others:
+        notes.append("파이썬 %s — 여기서는 %s 하나만 돌았다"
+                     % ("·".join(others), local_py))
+    if versions and local_py not in versions:
+        notes.append("반대로 %s 는 CI 가 보지 않는다 — 여기서만 통과한 것이 있을 수 있다"
+                     % local_py)
+
+    here = platform.system().lower()
+    if runners and not any(here[:3] in r.lower() for r in runners):
+        notes.append("%s — 여기는 %s (경로·줄바꿈·로케일이 다르다)"
+                     % ("·".join(sorted(set(runners))), platform.system()))
+
+    dirty = subprocess.run(["git", "--no-optional-locks", "-C", ROOT,
+                            "status", "--porcelain"],
+                           capture_output=True, text=True)
+    n = len([ln for ln in dirty.stdout.splitlines() if ln.strip()])
+    if n:
+        notes.append("커밋되지 않은 변경 %d건 — **CI 는 커밋된 트리만 본다.** "
+                     "지금 통과한 것과 푸시될 것이 같지 않다" % n)
+
+    if os.path.isdir(os.path.join(ROOT, "private")):
+        notes.append("`private/` 는 CI 에 없다 — 그것을 읽는 검사는 저기서 skip 된다")
+
+    if clone and clone[0] != "aligned":
+        notes.append("클론 상태가 `%s` 다. 통과는 '갈라지지 않았다'까지만 말한다"
+                     % clone[0])
+    return notes
 
 
 def clone_state():
@@ -179,10 +245,19 @@ def main(argv=None):
     print("\n" + "─" * 46)
     for name, ok in results:
         print(f"  {'✅' if ok else '❌'}  {name}")
+
+    # 통과했을 때도 낸다. 유보를 실패할 때만 보여주면 정작 초록일 때 못 보는데,
+    # 사고는 초록일 때 난다.
+    notes = unverified_here((state, detail))
+    if notes:
+        print("\n  여기서 확인하지 못한 것")
+        for n in notes:
+            print(f"    · {n}")
+
     if failed:
         print(f"\n실패: {', '.join(failed)} — 푸시하지 말 것")
         return 1
-    print("\n전부 통과. 푸시 후에는 **그 커밋의** 실행을 확인한다:")
+    print("\n전부 통과 — 위 유보를 뺀 범위에서. 푸시 후에는 **그 커밋의** 실행을 확인한다:")
     print("  gh run list --limit 5 --json headSha,conclusion")
     return 0
 

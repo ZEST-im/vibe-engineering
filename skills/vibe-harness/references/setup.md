@@ -140,5 +140,20 @@ versions, and it cannot give you a different `git config`. A test that quietly d
 host — `init.defaultBranch` being `main` rather than `master`, a locale, a tool on `$PATH` —
 passes locally and fails there, and the local green is not wrong so much as narrow.
 
+That gap cannot be closed, so the check **states it every run**, under `여기서 확인하지
+못한 것`, and it prints on success too — a caveat you only see when something already failed
+is a caveat you never see, and the accidents happen on green. It reads the matrix and the
+runner out of the workflow rather than carrying its own copy, for the same reason the pins
+are read: a caveat that has drifted is not a caveat, it is a false statement. What it names:
+
+- the Python versions CI runs that this run did not, and *your* version that CI never sees
+- the runner OS, when it differs from yours
+- uncommitted changes — **CI only ever sees the committed tree**, so a green local run is not
+  a statement about what you are about to push
+- `private/` being absent in CI, which makes some local checks skip there
+- a clone that is not `aligned`. The check only *fails* on rewritten/diverged, so `behind`
+  and `no-upstream` pass — green says "not diverged", never "up to date"
+
 When a test drives `git`, set the branch name explicitly rather than inheriting the host
-default. When it drives any tool, ask what the host is supplying that CI will not.
+default; `tests/test_host_assumptions.py` enforces that one. When it drives any other tool,
+ask what the host is supplying that CI will not.

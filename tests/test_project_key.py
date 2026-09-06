@@ -41,7 +41,9 @@ def git_repo(name, remote=None):
     base = tempfile.mkdtemp()
     repo = os.path.join(base, name)
     os.makedirs(os.path.join(repo, "vibe-harness"))
-    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    # 브랜치 이름을 호스트 설정에 맡기지 않는다 — init.defaultBranch 하나 때문에
+    # 두 테스트가 로컬에서만 통과한 적이 있다.
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
     if remote:
         subprocess.run(["git", "remote", "add", "origin", remote], cwd=repo, check=True)
     return repo

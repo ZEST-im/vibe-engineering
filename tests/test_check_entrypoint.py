@@ -11,9 +11,11 @@ CI 는 세 갈래다 — 테스트(3버전), 린트, 커버리지. 로컬에서�
 그래서 이 파일이 지키는 것은 하나다: **버전은 워크플로 한 곳에만 있다.**
 이 레포는 같은 종류의 드리프트(설치 파일 목록이 세 곳에 흩어짐)를 이미 겪었다.
 """
+import ast
 import importlib.util
 import os
 import re
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -104,6 +106,79 @@ class CoversEveryCiJobTest(unittest.TestCase):
             body = fh.read()
         self.assertIn("푸시하지 말 것", body,
                       "--fast 가 무엇을 건너뛰었는지 말하지 않는다")
+
+
+class SaysWhatItCouldNotCheckTest(unittest.TestCase):
+    """없앨 수 없는 차이는 **매번 말하게 한다.**
+
+    로컬 검사는 파이썬 셋을 돌릴 수도, 러너의 git 설정을 가져올 수도 없다. 2주 연속
+    지적된 항목이고, 바로 얼마 전 다른 머신의 정렬을 확인하는 데 초록 다섯 개가 아무
+    도움이 안 됐는데 이 검사는 한마디도 하지 않았다.
+
+    **유보는 통과했을 때도 나와야 한다.** 실패할 때만 보여주면 정작 초록일 때 못 보고,
+    사고는 초록일 때 난다.
+    """
+
+    def test_reads_the_matrix_and_runner_from_the_workflow(self):
+        versions, runners = check.ci_environment()
+        body = workflow_text()
+        self.assertGreaterEqual(len(versions), 2, "매트릭스를 못 읽었다")
+        for v in versions:
+            self.assertIn(f'"{v}"', body)
+        self.assertTrue(runners, "runs-on 을 못 읽었다")
+
+    def test_does_not_hardcode_the_ci_environment(self):
+        """핀 버전과 같은 이유다 — 갈라진 유보 문구는 유보가 아니라 거짓말이 된다."""
+        with open(os.path.join(SCRIPTS, "check.py"), encoding="utf-8") as fh:
+            body = fh.read()
+        self.assertEqual([], re.findall(r'"3\.1[0-9]"', body),
+                         "check.py 가 파이썬 버전을 직접 들고 있다")
+        self.assertNotIn('"ubuntu-latest"', body,
+                         "check.py 가 러너 이름을 직접 들고 있다")
+
+    def test_names_the_versions_it_did_not_run(self):
+        notes = "\n".join(check.unverified_here())
+        versions, _ = check.ci_environment()
+        local = "%d.%d" % sys.version_info[:2]
+        for v in versions:
+            if v != local:
+                self.assertIn(v, notes, f"CI 가 도는 {v} 를 유보로 말하지 않는다")
+
+    def test_says_the_tree_may_differ_from_what_ci_will_see(self):
+        """CI 는 커밋된 트리만 본다. 지금 통과한 것과 푸시될 것이 같지 않다."""
+        notes = check.unverified_here()
+        dirty = subprocess.run(
+            ["git", "-C", ROOT, "status", "--porcelain"],
+            capture_output=True, text=True).stdout.strip()
+        if dirty:
+            self.assertTrue(any("커밋되지 않은" in n for n in notes),
+                            "미커밋 변경이 있는데 유보에 없다")
+
+    def test_a_non_aligned_clone_is_carried_into_the_notes(self):
+        """`✅ clone` 은 '갈라지지 않았다'까지만 말한다. behind 도 초록으로 지나간다."""
+        notes = check.unverified_here(("behind", "3커밋 뒤처짐"))
+        self.assertTrue(any("behind" in n for n in notes),
+                        "정렬되지 않은 클론 상태를 유보로 말하지 않는다")
+        self.assertEqual([], [n for n in check.unverified_here(("aligned", ""))
+                              if "aligned" in n],
+                         "정렬된 상태까지 유보로 말하면 유보가 소음이 된다")
+
+    def test_the_notes_are_printed_on_success_too(self):
+        with open(os.path.join(SCRIPTS, "check.py"), encoding="utf-8") as fh:
+            body = fh.read()
+        tree = ast.parse(body)
+        main = next(n for n in ast.walk(tree)
+                    if isinstance(n, ast.FunctionDef) and n.name == "main")
+        calls = [n for n in ast.walk(main) if isinstance(n, ast.Call)
+                 and getattr(n.func, "id", "") == "unverified_here"]
+        self.assertEqual(1, len(calls),
+                         "main 이 unverified_here 를 부르지 않는다")
+        # 실패 분기(return 1) 앞에 있어야 통과·실패 양쪽에서 나온다.
+        returns = [n.lineno for n in ast.walk(main)
+                   if isinstance(n, ast.Return)
+                   and isinstance(n.value, ast.Constant) and n.value.value == 1]
+        self.assertTrue(returns and calls[0].lineno < min(returns),
+                        "유보가 실패 분기 뒤에 있다 — 초록일 때 안 보인다")
 
 
 class ShippedWithTheToolTest(unittest.TestCase):
@@ -219,7 +294,7 @@ class CloneStateTest(unittest.TestCase):
         """추적 브랜치가 없는 것은 고장이 아니다."""
         work = os.path.join(self.base, "solo")
         os.makedirs(work)
-        self.git(work, "init", "-q")
+        self.git(work, "init", "-q", "-b", "main")
         self.git(work, "commit", "-q", "--allow-empty", "-m", "x")
         self.assertEqual("no-upstream", self.state_of(work)[0])
 

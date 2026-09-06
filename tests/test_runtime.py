@@ -248,7 +248,7 @@ class RuntimeTest(unittest.TestCase):
 
     def test_local_worker_cli_uses_isolated_git_worktree_end_to_end(self):
         self.write_policy(pass_gate=True, approval="auto")
-        subprocess.run(["git", "init", "-q", self.project], check=True)
+        subprocess.run(["git", "init", "-q", "-b", "main", self.project], check=True)
         subprocess.run(["git", "-C", self.project, "config", "user.name", "Runtime Test"], check=True)
         subprocess.run(["git", "-C", self.project, "config", "user.email", "runtime@example.test"], check=True)
         subprocess.run(["git", "-C", self.project, "add", "."], check=True)
