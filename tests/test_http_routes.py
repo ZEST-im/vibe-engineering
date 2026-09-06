@@ -28,6 +28,7 @@ import importlib.util
 import io
 import json
 import os
+import socket
 import sys
 import tempfile
 import threading
@@ -140,6 +141,37 @@ class RequestParsingTest(ServedOverHttpTest):
         doc = json.loads(body)
         self.assertEqual("이중 계상", doc["query"])
         self.assertGreaterEqual(doc["total"], 1, "인코딩된 질의가 아무것도 못 찾았다")
+
+    def test_a_raw_utf8_query_is_repaired_over_the_wire(self):
+        """퍼센트 인코딩 없이 URL 에 한글을 그대로 넣는 경로. 손으로 curl 을 치면 여기다.
+
+        함수 단위 테스트만으로는 부족하다 — 깨뜨리는 주체가 `http.server` 의 요청 라인
+        디코딩이라 **실제로 소켓으로 보내봐야** 그 경로를 지난다.
+
+        `urllib` 도 `http.client` 도 URL 을 ASCII 로 인코딩하려다 거부한다. 그래서 소켓에
+        직접 쓴다 — curl 이 하는 것이 정확히 이것이고, 이 결함이 사는 곳도 여기다.
+        """
+        raw = "계상".encode("utf-8")                     # 퍼센트 인코딩 없이 날 바이트
+        sock = socket.create_connection(("127.0.0.1", self.httpd.server_port), timeout=30)
+        try:
+            sock.sendall(b"GET /api/demo/search?q=" + raw + b" HTTP/1.1\r\n"
+                         b"Host: localhost\r\nConnection: close\r\n\r\n")
+            chunks = []
+            while True:
+                part = sock.recv(65536)
+                if not part:
+                    break
+                chunks.append(part)
+        finally:
+            sock.close()
+        head, _sep, body = b"".join(chunks).partition(b"\r\n\r\n")
+        self.assertIn(b"200", head.split(b"\r\n")[0])
+        doc = json.loads(body)
+        self.assertEqual("계상", doc["query"],
+                         "날 UTF-8 질의가 되살아나지 않았다 — 조용히 0건이 된다")
+        self.assertGreaterEqual(doc["total"], 1)
+        self.assertIn("퍼센트 인코딩", doc.get("note", ""),
+                      "되살렸으면 되살렸다고 말해야 한다")
 
     def test_a_well_formed_post_creates_a_task(self):
         status, body, _h = self.call("POST", "/api/demo/tasks", {"title": "새 태스크"})

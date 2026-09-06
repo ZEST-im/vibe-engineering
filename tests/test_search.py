@@ -197,5 +197,58 @@ class RobustnessTest(unittest.TestCase):
         self.assertNotIn("_search(", ctx)
 
 
+class QueryEncodingTest(unittest.TestCase):
+    """퍼센트 인코딩 없이 온 질의가 **조용히 0건**이 되던 것.
+
+        curl -G --data-urlencode "q=이중 계상"  → 6건
+        curl "...?q=이중 계상"                  → {"query": "ì´ì¤", "total": 0}
+
+    `http.server` 는 요청 라인을 latin-1 로 디코드한다(HTTP 규격). 날 바이트로 온 한글은
+    한 글자가 바이트 수만큼 흩어지고, 아무 말 없이 0건이 나온다.
+
+    PMF10 의 판단 기준이 그대로 걸렸다 — "검색이 빈 결과를 내면 검색기부터 의심한다."
+    """
+
+    def mangle(self, text):
+        """http.server 가 실제로 만드는 문자열.
+
+        터미널에 찍힌 것을 복사하면 안 된다 — 보이지 않는 C1 제어문자가 빠져서
+        **깨지지 않은 문자열**을 검사하게 된다. 실제로 처음에 그렇게 틀렸다.
+        """
+        return text.encode("utf-8").decode("latin-1")
+
+    def test_a_raw_utf8_query_is_repaired(self):
+        self.assertEqual("이중 계상", srv.repair_query(self.mangle("이중 계상"))[0])
+
+    def test_repair_is_announced(self):
+        """조용히 고치면 다음에도 같은 방식으로 부른다."""
+        _q, note = srv.repair_query(self.mangle("이중 계상"))
+        self.assertIn("퍼센트 인코딩", note or "")
+
+    def test_a_repaired_query_actually_finds_things(self):
+        d = board(tasks=[task(1, "이중 계상 정리")])
+        out = srv._search(d, self.mangle("이중 계상"))
+        self.assertEqual(1, out["total"], "되살렸다면서 못 찾으면 되살린 게 아니다")
+        self.assertEqual("이중 계상", out["query"])
+        self.assertIn("퍼센트 인코딩", out.get("note", ""))
+
+    def test_a_correct_query_is_left_alone(self):
+        self.assertEqual(("이중 계상", None), srv.repair_query("이중 계상"))
+
+    def test_ascii_is_left_alone(self):
+        self.assertEqual(("coverage", None), srv.repair_query("coverage"))
+
+    def test_a_legitimate_latin1_query_is_not_mangled(self):
+        """`café` 를 400 으로 막거나 다른 것으로 바꾸면 그게 회귀다.
+
+        코드포인트 범위로는 깨진 것과 가를 수 없다 — 퍼센트 인코딩으로 제대로 온
+        `café` 의 é 도 U+00E9 다. **되살릴 수 있을 때만** 되살린다는 규칙이 그래서 필요하다.
+        """
+        self.assertEqual(("café", None), srv.repair_query("café"))
+
+    def test_an_empty_query_is_still_refused(self):
+        self.assertEqual(0, srv._search(board(), "")["total"])
+
+
 if __name__ == "__main__":
     unittest.main()

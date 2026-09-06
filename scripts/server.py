@@ -261,6 +261,48 @@ SEARCH_MAX_LIMIT = 50
 SEARCH_FIELDS = ("title", "description", "details", "why", "review")
 
 
+def repair_query(raw):
+    """퍼센트 인코딩 없이 온 질의를 되살린다. (질의, 알림) 을 돌려준다.
+
+    ## 무엇이 났던 일인가
+
+        curl -G --data-urlencode "q=이중 계상"  → 6건
+        curl "...?q=이중 계상"                  → {"query": "ì´ì¤", "total": 0}
+
+    `http.server` 는 요청 라인을 **latin-1 로** 디코드한다(HTTP 규격이 그렇다). 퍼센트
+    인코딩된 질의는 `parse_qs` 가 UTF-8 로 풀어주지만, 날 바이트로 온 것은 한 글자가
+    바이트 수만큼의 latin-1 문자로 흩어진다. 그리고 **아무 말 없이 0건이 나온다.**
+
+    PMF10 의 판단 기준에 적어둔 문장이 그대로 걸린 것이다 — "검색이 빈 결과를 내면
+    검색기부터 의심한다." 검색기가 자기한테 그 말을 못 하고 있었다.
+
+    ## 왜 이 판정이 안전한가
+
+    되살릴 수 있을 때만 되살린다. latin-1 로 다시 인코딩해서 **UTF-8 로 읽히면** 그건
+    원래 UTF-8 바이트였다는 뜻이다.
+
+    `café` 처럼 정당한 latin-1 질의는 건드리지 않는다 — `b"caf\xe9"` 는 유효한 UTF-8 이
+    아니라 복구가 실패하고, 그러면 원본 그대로 간다. 코드포인트 범위만 봐서는 둘을
+    가를 수 없다(퍼센트 인코딩으로 제대로 온 `café` 의 é 도 U+00E9 다).
+
+    ## 400 을 내지 않는 이유
+
+    계획서에는 "복구 못 하면 400" 이라고 적었는데, 구현하며 틀린 것을 알았다. 복구 실패는
+    **정당한 latin-1 질의와 구별되지 않는다.** 400 을 내면 `café` 검색이 막힌다.
+    조용하지 않게 만드는 것이 목적이었으므로, 되살리고 **되살렸다고 말하는** 것으로 답한다.
+    """
+    if not raw or all(ord(ch) < 128 for ch in raw):
+        return raw, None
+    try:
+        fixed = raw.encode("latin-1").decode("utf-8")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return raw, None
+    if fixed == raw:
+        return raw, None
+    return fixed, ("질의가 퍼센트 인코딩 없이 왔다 — %r 로 되살렸다. "
+                   "`curl -G --data-urlencode` 를 쓰면 이 단계가 필요 없다" % fixed)
+
+
 def _snippet(text, needle, width=SEARCH_SNIPPET_CHARS):
     """매칭 지점 주변만 잘라낸다. 파일도 필드 전체도 아니다."""
     body = " ".join(str(text or "").split())
@@ -296,7 +338,7 @@ def _search(kanban_dir, query, limit=SEARCH_DEFAULT_LIMIT):
 
     같은 태스크를 필드 수만큼 반복해 실으면 결과가 부풀어 검색의 목적이 사라진다.
     """
-    q = str(query or "").strip()
+    q, repaired = repair_query(str(query or "").strip())
     if not q:
         return {"query": "", "hits": [], "total": 0,
                 "note": "q 가 비었다 — 검색어 없이 부르면 전량을 돌려주게 되므로 거부한다"}
@@ -334,9 +376,15 @@ def _search(kanban_dir, query, limit=SEARCH_DEFAULT_LIMIT):
     hits.sort(key=lambda h: h.get("date") or "", reverse=True)
     total = len(hits)
     out = {"query": q, "total": total, "hits": hits[:limit]}
+    notes = []
+    # 되살린 사실을 먼저 말한다. 조용히 고치면 다음에도 같은 방식으로 부른다.
+    if repaired:
+        notes.append(repaired)
     if total > limit:
-        out["note"] = ("%d건 중 %d건만 실었다. limit 로 늘리거나 검색어를 좁힌다"
-                       % (total, limit))
+        notes.append("%d건 중 %d건만 실었다. limit 로 늘리거나 검색어를 좁힌다"
+                     % (total, limit))
+    if notes:
+        out["note"] = " / ".join(notes)
     return out
 
 
