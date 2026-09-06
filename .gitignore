@@ -12,6 +12,7 @@ server.log
 runtime.json
 runtime.lock
 runtime.json.tmp
+kanban.lock
 
 # SQLite WAL files
 *.db-shm
@@ -35,3 +36,9 @@ private/
 # e2e 스킬 검증용 임시 산출물
 test_temp/
 .check-venv/
+
+# 커버리지 산출물 — SQLite 바이너리이고 절대경로를 담는다.
+# 실수로 추적되고 있었다(48fedfa). 머신마다 다르게 바뀌어 병합도 안 된다.
+.coverage
+.coverage.*
+htmlcov/

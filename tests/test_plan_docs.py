@@ -44,12 +44,17 @@ def private_docs():
     return sorted(f for f in os.listdir(PRIVATE) if f.endswith(".md"))
 
 
-def phase_status():
-    """PHASES.md 가 말하는 Phase 별 상태."""
-    if not os.path.exists(PHASES):
-        return {}, {}
-    with open(PHASES, encoding="utf-8") as fh:
-        body = fh.read()
+def phase_status(body=None):
+    """PHASES.md 가 말하는 Phase 별 상태.
+
+    `body` 를 주면 그것을 읽는다 — 파서 자체를 고정 입력으로 검사하기 위해서다.
+    실제 파일로만 검사하면 파일 상태에 따라 검사 내용이 바뀐다.
+    """
+    if body is None:
+        if not os.path.exists(PHASES):
+            return set(), set()
+        with open(PHASES, encoding="utf-8") as fh:
+            body = fh.read()
     return set(DONE_PHASE.findall(body)), set(ACTIVE_PHASE.findall(body))
 
 
@@ -127,13 +132,37 @@ class ClosedPhasesHaveNoOpenBoxesTest(unittest.TestCase):
 class TheGuardItselfTest(unittest.TestCase):
     """검사가 실제로 잡는지. 항상 통과하는 검사는 검사가 아니다."""
 
-    def test_phase_status_parsing_finds_both_kinds(self):
+    FIXTURE = (
+        "## PHASE_PMF01 \u2705 DONE (2026-01-01)\n"
+        "> 끝난 것\n\n"
+        "## PHASE_PMF02 \U0001f6a7 IN PROGRESS\n"
+        "> 하는 중\n"
+    )
+
+    def test_parser_tells_the_two_headers_apart(self):
+        """파서를 **고정 입력**으로 검사한다.
+
+        처음엔 실제 PHASES.md 로 "완료도 있고 진행 중도 있다"를 단언했는데,
+        Phase 를 다 닫은 순간 진행 중이 0이 되어 깨졌다. **Phase 사이의 전환 대기는
+        정상 상태지 고장이 아니다** — 같은 실수를 이 파일에서 두 번째로 했다
+        (`test_open_box_marker_matches_the_docs` 주석 참조).
+
+        그렇다고 단언을 지우면 🚧 인식이 무검증으로 남는다. 헤더 형식이 바뀌어도
+        아무도 모른다. 그래서 파일이 아니라 파서를 검사한다.
+        """
+        done, active = phase_status(self.FIXTURE)
+        self.assertEqual({"PHASE_PMF01"}, done)
+        self.assertEqual({"PHASE_PMF02"}, active)
+
+    def test_real_phases_doc_is_readable_and_consistent(self):
+        """실제 파일에는 **항상 참인 것만** 묻는다."""
         if not os.path.exists(PHASES):
             self.skipTest("PHASES.md 없음")
         done, active = phase_status()
         self.assertTrue(done, "완료 Phase 를 하나도 못 읽었다 — 헤더 형식이 바뀌었는지 확인")
-        self.assertTrue(active, "진행 중 Phase 를 못 읽었다 — 지금 하나는 열려 있어야 한다")
         self.assertFalse(done & active, "같은 Phase 가 완료이자 진행 중이다")
+        self.assertLessEqual(len(active), 1,
+                             f"진행 중 Phase 가 둘 이상이다: {sorted(active)}")
 
     def test_open_box_marker_matches_the_docs(self):
         """마커가 문서 표기와 어긋나면 이 파일 전체가 조용히 무의미해진다.
