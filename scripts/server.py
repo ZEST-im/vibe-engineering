@@ -186,6 +186,12 @@ def _write_kanban(kanban_dir, data):
     os.replace(tmp, kp)
     _schedule_remote_sync(kanban_dir)
 
+# 보드가 아는 status 는 이 다섯이 전부다. 세 군데에 같은 리터럴이 흩어져 있었고
+# 데이터 불변식 검사는 그중 넷만 알고 있어, 서버 기본값(backlog)으로 만든 태스크를
+# 위반으로 잡았다. 정본을 하나 두고 나머지가 파생한다.
+BOARD_STATUSES = ("backlog", "todo", "in_progress", "review", "done")
+DEFAULT_STATUS = "backlog"
+
 PIPELINE_STATUS_PATH = os.path.join(SKILL_DIR, "pipeline-status.json")
 # 수집은 3시간마다 돈다. 노트북이 밤새 잠들면 10시간쯤 비므로 그보다 넉넉히 잡는다.
 # 실제 사고는 4일이었다 — 24시간이면 첫날에 잡힌다.
@@ -591,7 +597,7 @@ def _new_task(data, fields):
         "title": fields.get("title", ""),
         "description": fields.get("description", ""),
         "details": fields.get("details", ""),
-        "status": fields.get("status", "backlog"),
+        "status": fields.get("status", DEFAULT_STATUS),
         "priority": fields.get("priority", "medium"),
         "category": fields.get("category", ""),
         "target_date": fields.get("target_date", ""),
@@ -1083,7 +1089,7 @@ def _get_context(kanban_dir):
         reverse=True
     )
 
-    stats = {s: 0 for s in ["backlog", "todo", "in_progress", "review", "done"]}
+    stats = {s: 0 for s in BOARD_STATUSES}
     for t in all_tasks + archived:
         s = t.get("status", "")
         if s in stats:
@@ -2291,7 +2297,7 @@ class Handler(BaseHTTPRequestHandler):
                 data = _read_kanban(kanban_dir)
                 all_tasks = data["tasks"] + _list_archives(kanban_dir)
                 stats = {}
-                for s in ["backlog", "todo", "in_progress", "review", "done"]:
+                for s in BOARD_STATUSES:
                     stats[s] = sum(1 for t in all_tasks if t.get("status") == s)
                 stats["total"] = len(all_tasks)
                 return self._json(stats)

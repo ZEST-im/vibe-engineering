@@ -3,14 +3,36 @@
 CLAUDE.md 가 규정한 규율(id 재사용 금지, 완료 시 details·lines 필수,
 runs.json append-only)은 문서에만 있고 어디서도 강제되지 않았다. 여기서 강제한다.
 """
+import importlib.util
 import json
 import re
 import os
+import sys
 import unittest
 
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, "vibe-harness")
+SCRIPTS = os.path.join(ROOT, "scripts")
+
+
+def board_statuses():
+    """보드가 아는 status. **server.py 에서 가져온다 — 여기 다시 적지 않는다.**
+
+    적었다가 어긋났다. 이 검사는 넷만 알고 있었는데 서버의 새 태스크 기본값은
+    `backlog` 라, 서버로 만든 태스크가 곧바로 불변식 위반이 됐다. 검사가 정상 데이터를
+    위반으로 부르면 고쳐지는 건 데이터 쪽이다 — 그게 더 나쁘다.
+    """
+    sys.path.insert(0, SCRIPTS)
+    spec = importlib.util.spec_from_file_location("vh_server_status",
+                                                  os.path.join(SCRIPTS, "server.py"))
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules.setdefault("vh_server_status", mod)
+    spec.loader.exec_module(mod)
+    return tuple(mod.BOARD_STATUSES)
+
+
+BOARD_STATUSES = board_statuses()
 
 RUN_TOKEN_FIELDS = ("tokens", "input_tokens", "output_tokens",
                     "cache_read_tokens", "cache_write_tokens")
@@ -77,8 +99,18 @@ class KanbanIntegrityTest(unittest.TestCase):
 
     def test_status_is_a_known_value(self):
         for t in self.all_tasks:
-            self.assertIn(t["status"], ("todo", "in_progress", "done", "review"),
+            self.assertIn(t["status"], BOARD_STATUSES,
                           "task %s: 알 수 없는 status %r" % (t["id"], t["status"]))
+
+    def test_the_allowed_set_is_the_five_the_board_documents(self):
+        """정본에서 가져오더라도 정본 자체가 줄어들면 조용히 느슨해진다.
+
+        CLAUDE.md 는 5단계를 규정한다. `backlog`/`review` 가 빠지면 보드가 실제 진행을
+        표현하지 못하는데, 이 검사는 오히려 더 잘 통과한다 — 그래서 수를 못 박는다.
+        """
+        self.assertEqual({"backlog", "todo", "in_progress", "review", "done"},
+                         set(BOARD_STATUSES),
+                         "보드 status 집합이 CLAUDE.md 의 5단계와 다르다")
 
     def test_done_tasks_carry_a_report(self):
         """CLAUDE.md: 완료 시 details 와 변경량이 필수."""
