@@ -145,14 +145,23 @@ class CloneStateTest(unittest.TestCase):
                       env=env, check=kw.get("check", True))
 
     def make_pair(self):
-        """origin 과 그것을 추적하는 클론."""
+        """origin 과 그것을 추적하는 클론.
+
+        **브랜치 이름을 호스트 설정에 맡기지 않는다.** `init.defaultBranch` 가 로컬은
+        `main`, CI 는 `master` 였고, 그래서 뒤의 `checkout main` 이 CI 에서는 원격
+        추적 브랜치를 새로 만들어버렸다 — 분기 상황 자체가 만들어지지 않아 두 테스트가
+        로컬에서만 통과했다. 환경에 기대는 테스트는 환경이 다른 곳에서 조용히 다른 것을
+        검사한다.
+        """
         origin = os.path.join(self.base, "origin.git")
         work = os.path.join(self.base, "work")
-        self.git(self.base, "init", "-q", "--bare", "origin.git")
+        self.git(self.base, "init", "-q", "--bare", "-b", "main", "origin.git")
         self.git(self.base, "clone", "-q", origin, "work")
+        self.git(work, "symbolic-ref", "HEAD", "refs/heads/main")
         self.git(work, "commit", "-q", "--allow-empty", "-m", "base")
-        self.git(work, "push", "-q", "origin", "HEAD:refs/heads/main")
-        self.git(work, "branch", "-q", "-u", "origin/main")
+        self.git(work, "push", "-q", "-u", "origin", "main")
+        self.assertEqual("main", self.git(work, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip(),
+                         "작업 브랜치가 main 이 아니다 — 호스트의 defaultBranch 에 끌려갔다")
         return origin, work
 
     def state_of(self, work):

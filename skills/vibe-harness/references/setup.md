@@ -132,3 +132,13 @@ Two rules the tooling enforces:
   collection. Registration refuses instead. Register the main checkout only.
 
 Where there is no remote (a local-only repo), the directory name is the fallback.
+
+### What a local check still cannot tell you
+
+`scripts/check.py` runs what CI runs, on the machine you are on. It cannot run three Python
+versions, and it cannot give you a different `git config`. A test that quietly depends on the
+host — `init.defaultBranch` being `main` rather than `master`, a locale, a tool on `$PATH` —
+passes locally and fails there, and the local green is not wrong so much as narrow.
+
+When a test drives `git`, set the branch name explicitly rather than inheriting the host
+default. When it drives any tool, ask what the host is supplying that CI will not.
