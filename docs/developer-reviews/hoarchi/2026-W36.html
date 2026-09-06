@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>2026-W36 개발자 리뷰 — hoarchi</title>
+<style>
+:root{--bg:#f3f6f4;--card:#fff;--line:#d8e1db;--text:#17221c;--dim:#5d6e64;--green:#118c6b;--amber:#b46d0d;--red:#b83b62;--violet:#5b50b8;--mono:ui-monospace,SFMono-Regular,Menlo,monospace}
+@media(prefers-color-scheme:dark){:root{--bg:#111613;--card:#182019;--line:#2c3a31;--text:#e6efe9;--dim:#93a89c;--green:#3fbf97;--amber:#dda13f;--red:#e2708f;--violet:#9a8ff0}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.65}.wrap{max-width:980px;margin:auto;padding:56px 24px 90px}h1{font-size:42px;line-height:1.15;margin:8px 0 12px}h2{margin-top:46px;font-size:24px}h3{margin-top:28px;font-size:18px}.eyebrow,.meta{font:12px var(--mono);color:var(--dim)}.eyebrow{color:var(--green);letter-spacing:.14em}.lede{font-size:18px;color:var(--dim);max-width:75ch}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:28px 0}.card{background:var(--card);border:1px solid var(--line);border-radius:15px;padding:22px}.metric b{display:block;font:700 30px var(--mono);color:var(--green)}.metric span{font-size:12px;color:var(--dim)}.tablewrap{overflow-x:auto}table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line)}th,td{padding:12px;border-bottom:1px solid var(--line);text-align:left}th{font-size:12px;color:var(--dim)}.score{font:700 18px var(--mono)}.up{color:var(--green)}.same{color:var(--amber)}.down{color:var(--red)}.priority{border-left:4px solid var(--amber);margin:12px 0}.critical{border-left-color:var(--red)}.good{border-left-color:var(--green)}code{font-family:var(--mono);font-size:.92em}li{margin:7px 0}.evidence{font:12px var(--mono);color:var(--dim)}.verdict{border-top:4px solid var(--green);font-size:16px}footer{margin-top:50px;text-align:center;color:var(--dim);font:11px var(--mono)}@media(max-width:720px){.grid{grid-template-columns:repeat(2,1fr)}h1{font-size:34px}}
+</style>
+</head>
+<body><main class="wrap">
+<p class="eyebrow">VIBE ENGINEERING · AI CTO WEEKLY REVIEW</p>
+<h1>hoarchi · 2026-W36</h1>
+<p class="meta">@hoarchi · 2026-08-31–2026-09-06 · <code>origin/main</code> @ <code>a99e23b</code></p>
+
+<p class="lede">지난 4주 중 처음으로 <strong>기간이 끝난 뒤에 쓰는 리뷰</strong>다. 커밋 10개 전부가 테스트를 건드렸고, 3주 연속 지적이던 커버리지가 마침내 숫자를 얻었다. 그런데 <strong>3주째 아무 규칙도 없는 문제가 하나 있고, 그게 이번 주에만 하루 세 번 부딪혔다</strong> — 한 워킹트리를 여러 세션이 공유하는 것. 만드는 속도가 아니라 이 하나가 종합을 7에 묶는다.</p>
+
+<div class="grid">
+  <div class="card metric"><b>10</b><span>커밋</span></div>
+  <div class="card metric"><b>+2,030</b><span>순증 라인</span></div>
+  <div class="card metric"><b>437</b><span>테스트</span></div>
+  <div class="card metric"><b>7/10</b><span>종합 평가</span></div>
+</div>
+
+<section>
+<h2>1. W35r 대비 변화</h2>
+<div class="tablewrap">
+<table>
+<thead><tr><th>영역</th><th>W33</th><th>W35r</th><th>W36</th><th>판정</th></tr></thead>
+<tbody>
+<tr><td>종합</td><td>5</td><td class="score">7</td><td class="score">7</td><td class="same">3주 연속 미해결 항목이 8을 막는다</td></tr>
+<tr><td>요구사항</td><td>7</td><td>8</td><td>8</td><td class="same">PMF10 정의 + README 계보로 정체성 서술</td></tr>
+<tr><td>아키텍처</td><td>7</td><td>8</td><td>8</td><td class="same">"정본은 한 곳" 판단이 세 번 반복해서 적용됨</td></tr>
+<tr><td>구현</td><td>6</td><td>8</td><td>8</td><td class="same">검색·검사기·클론 판정 전부 실동작 확인</td></tr>
+<tr><td>테스트</td><td>3</td><td>8</td><td>8</td><td class="same">353 → 437, 10/10 커밋이 tests/ 를 건드림</td></tr>
+<tr><td>Git 변경관리</td><td>6</td><td>6</td><td>7</td><td class="up">재작성 0회, 클론 상태가 이제 게이트</td></tr>
+<tr><td>운영</td><td>1</td><td>6</td><td>7</td><td class="up">한 명령 진입점 + 커버리지 잡. CI 7/8</td></tr>
+<tr><td>AI 활용 강도</td><td>8</td><td>9</td><td>9</td><td class="same">10/10 공동저자, 두 머신</td></tr>
+<tr><td>AI 통제 역량</td><td>3</td><td>7</td><td>8</td><td class="up">고친 절차가 실제로 사고를 잡아냈다</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+
+<section>
+<h2>2. 잘된 부분</h2>
+<div class="card good">
+<h3>고친 절차가 바로 그 주에 값을 했다</h3>
+<p>W35r 의 지적은 두 겹이었다 — 린트를 안 돌렸고, 푸시 후 <code>gh run list</code> 맨 위(이전 커밋)를 초록으로 읽었다. 이번 주에 <code>81e87a9</code> 가 CI 에서 빨갰는데 <strong>그 커밋의 실행을 특정해서 봤기 때문에 즉시 잡혔고 다음 커밋에서 고쳤다.</strong> 지난번엔 같은 상태가 네 커밋 이어졌다.</p>
+</div>
+<div class="card good">
+<h3>커버리지가 4주 만에 숫자가 됐다 — 그리고 가장 낮은 곳이 말을 한다</h3>
+<p>W33·W35·W35r 세 번 지적된 항목이다. <code>coverage==7.13.0</code>, 전체 <strong>51%</strong>. 중요한 건 총계가 아니라 분포다 — <code>install_reconcile.py</code> 가 <strong>0%</strong> 인데, <strong>넉 달 전 수집을 4일간 멈춘 것이 바로 그 스크립트다.</strong> 한 줄도 테스트되지 않은 채 그 사고를 냈고 지금도 그렇다.</p>
+<p>측정만 하고 끝내지 않았다. 하한 50% 를 CI 에 걸었고, CI 에만 있으면 조용히 사라지므로 <em>배선 자체</em>를 테스트로 묶었다.</p>
+</div>
+<div class="card good">
+<h3>같은 판단이 세 번 반복 적용됐다 — "정본은 한 곳"</h3>
+<ul>
+<li><code>check.py</code> 가 도구 버전을 <strong>워크플로에서 읽는다.</strong> 자기가 들면 "로컬 통과, CI 실패"가 되고 그건 검사가 없는 것보다 나쁘다</li>
+<li>클론 판정이 SHA 가 아니라 <strong>커밋 메시지 집합</strong>으로 재작성을 가른다 — 재작성과 진짜 분기는 대응이 반대다</li>
+<li>죽은 계획 문서 정리에서 규칙을 <strong>문서의 자기 선언</strong>으로 잡았다. 처음엔 Phase 이름으로 판정했는데 표기가 다른 문서를 통째로 놓쳤다</li>
+</ul>
+<p>세 번 다 "같은 것을 두 군데 적으면 갈라진다"는 같은 교훈이다.</p>
+</div>
+<div class="card good">
+<h3>조용한 실패를 또 하나 걷어냈다 (Windows)</h3>
+<p><code>ce8f5ba</code> — 수집·잠금·테스트가 Windows 에서 <strong>조용히</strong> 실패하고 있었다. 훅 3개, 런타임, 수집기, 편집기까지 8파일. 이 레포가 반복해서 잡는 그 형태다.</p>
+</div>
+</section>
+
+<section>
+<h2>3. 안 된 부분</h2>
+<div class="card critical">
+<h3>P1 · 한 워킹트리를 여러 세션이 공유한다 <span class="evidence">(3주 연속 · critical, high 에서 상향)</span></h3>
+<p>3주째 <strong>규칙이 하나도 없다.</strong> 그리고 이번 주에 <code>docs/PROGRESS.md</code> 가 스스로 적었다 — <em>"한 워킹트리를 여러 세션이 공유하는 문제가 하루에 세 번 부딪혔고, 아직 규칙이 없다."</em></p>
+<p>지금까지 이 문제가 만든 것: 미커밋 작업이 다른 세션에 의해 커밋·푸시됐고 <strong>그 경로로 사내 수치가 공개 레포에 올라갔다.</strong> 원격 <code>main</code> 이 force-push 돼 있는 것을 <code>ss</code> 로 발견했다. 파일 단위는 <code>kanban_edit.py</code> 의 잠금으로 막았지만 <strong>워킹트리 자체는 잠글 수 없다.</strong></p>
+<p>3주 연속이고 실제 피해가 발생했는데 대응이 "문제로 인식"에 머물러 있다. 이번 주 최우선이다.</p>
+</div>
+<div class="card priority">
+<h3>P2 · 로컬 검사가 CI 환경을 재현하지 못한다 <span class="evidence">(2주 연속 · high, 형태가 바뀜)</span></h3>
+<p>W35r 의 "CI 절반만 본다"는 <code>check.py</code> 로 닫혔다. 그런데 <strong>만든 바로 다음 커밋이 CI 에서 빨갰다.</strong> 원인은 다른 층위였다 — 테스트가 <code>init.defaultBranch</code> 에 기댔고, 로컬은 <code>main</code>, CI 는 <code>master</code> 라 <em>조용히 다른 것을 검사하고 있었다.</em></p>
+<p>증상은 같다(로컬 초록, CI 빨강). 원인은 "안 돌렸다"에서 "돌릴 수 없다"로 좁아졌다 — 로컬 검사기는 파이썬 3버전도, 다른 <code>git config</code> 도 줄 수 없다. <strong>구조적으로 남는 간격이고, 그렇다면 남는다는 사실 자체가 규율이 돼야 한다.</strong></p>
+</div>
+<div class="card priority">
+<h3>P3 · 사고를 낸 스크립트가 여전히 0% <span class="evidence">(신규 · high)</span></h3>
+<p><code>install_reconcile.py</code> 40문장 전부 미실행. 이 스크립트가 옛 경로를 가리켜 28회 연속 실패하면서 토큰 수집이 4일간 멈췄다. 커버리지를 재기 시작한 첫 주에 <strong>가장 낮은 곳과 가장 큰 사고가 같은 파일이라는 것</strong>이 드러났다. 목표치를 정할 때 총계부터 올릴 일이 아니다.</p>
+</div>
+<div class="card priority">
+<h3>P4 · 다른 클론 상태가 여전히 미확인 <span class="evidence">(2주 연속 · medium)</span></h3>
+<p>재작성 대응은 장치가 됐다 — <code>check.py</code> 가 재작성/분기를 가르고 갈라진 채 푸시하지 못하게 막는다. 그러나 <strong>mac-studio 가 지금 어떤 상태인지는 이 머신에서 알 수 없다.</strong> 히스토리 재작성이 두 번 있었고, 한 번은 다른 머신이 갈라진 채 방치돼 있었다.</p>
+</div>
+<div class="card priority">
+<h3>P5 · 커버리지 51% 의 절반이 한 파일 <span class="evidence">(신규 · medium)</span></h3>
+<p><code>server.py</code> 1,713문장 중 933 미실행. HTTP 핸들러를 테스트가 함수 직접 호출로만 지나가기 때문이다. 계산 로직은 잘 덮이는데 <strong>라우팅·요청 파싱·오류 응답이 통째로 비어 있다</strong> — 사용자가 실제로 닿는 표면이 그쪽이다.</p>
+</div>
+</section>
+
+<section>
+<h2>4. W35r 지적의 처리</h2>
+<div class="tablewrap">
+<table>
+<thead><tr><th>항목</th><th>주</th><th>상태</th><th>근거</th></tr></thead>
+<tbody>
+<tr><td>공개 레포 사내 정보 유출</td><td>2</td><td class="up">닫힘(관찰 유지)</td><td>위생 게이트 통과, 3주째 재발 없음. 도입 당시 저자를 두 번 잡았다</td></tr>
+<tr><td>검증 루프가 CI 절반만</td><td>1</td><td class="same">부분</td><td><code>check.py</code> 로 도구는 생겼으나 환경 차이는 남음 → P2</td></tr>
+<tr><td>커버리지 미측정</td><td>3</td><td class="up">닫힘</td><td>51% 측정 + 하한 50% + 배선 테스트</td></tr>
+<tr><td>병렬 세션 워킹트리 공유</td><td>2</td><td class="down">악화</td><td>규칙 없음. 이번 주 하루 3회 → P1, critical 로 상향</td></tr>
+<tr><td>재작성 후 클론 추적 부재</td><td>1</td><td class="same">부분</td><td>판정 장치는 생김. 다른 머신 확인은 미완 → P4</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+
+<section>
+<h2>5. 완성도</h2>
+<div class="tablewrap">
+<table>
+<thead><tr><th>판정</th><th>영역</th><th>비고</th></tr></thead>
+<tbody>
+<tr><td>완료</td><td>검증 장치</td><td>437 tests · CI 5잡 · 한 명령 진입점 · 커버리지 하한</td></tr>
+<tr><td>완료</td><td>검색 엔지니어링 1단계</td><td>스니펫 반환, 응답이 코퍼스에 비례하지 않음</td></tr>
+<tr><td>부분</td><td>운영 가시성</td><td>파이프라인·아카이브·클론은 감지. 워킹트리 공유는 감지도 없음</td></tr>
+<tr><td>부분</td><td>커버리지</td><td>측정은 됨. 51%, 사고 낸 스크립트 0%</td></tr>
+<tr><td>미착수</td><td>공개 제품화</td><td>마켓플레이스·GeekNews 초안만. 위생 게이트 관찰 종료 후로 미룸</td></tr>
+</tbody>
+</table>
+</div>
+<p>도구로서 사내 실사용은 안정적이다(두 머신·22개 프로젝트). 공개 제품으로는 워킹트리 규칙과 커버리지 분포가 남아 70~75% 로 본다.</p>
+</section>
+
+<section>
+<h2>6. 다음 주(W37) 완료 조건</h2>
+<ol>
+<li><strong>워킹트리 공유에 규칙을 정한다.</strong> 3주 연속이고 실제 유출 경로였다. 잠글 수 없다면 최소한 <em>감지</em>는 해야 한다 — 예: 세션 시작 시 같은 워킹트리에 다른 세션의 미커밋 변경이 있으면 경고. 규칙이 "조심한다"면 4주차에 또 적힌다.</li>
+<li><strong><code>install_reconcile.py</code> 를 0% 에서 꺼낸다.</strong> 총계를 올리는 게 아니라 이 파일이다. plist 경로 생성·재설치 멱등성·경로가 어긋났을 때의 동작.</li>
+<li><strong>로컬이 재현할 수 없는 것을 목록으로 만든다.</strong> P2 는 구조적으로 남는다. 없앨 수 없으면 <code>check.py</code> 출력 맨 끝에 "여기서 확인 못 한 것: 파이썬 3.11/3.12, 다른 git config, Windows" 를 찍어 좁은 초록임을 매번 말하게 한다.</li>
+<li><strong>mac-studio 정렬 상태를 실제로 확인한다.</strong> 2주 연속 미확인이다.</li>
+<li><strong>리뷰를 이번처럼 기간이 끝난 뒤에 쓴다.</strong> W35 는 기간 중에 써서 정정이 필요했다. 이번 주는 지켰다.</li>
+</ol>
+</section>
+
+<section>
+<h2>7. 이해도 점검</h2>
+<p class="evidence">찾아보지 않고 답할 수 있어야 한다.</p>
+<ol>
+<li><strong><code>check.py</code> 가 도구 버전을 워크플로에서 읽는 이유는?</strong> 통과하는 답은 "중복 제거"에 그치지 않고, 갈라졌을 때 생기는 상태가 <em>왜 검사가 없는 것보다 나쁜지</em>를 말해야 한다.</li>
+<li><strong>재작성과 진짜 분기를 어떻게 구별하고, 왜 구별해야 하는가?</strong> 통과하는 답에는 판정 기준(커밋 메시지 집합)과, 각각에 잘못된 대응을 했을 때 잃는 것이 나와야 한다.</li>
+<li><strong>테스트에서 빈 커밋 두 개가 같은 SHA 가 될 수 있는 이유는?</strong> 통과하는 답은 커밋이 내용 주소라는 것과, 같아지려면 무엇이 전부 일치해야 하는지를 말해야 한다. 이번 주에 실제로 부딪힌 문제다.</li>
+</ol>
+</section>
+
+<section class="card verdict">
+<h2>CTO 종합 판정</h2>
+<p><strong>습관이 자리를 잡았다.</strong> 커밋 10개 전부가 테스트를 건드렸고, 6개가 위반 주입으로 검출을 확인했으며, 고친 절차(그 커밋의 CI 를 특정해서 본다)가 같은 주에 실제 사고를 잡았다. 지난주까지는 규율을 <em>만드는</em> 주였고 이번 주는 규율이 <em>작동한</em> 주다. AI 통제 역량을 8로 올린 근거가 이것이다.</p>
+<p><strong>그런데 3주째 손대지 않은 것이 하나 있다.</strong> 한 워킹트리를 여러 세션이 공유하는 문제는 이미 사내 수치를 공개 레포로 밀어 올린 경로였고, 이번 주에만 하루 세 번 부딪혔는데 규칙이 없다. 이 레포가 잘하는 것은 <em>겪은 사고를 검사로 바꾸는 것</em>인데, 유독 이 항목만 "인식"에 멈춰 있다. 잠글 수 없다는 것이 아무것도 안 해도 된다는 뜻은 아니다 — 최소한 감지는 만들 수 있다.</p>
+<p>판정은 <strong>여전히 조건부</strong>다. 종합 8은 "그 범위에서 운영 준비가 됐다"는 뜻인데, 3주 연속 미해결이 실제 피해를 낸 상태에서는 붙일 수 없다. 코드 품질이 아니라 <em>남겨둔 것 하나</em>가 이 숫자를 정한다.</p>
+</section>
+
+<section>
+<h2>검증 근거</h2>
+<ul class="evidence">
+<li>기간: 2026-08-31 – 2026-09-06 (W36, 기간 종료 후 작성)</li>
+<li>Git: 10 commits, +2,117 / −87 (net +2,030), 29 unique files</li>
+<li><strong>tests/ 를 건드린 커밋 10/10</strong> · CI·배포 7/10 · AI 공동저자 10/10</li>
+<li>유형: fix 5, feat 3, test 1, docs 1</li>
+<li>프로젝트 자체 검사 <code>python3 scripts/check.py</code>: clone·compileall·tests·ruff·coverage 5단계 PASS</li>
+<li>테스트 직접 실행: <code>Ran 437 tests — OK</code> (26개 파일, W35r 353개에서 +84)</li>
+<li>린트: ruff 0.16.3 — All checks passed</li>
+<li>커버리지: TOTAL 3,601 문장 중 1,782 미실행 = <strong>51%</strong> · 하한 50% 통과</li>
+<li>분포: install_reconcile 0% · setup 25% · worker 41% · server 46% · check 47% · kanban_edit 50% · enroll 58% · reconcile_runs 77% · vibe_runtime 79%</li>
+<li>CI: 8회 중 7 success, <code>81e87a9</code> 1 failure (다음 커밋에서 수정)</li>
+<li>위반 주입으로 검출을 확인한 커밋 6/10</li>
+</ul>
+<h3>관측 범위</h3>
+<div class="tablewrap">
+<table>
+<thead><tr><th>소스</th><th>상태</th><th>근거</th></tr></thead>
+<tbody>
+<tr><td>git</td><td class="up">observed</td><td>10커밋 전량 열람</td></tr>
+<tr><td>tests</td><td class="up">observed</td><td>직접 실행 437 OK</td></tr>
+<tr><td>ci</td><td class="up">observed</td><td>커밋별로 특정해 확인, red 1건 포함</td></tr>
+<tr><td>docs</td><td class="up">observed</td><td>PHASES·CURRENT_PHASE·PROGRESS·README·references 갱신</td></tr>
+<tr><td>deployment</td><td class="up">observed</td><td>설치본 배포·서버 재기동·검색 e2e 확인</td></tr>
+<tr><td>coverage</td><td class="up">observed</td><td>이번 주부터 측정 가능 — 3주간 missing 이던 항목</td></tr>
+<tr><td>other machines</td><td class="same">unverified</td><td>mac-studio 상태는 이 머신에서 확인 불가 (2주 연속)</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+
+<footer>Vibe Engineering AI CTO Review · vibe-engineering · origin/main · 2026-W36</footer>
+</main></body></html>

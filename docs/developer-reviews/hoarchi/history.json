@@ -493,6 +493,180 @@
         "delivery_files_touched": 10,
         "ai_attributed_commits": 30
       }
+    },
+    {
+      "period": {
+        "label": "2026-W36",
+        "start": "2026-08-31",
+        "end": "2026-09-06",
+        "note": "지난 4주 중 처음으로 기간이 끝난 뒤에 작성. W35 는 기간 중에 써서 정정이 필요했다"
+      },
+      "scores": {
+        "overall": 7,
+        "requirements": 8,
+        "architecture": 8,
+        "implementation": 8,
+        "testing": 8,
+        "git_change_management": 7,
+        "operations": 7,
+        "ai_utilization": 9,
+        "ai_supervision": 8
+      },
+      "score_evidence": {
+        "ai_supervision": {
+          "anchor": "8",
+          "confidence": "high",
+          "supports": [
+            "고친 절차가 같은 주에 사고를 잡았다 — 그 커밋의 CI 를 특정해 봐서 red 1건 즉시 검출·수정 (지난번엔 4커밋 방치)",
+            "10커밋 중 6개가 위반 주입으로 검출을 확인",
+            "자기 스캐폴딩 오류를 두 번 스스로 찾음 — 빈 커밋 SHA 충돌, 잡 이름 정규식 범위",
+            "확인 못 한 것을 확인한 것처럼 적지 않음 (mac-studio)"
+          ],
+          "concerns": [
+            "로컬 검사기가 CI 환경을 재현 못 한다는 것을 만들고 나서야 알았다"
+          ],
+          "unknowns": []
+        },
+        "testing": {
+          "anchor": "8",
+          "confidence": "high",
+          "supports": [
+            "353 → 437 (+84)",
+            "10/10 커밋이 tests/ 를 건드림",
+            "커버리지 측정 시작 — 51%, 하한 50%, 배선 자체도 테스트"
+          ],
+          "concerns": [
+            "install_reconcile.py 0% — 4일 수집 중단을 낸 바로 그 스크립트",
+            "server.py 933문장 미실행 — 라우팅·요청 파싱·오류 응답이 통째로 비었다",
+            "환경 의존 테스트를 CI 만 잡았다"
+          ],
+          "unknowns": []
+        },
+        "operations": {
+          "anchor": "7",
+          "confidence": "high",
+          "supports": [
+            "scripts/check.py — 클론·컴파일·테스트·린트·커버리지 한 명령",
+            "클론 상태가 게이트 — 갈라진 채로 푸시 불가",
+            "CI 5잡, 8회 중 7 success",
+            "Windows 에서 수집·잠금·테스트가 조용히 실패하던 것 수정(8파일)"
+          ],
+          "concerns": [
+            "CI red 1건",
+            "mac-studio 상태 2주 연속 미확인",
+            "워킹트리 공유는 감지 장치조차 없다"
+          ],
+          "unknowns": []
+        },
+        "git_change_management": {
+          "anchor": "7",
+          "confidence": "medium",
+          "supports": [
+            "재작성 0회",
+            "클론 상태 판정이 푸시 전 게이트로 들어감",
+            "10커밋 목적형 분할"
+          ],
+          "concerns": [
+            "한 워킹트리 공유 문제가 하루 3회 발생, 3주째 규칙 없음"
+          ],
+          "unknowns": [
+            "다른 머신의 로컬 상태"
+          ]
+        }
+      },
+      "source_coverage": {
+        "git": "observed",
+        "tests": "observed",
+        "ci": "observed",
+        "docs": "observed",
+        "deployment": "observed",
+        "coverage": "observed",
+        "other_machines": "unverified"
+      },
+      "verdict": "규율을 만드는 주에서 규율이 작동하는 주로 넘어왔다 — 고친 절차가 같은 주에 실제 사고를 잡았고 커밋 10개 전부가 테스트를 건드렸다. 그러나 3주째 손대지 않은 항목이 하나 있다. 워킹트리 공유는 이미 사내 수치를 공개 레포로 밀어 올린 경로였고 이번 주에만 하루 세 번 부딪혔는데 규칙도 감지도 없다. 이 레포가 잘하는 것은 겪은 사고를 검사로 바꾸는 것인데 유독 이 항목만 '인식'에 멈춰 있다. 종합 8은 붙일 수 없다.",
+      "priorities": [
+        {
+          "category": "병렬 세션이 워킹트리를 공유",
+          "dimension": "git_change_management",
+          "status": "repeated",
+          "consecutive_weeks": 3,
+          "severity": "critical",
+          "actions": [
+            "잠글 수 없으면 최소한 감지한다 — 세션 시작 시 같은 워킹트리에 다른 세션의 미커밋 변경이 있으면 경고",
+            "규칙이 '조심한다'면 4주차에 또 적힌다"
+          ]
+        },
+        {
+          "category": "로컬 검사가 CI 환경을 재현 못 한다",
+          "dimension": "operations",
+          "status": "repeated",
+          "consecutive_weeks": 2,
+          "severity": "high",
+          "actions": [
+            "없앨 수 없으면 매번 말하게 한다 — check.py 끝에 '여기서 확인 못 한 것' 출력",
+            "테스트가 도구를 부릴 때 호스트가 대주는 것을 명시적으로 고정"
+          ]
+        },
+        {
+          "category": "사고를 낸 스크립트가 0% 커버리지",
+          "dimension": "testing",
+          "status": "new",
+          "consecutive_weeks": 1,
+          "severity": "high",
+          "actions": [
+            "install_reconcile.py — plist 경로 생성·재설치 멱등성·경로 어긋남 동작",
+            "총계를 올리는 게 아니라 이 파일부터"
+          ]
+        },
+        {
+          "category": "다른 클론 상태 미확인",
+          "dimension": "operations",
+          "status": "repeated",
+          "consecutive_weeks": 2,
+          "severity": "medium",
+          "actions": [
+            "mac-studio 정렬 상태를 실제로 확인한다"
+          ]
+        },
+        {
+          "category": "server.py 커버리지 결손",
+          "dimension": "testing",
+          "status": "new",
+          "consecutive_weeks": 1,
+          "severity": "medium",
+          "actions": [
+            "함수 직접 호출이 아니라 HTTP 경유 테스트 — 라우팅·요청 파싱·오류 응답"
+          ]
+        }
+      ],
+      "resolved": [
+        {
+          "category": "커버리지 미측정",
+          "resolved_in": "2026-W36",
+          "evidence": "3주 연속 지적이던 것. 51% 측정 + 하한 50% + 배선 테스트"
+        },
+        {
+          "category": "공개 레포 사내 정보 유출",
+          "resolved_in": "2026-W36",
+          "evidence": "위생 게이트 3주째 재발 없음. 관찰은 유지"
+        },
+        {
+          "category": "검증 루프가 CI 절반만 본다",
+          "resolved_in": "2026-W36",
+          "evidence": "scripts/check.py 로 도구는 생겼다. 남은 환경 차이는 별도 항목으로"
+        }
+      ],
+      "git": {
+        "commits": 10,
+        "additions": 2117,
+        "deletions": 87,
+        "net_lines": 2030,
+        "files_touched": 29,
+        "test_files_touched": 10,
+        "migration_files_touched": 0,
+        "delivery_files_touched": 7,
+        "ai_attributed_commits": 10
+      }
     }
   ]
 }

@@ -136,12 +136,21 @@ class TheGuardItselfTest(unittest.TestCase):
         self.assertFalse(done & active, "같은 Phase 가 완료이자 진행 중이다")
 
     def test_open_box_marker_matches_the_docs(self):
-        """마커가 문서 표기와 어긋나면 이 파일 전체가 조용히 무의미해진다."""
+        """마커가 문서 표기와 어긋나면 이 파일 전체가 조용히 무의미해진다.
+
+        **열린 항목이 지금 존재하는지로 검사하면 안 된다.** 처음엔 그렇게 썼는데,
+        Phase 를 다 닫은 순간 PHASES.md 의 열린 항목이 0이 되어 이 테스트가 깨졌다.
+        "할 일이 하나도 없다"는 정상 상태지 고장이 아니다.
+
+        그래서 표기 규약 자체를 본다 — 닫힌 마커는 반드시 있고(무언가는 끝났다),
+        두 마커는 가운데 글자만 다르다.
+        """
         if not os.path.exists(PHASES):
             self.skipTest("PHASES.md 없음")
         body = read("PHASES.md")
-        self.assertIn(OPEN_BOX, body, "열린 체크박스 표기를 못 찾는다")
-        self.assertIn("- [x]", body, "닫힌 체크박스 표기를 못 찾는다")
+        self.assertIn("- [x]", body, "닫힌 체크박스 표기를 못 찾는다 — 형식이 바뀌었나")
+        self.assertEqual(OPEN_BOX.replace(" ]", "x]"), "- [x]",
+                         "열림/닫힘 마커가 같은 규약이 아니다")
 
 
 if __name__ == "__main__":
