@@ -120,3 +120,103 @@ class ShippedWithTheToolTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CloneStateTest(unittest.TestCase):
+    """재작성과 진짜 분기는 **대응이 반대**라 구별해야 한다.
+
+    재작성에 `pull` 하면 머지 커밋이 생기면서 원격이 지운 것이 되돌아온다. 실제로 그럴
+    뻔했다 — 공개 레포에서 스크럽한 제3자 실명이 되살아날 상황이었다. 진짜 분기에
+    `reset --hard` 하면 반대로 내 작업이 사라진다.
+    """
+
+    def setUp(self):
+        self.saved = check.ROOT
+        self.base = tempfile.mkdtemp()
+
+    def tearDown(self):
+        check.ROOT = self.saved
+
+    def git(self, repo, *args, **kw):
+        import subprocess as sp
+        env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
+                   GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+        return sp.run(["git", "-C", repo, *args], capture_output=True, text=True,
+                      env=env, check=kw.get("check", True))
+
+    def make_pair(self):
+        """origin 과 그것을 추적하는 클론."""
+        origin = os.path.join(self.base, "origin.git")
+        work = os.path.join(self.base, "work")
+        self.git(self.base, "init", "-q", "--bare", "origin.git")
+        self.git(self.base, "clone", "-q", origin, "work")
+        self.git(work, "commit", "-q", "--allow-empty", "-m", "base")
+        self.git(work, "push", "-q", "origin", "HEAD:refs/heads/main")
+        self.git(work, "branch", "-q", "-u", "origin/main")
+        return origin, work
+
+    def state_of(self, work):
+        check.ROOT = work
+        return check.clone_state()
+
+    def test_aligned(self):
+        _o, work = self.make_pair()
+        self.assertEqual("aligned", self.state_of(work)[0])
+
+    def test_ahead(self):
+        _o, work = self.make_pair()
+        self.git(work, "commit", "-q", "--allow-empty", "-m", "mine")
+        self.assertEqual("ahead", self.state_of(work)[0])
+
+    def commit(self, work, message, content):
+        """내용이 다른 커밋. 빈 커밋으로는 재작성을 흉내낼 수 없다 —
+
+        같은 초에 만든 동일 트리·동일 메시지·동일 부모의 빈 커밋은 **SHA 까지 같아진다.**
+        커밋은 내용 주소이기 때문이다. 처음에 그렇게 만들었더니 원격이 로컬의 후손이 돼서
+        'behind' 로 나왔고, 재작성 판정을 검증하지 못했다.
+        """
+        with open(os.path.join(work, "f.txt"), "w", encoding="utf-8") as fh:
+            fh.write(content)
+        self.git(work, "add", "f.txt")
+        self.git(work, "commit", "-q", "-m", message)
+
+    def test_rewrite_is_recognised_as_rewrite(self):
+        """같은 작업이 다른 SHA 로 올라간 것 — 여기서 pull 하면 안 된다."""
+        _o, work = self.make_pair()
+        self.commit(work, "일한 것", "original")
+        # 원격이 같은 메시지를 **다른 내용**으로 갖게 만든다 (스크럽 후 force-push 흉내)
+        self.git(work, "checkout", "-q", "-b", "rewritten", "HEAD~1")
+        self.commit(work, "일한 것", "scrubbed")
+        self.commit(work, "스크럽 기록", "note")
+        self.git(work, "push", "-q", "-f", "origin", "rewritten:main")
+        self.git(work, "checkout", "-q", "-f", "main")
+        self.git(work, "fetch", "-q", "origin")
+        state, detail = self.state_of(work)
+        self.assertEqual("rewritten", state)
+        self.assertIn("reset --hard", detail)
+
+    def test_real_divergence_is_not_called_a_rewrite(self):
+        """양쪽에 서로 없는 작업이 있으면 reset 은 내 것을 지운다."""
+        _o, work = self.make_pair()
+        self.git(work, "checkout", "-q", "-b", "other")
+        self.commit(work, "원격 쪽 작업", "theirs")
+        self.git(work, "push", "-q", "-f", "origin", "other:main")
+        self.git(work, "checkout", "-q", "-f", "main")
+        self.commit(work, "내 쪽 작업", "mine")
+        self.git(work, "fetch", "-q", "origin")
+        self.assertEqual("diverged", self.state_of(work)[0])
+
+    def test_no_upstream_is_skipped_not_failed(self):
+        """추적 브랜치가 없는 것은 고장이 아니다."""
+        work = os.path.join(self.base, "solo")
+        os.makedirs(work)
+        self.git(work, "init", "-q")
+        self.git(work, "commit", "-q", "--allow-empty", "-m", "x")
+        self.assertEqual("no-upstream", self.state_of(work)[0])
+
+    def test_bad_states_fail_the_check(self):
+        """판정만 하고 통과시키면 갈라진 채로 푸시한다."""
+        with open(os.path.join(SCRIPTS, "check.py"), encoding="utf-8") as fh:
+            body = fh.read()
+        self.assertIn('("rewritten", "diverged")', body,
+                      "재작성·분기 상태가 check 를 실패시키지 않는다")

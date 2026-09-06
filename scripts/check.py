@@ -60,6 +60,55 @@ def ci_pins():
     return tools, int(floor.group(1)) if floor else None
 
 
+def clone_state():
+    """이 클론이 원격과 어떤 관계인지. **분기의 종류까지** 가른다.
+
+    갈라졌을 때 대응이 두 가지고 서로 반대다.
+
+    - **재작성** (force-push): `reset --hard` 다. 여기서 `pull` 하면 머지 커밋이 생기면서
+      원격이 지운 것이 되돌아온다. 실제로 그럴 뻔했다 — 공개 레포에서 스크럽한 제3자
+      실명이 되살아날 상황이었다.
+    - **진짜 분기**: 양쪽에 서로 없는 작업이 있다. 머지하거나 리베이스한다.
+
+    구별법은 간단하다. 로컬에만 있는 커밋의 **메시지가 전부 원격에도 있으면** 같은 작업이
+    다른 SHA 로 올라간 것이다 — 재작성이다.
+
+    네트워크는 건드리지 않는다. fetch 는 `ss` 의 일이고, 여기서 또 하면 느리고 오프라인에서
+    막힌다. 이미 가져온 ref 로만 판단한다.
+    """
+    def git(*args):
+        done = subprocess.run(["git", "-C", ROOT, *args],
+                              capture_output=True, text=True)
+        return done.stdout.strip() if done.returncode == 0 else None
+
+    upstream = git("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+    if not upstream:
+        return "no-upstream", "추적 브랜치가 없다 — 분기 판단 생략"
+
+    counts = git("rev-list", "--left-right", "--count", "HEAD...@{u}")
+    if not counts:
+        return "unknown", "ahead/behind 를 읽지 못했다"
+    ahead, behind = (int(n) for n in counts.split())
+    if not ahead and not behind:
+        return "aligned", f"{upstream} 와 일치"
+    if not ahead:
+        return "behind", f"{behind}커밋 뒤처짐 — pull 하면 된다"
+    if not behind:
+        return "ahead", f"{ahead}커밋 앞섬 — 푸시하면 된다"
+
+    ours = set((git("log", "--format=%s", "HEAD", "^@{u}") or "").splitlines())
+    theirs = set((git("log", "--format=%s", "@{u}", "^HEAD") or "").splitlines())
+    if ours and ours <= theirs:
+        return "rewritten", (
+            f"ahead {ahead} / behind {behind} — **히스토리 재작성으로 보인다.** "
+            f"로컬 {len(ours)}개가 전부 원격에 같은 메시지로 있다.\n"
+            "     `pull` 하지 말 것 — 머지 커밋이 생기면서 원격이 지운 것이 되돌아온다.\n"
+            "     내용을 확인한 뒤 `git reset --hard @{u}` 다.")
+    return "diverged", (
+        f"ahead {ahead} / behind {behind} — 양쪽에 서로 없는 작업이 있다. "
+        "머지하거나 리베이스한다")
+
+
 def venv_python(path=VENV):
     sub = "Scripts" if os.name == "nt" else "bin"
     return os.path.join(path, sub, "python")
@@ -97,7 +146,12 @@ def main(argv=None):
                     help="테스트만. 린트·커버리지는 건너뛴다 (푸시 전에는 쓰지 말 것)")
     a = ap.parse_args(argv)
 
-    results = []
+    # 코드가 멀쩡해도 클론이 갈라져 있으면 푸시가 사고가 된다. 먼저 본다.
+    state, detail = clone_state()
+    bad_state = state in ("rewritten", "diverged")
+    print(f"\n── 클론 상태\n   {'FAIL' if bad_state else 'PASS'}  {state}: {detail}")
+
+    results = [("clone", not bad_state)]
     results.append(("compileall",
                     run("컴파일", [sys.executable, "-m", "compileall", "-q",
                                  "scripts", "tests"])))
