@@ -148,7 +148,11 @@ class AgreesWithTheServerTest(unittest.TestCase):
         d = board(tasks=[task(1, "이중 계상 정리")],
                   archived=[task(2, details="아카이브 속 이중 계상")],
                   decisions=[{"id": 3, "title": "왜", "why": "이중 계상 때문"}])
-        self.assertEqual(se.search(d, "이중 계상"), self.server._search(d, "이중 계상"))
+        # `elapsed_ms` 는 실행마다 다르다. 시간을 빼고 나머지 전부를 비교한다 —
+        # 필드를 몇 개만 골라 비교하면 새 필드가 갈라져도 안 잡힌다.
+        drop = lambda out: {k: v for k, v in out.items() if k != "elapsed_ms"}
+        self.assertEqual(drop(se.search(d, "이중 계상")),
+                         drop(self.server._search(d, "이중 계상")))
 
     def test_the_server_does_not_carry_its_own_copy(self):
         """서버가 자기 구현을 들면 두 경로가 갈라진다."""
@@ -358,6 +362,54 @@ class DoesNotWanderTest(unittest.TestCase):
         self.assertEqual(1, narrow["total"])
 
 
+class ReportsItsCostTest(unittest.TestCase):
+    """**캐시를 만들지 않기로 한 결정의 짝이다.**
+
+    캐시는 무효화가 틀리면 오래된 답을 조용히 돌려준다 — 검색에서는 틀린 답이 0건보다
+    알아채기 어렵다. 그래서 만들지 않되 관측 가능하게 한다. 느려지면 숫자가 먼저 말한다.
+
+    되돌릴 조건(500ms)을 **문서가 아니라 실행되는 것**으로 둔다. 이 레포의 규율이
+    "문서로 대응한 것은 대응이 아니다" 이기 때문이다.
+    """
+
+    def test_every_result_carries_its_cost(self):
+        d = board(tasks=[task(1, details="바늘")])
+        out = se.search(d, "바늘")
+        for key in ("elapsed_ms", "records_scanned", "scanned_bytes"):
+            self.assertIn(key, out, "비용을 안 말하면 느려져도 아무도 모른다")
+        self.assertGreater(out["scanned_bytes"], 0)
+
+    def test_cost_is_reported_even_with_no_hits(self):
+        """0건일 때가 오히려 더 필요하다 — 검색기를 의심할 근거가 된다."""
+        d = board(tasks=[task(1, details="무관")])
+        out = se.search(d, "없는말xyz")
+        self.assertEqual(0, out["total"])
+        self.assertEqual(1, out["records_scanned"])
+
+    def test_crossing_the_threshold_says_to_revisit_the_cache(self):
+        """조건을 적어만 두면 아무도 안 본다. 넘으면 스스로 말하게 한다."""
+        d = board(tasks=[task(1, details="바늘")])
+        saved = se.SLOW_MS
+        se.SLOW_MS = -1          # 무조건 넘게
+        try:
+            note = se.search(d, "바늘").get("note", "")
+        finally:
+            se.SLOW_MS = saved
+        self.assertIn("캐시를 재검토할 시점", note)
+
+    def test_a_fast_search_does_not_nag(self):
+        """빠른데도 매번 경고하면 그 경고는 곧 무시된다."""
+        d = board(tasks=[task(1, details="바늘")])
+        self.assertNotIn("캐시를 재검토", se.search(d, "바늘").get("note", ""))
+
+    def test_the_cli_shows_the_cost(self):
+        d = board(tasks=[task(1, details="바늘")])
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            se.main(["--dir", d, "바늘"])
+        self.assertIn("ms", buf.getvalue())
+
+
 class RanksExplainablyTest(unittest.TestCase):
     """코퍼스를 넓히자 순위가 필수가 됐다.
 
@@ -443,6 +495,86 @@ class RanksExplainablyTest(unittest.TestCase):
 
     def test_a_non_matching_record_scores_zero(self):
         self.assertEqual((0.0, {}), se.score_record({"title": "무관"}, "바늘"))
+
+
+class ContextStaysCheapTest(unittest.TestCase):
+    """검색은 **물었을 때만** 값을 치른다.
+
+    코퍼스가 JSON 에서 문서·커밋까지 넓어지면서 이 성질이 훨씬 비싸졌다 —
+    `/context` 가 실수로 검색을 부르면 세션 시작이 867 토큰에서 수 MB 스캔이 된다.
+    PMF10 은 소스 텍스트로 막았는데, 이제는 **동작으로도** 확인한다.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        spec = importlib.util.spec_from_file_location(
+            "vh_server_ctx", os.path.join(SCRIPTS, "server.py"))
+        cls.server = importlib.util.module_from_spec(spec)
+        sys.modules["vh_server_ctx"] = cls.server
+        spec.loader.exec_module(cls.server)
+
+    def test_context_does_not_grow_when_docs_are_added(self):
+        d = board(tasks=[task(1, "일하는 중")])
+        before = json.dumps(self.server._get_context(d), ensure_ascii=False)
+        root = os.path.dirname(d)
+        os.makedirs(os.path.join(root, "docs"))
+        for i in range(30):
+            with open(os.path.join(root, "docs", "d%02d.md" % i), "w",
+                      encoding="utf-8") as fh:
+                fh.write("# 문서 %d\n" % i + ("긴 본문 " * 2000))
+        after = json.dumps(self.server._get_context(d), ensure_ascii=False)
+        self.assertEqual(before, after,
+                         "문서를 늘렸더니 /context 가 커졌다 — 검색이 새어 들어갔다")
+
+    def test_context_never_calls_search(self):
+        """호출 자체를 감시한다. 크기가 우연히 같을 수도 있다."""
+        d = board(tasks=[task(1)])
+        calls = []
+        real = self.server._SEARCH.search
+        self.server._SEARCH.search = lambda *a, **k: calls.append(a) or real(*a, **k)
+        try:
+            self.server._get_context(d)
+        finally:
+            self.server._SEARCH.search = real
+        self.assertEqual([], calls, "/context 가 검색을 불렀다")
+
+
+class WiredWhereTheAgentLooksTest(unittest.TestCase):
+    """**1단계의 가장 큰 결손이 이것이었다.**
+
+    검색은 만들어졌는데 `references/api.md` 에만 있었다 — 필요할 때 여는 참조 문서다.
+    행동 규칙에도 커맨드 표에도 없으니 에이전트가 "찾아봐야겠다"고 생각할 계기가 없다.
+
+    이 레포가 반복해 걸린 형태다: 설치 목록에서 빠진 `reconcile_runs.py`,
+    배선 안 된 훅. **도구는 있는데 아무도 손을 뻗지 않는다.**
+    """
+
+    def skill(self):
+        with open(os.path.join(ROOT, "skills", "vibe-harness", "SKILL.md"),
+                  encoding="utf-8") as fh:
+            return fh.read()
+
+    def test_the_command_table_lists_search(self):
+        self.assertIn("/vibe-harness search", self.skill(),
+                      "커맨드 표에 없으면 사용자가 부를 방법을 모른다")
+
+    def test_the_skill_says_when_to_search(self):
+        """도구를 소개만 하고 **언제** 쓰는지 안 적으면 여전히 안 쓴다."""
+        body = self.skill()
+        self.assertIn("Search the record before reading it", body)
+        self.assertIn("scripts/search.py", body)
+
+    def test_the_skill_says_it_needs_no_server(self):
+        """서버가 꺼져 있는 것이 정상 상태다. 그걸 모르면 안 부른다."""
+        self.assertIn("No server needed", self.skill())
+
+    def test_the_skill_warns_that_zero_is_a_claim_about_the_corpus(self):
+        """0건을 '없다'로 읽는 것이 이 Phase 내내 나온 실패다."""
+        self.assertIn("zero-result", self.skill().lower())
+
+    def test_the_skill_keeps_search_out_of_session_start(self):
+        """물었을 때만 값을 치른다는 1단계 원칙이 문서에서 빠지면 곧 깨진다."""
+        self.assertIn("only when asked", self.skill().lower())
 
 
 if __name__ == "__main__":

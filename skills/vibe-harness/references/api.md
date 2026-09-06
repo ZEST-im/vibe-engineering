@@ -95,6 +95,32 @@ curl -G http://localhost:4242/api/{project_key}/search \
 # An empty q is refused rather than dumping everything, `total` reports the real count
 # even when `limit` truncates, and one record yields one hit no matter how many of its
 # fields matched.
+#
+# The corpus is tasks, archives, decisions, project markdown and **commit messages** —
+# source files are deliberately excluded (Grep is better at those, and they would swamp
+# the documents). Every hit carries a locator you can open: `docs/PLAN.md:42`,
+# `git show a1b2c3`. Results are ranked by an explainable score — field weight, match
+# count, document length — and each hit reports `why_ranked`. Recency is the tiebreaker,
+# not the ranking.
+#
+# Every response reports `records_scanned`, `scanned_bytes` and `elapsed_ms`. There is no
+# cache on purpose: a stale cache returns an old answer silently, and in search a wrong
+# answer is harder to notice than zero results. Crossing 500ms makes the response say so.
+
+## Searching without the server
+
+`scripts/search.py` is the canonical implementation — the HTTP route calls it. Since the
+board server is optional (and normally off), search works straight off the JSON and the
+working tree:
+
+```bash
+python3 scripts/search.py 이중 계상              # walks up to find vibe-harness/
+python3 scripts/search.py --json --limit 20 coverage
+python3 scripts/search.py --dir /path/to/project/vibe-harness 마이그레이션
+```
+
+Pointing it at a directory with no `kanban.json` is an **error, not zero hits** — "found
+nothing" and "there was nothing to search" are different answers.
 
 # Archive done tasks to monthly files
 curl -X POST http://localhost:4242/api/{project_key}/archive

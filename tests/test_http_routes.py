@@ -224,6 +224,51 @@ class NoRequestEndsInSilenceTest(ServedOverHttpTest):
         self.assertEqual(500, status)
         self.assertIn("의도한 폭발", json.loads(body)["error"])
 
+    def test_an_error_response_body_is_actually_readable(self):
+        """400 을 받고도 본문을 못 읽으면 400 을 안 준 것과 비슷하다.
+
+        **읽지 않은 요청 본문이 소켓에 남은 채 닫으면 macOS 는 FIN 이 아니라 RST 를
+        보내고, 이미 보낸 응답까지 함께 날아간다.** 클라이언트는 상태 코드를 받고도
+        본문을 읽다 `ConnectionResetError` 를 맞는다.
+
+        그래서 `_body()` 는 **파싱보다 먼저 본문을 읽고**, 길이를 모를 때만 짧은 시한
+        안에 비워낸다.
+
+        **인과는 증명하지 못했다.** 전체 스위트를 커버리지와 함께 돌릴 때 이 경로에서
+        `ConnectionResetError` 가 두 번 났고 조치 뒤로는 안 나는데, **옛 코드로 되돌려도
+        재현되지 않는다.** 그러니 이 테스트가 지키는 것은 "그 flaky 를 고쳤다"가 아니라
+        **"오류 응답은 읽을 수 있어야 한다"는 성질**이다. 성질은 그 자체로 옳고,
+        flaky 는 재발하면 그때 다시 본다.
+        """
+        for body, headers in ((b"{not json", None),
+                              (b"{}", {"Content-Length": "abc"})):
+            with self.subTest(body=body):
+                status, raw, _h = self.call("POST", "/api/demo/tasks", body, headers)
+                self.assertEqual(400, status)
+                self.assertIn("error", json.loads(raw),
+                              "400 은 왔는데 본문을 읽지 못했다 — RST 로 끊긴 것이다")
+
+    def test_an_error_response_closes_the_connection(self):
+        """본문을 읽다 실패했으면 그 본문이 소켓에 남는다.
+
+        keep-alive 로 연결을 재사용하면 남은 바이트가 **다음 요청의 시작으로 읽히고**,
+        클라이언트는 응답 본문을 읽는 도중 리셋을 맞는다. `Content-Length` 가 숫자가
+        아닐 때는 얼마나 남았는지조차 몰라 비워낼 수 없다 — 닫는 것이 유일하게 옳다.
+
+        **전체 스위트를 커버리지와 함께 돌릴 때만 재현됐다.** 느려진 타이밍이 드러낸
+        것이지 느려서 생긴 문제가 아니다 — 빠를 때는 운으로 지나가고 있었다.
+        간헐적으로 빨간 게이트는 곧 무시되므로, 원인을 찾을 때까지 flaky 로 두지 않았다.
+        """
+        for body, headers in ((b"{not json", None),
+                              (b"{}", {"Content-Length": "abc"})):
+            with self.subTest(body=body):
+                status, _b, resp_headers = self.call("POST", "/api/demo/tasks",
+                                                     body, headers)
+                self.assertEqual(400, status)
+                self.assertEqual("close", resp_headers.get("Connection"),
+                                 "오류 응답이 연결을 닫지 않는다 — 안 읽은 본문이 "
+                                 "다음 요청으로 새어 들어간다")
+
     def test_the_server_still_serves_after_a_failed_request(self):
         """한 요청이 터졌다고 다음 요청까지 죽으면 그건 다른 종류의 고장이다."""
         self.call("POST", "/api/demo/tasks", b"{broken")

@@ -75,6 +75,19 @@ DOC_MAX_BYTES = 512 * 1024
 # 검색이 답해야 할 "왜 그렇게 했더라"는 압도적으로 최근 쪽이다.
 COMMIT_LIMIT = 2000
 
+# ── 관측 ──────────────────────────────────────────────────────────────
+#
+# **캐시를 만들지 않기로 한 결정의 짝이다.**
+#
+# 가장 큰 프로젝트에서 질의당 ~200ms 이고, 이 도구는 사람이 타이핑하며 쓰는 것이
+# 아니라 에이전트가 부르는 것이라 체감이 없다. 반면 캐시는 무효화가 틀리면
+# **오래된 답을 조용히 돌려준다** — 검색에서는 틀린 답이 0건보다 알아채기 어렵다.
+#
+# 그래서 만들지 않되 **관측 가능하게** 한다. 느려지면 숫자가 먼저 말한다.
+# 되돌릴 조건을 문서가 아니라 **실행되는 것**으로 둔다 — 이 레포의 규율이
+# "문서로 대응한 것은 대응이 아니다" 이기 때문이다.
+SLOW_MS = 500
+
 # ── 순위 ──────────────────────────────────────────────────────────────
 #
 # 코퍼스를 넓히자 순위가 필수가 됐다. codebook_vibe 에서 "마이그레이션" 은
@@ -437,8 +450,12 @@ def search(kanban_dir, query, limit=DEFAULT_LIMIT,
         limit = DEFAULT_LIMIT
     limit = max(1, min(limit, MAX_LIMIT))
 
+    import time
+    started = time.perf_counter()
     corpus = records(kanban_dir, include_docs=include_docs,
                      include_commits=include_commits)
+    scanned_bytes = sum(len(str(rec.get(f) or ""))
+                        for _src, rec in corpus for f in FIELDS)
     hits = []
     for source, rec in corpus:
         matched = []
@@ -470,9 +487,17 @@ def search(kanban_dir, query, limit=DEFAULT_LIMIT,
     # 버리지 않는다. 날짜가 없는 레코드는 뒤로.
     hits.sort(key=lambda h: (h["score"], h.get("date") or ""), reverse=True)
     total = len(hits)
+    elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
     out = {"query": q, "total": total, "hits": hits[:limit],
-           "records_scanned": len(corpus)}
+           "records_scanned": len(corpus),
+           "scanned_bytes": scanned_bytes,
+           "elapsed_ms": elapsed_ms}
     notes = []
+    # 되돌릴 조건을 문서가 아니라 실행되는 것으로 둔다.
+    if elapsed_ms > SLOW_MS:
+        notes.append("%.0fms 걸렸다 (기준 %dms) — **캐시를 재검토할 시점이다.** "
+                     "레코드 %d건 / %.0fKB 를 매 질의 다시 읽는다"
+                     % (elapsed_ms, SLOW_MS, len(corpus), scanned_bytes / 1024))
     # 찾을 데가 없었던 것을 "없다"로 말하지 않는다.
     if not has_board(kanban_dir):
         notes.append("이 경로에 kanban.json 이 없다: %s — **0건은 '없다'가 아니라 "
@@ -513,6 +538,10 @@ def render(out):
             lines.append("               %s" % hit["snippet"])
     if out.get("note"):
         lines.append("\n· %s" % out["note"])
+    # 캐시를 만들지 않기로 했으므로 비용을 매번 보여준다. 느려지면 숫자가 먼저 말한다.
+    lines.append("\n%d건 / 레코드 %s개 %.0fKB / %.0fms"
+                 % (out["total"], out.get("records_scanned", 0),
+                    out.get("scanned_bytes", 0) / 1024, out.get("elapsed_ms", 0)))
     return "\n".join(lines)
 
 

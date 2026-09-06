@@ -2186,22 +2186,55 @@ class Handler(BaseHTTPRequestHandler):
 
         여기가 뚫려 있었다. 깨진 JSON 이나 숫자가 아닌 Content-Length 가 오면 예외가
         핸들러 밖으로 나가고, socketserver 는 **응답을 하나도 쓰지 않은 채 연결을
-        끊었다.** 클라이언트가 받는 것은 400 이 아니라 `RemoteDisconnected` 다 —
-        무엇이 잘못됐는지도, 서버가 살아 있는지도 알 수 없다.
+        끊었다.** 클라이언트가 받는 것은 400 이 아니라 `RemoteDisconnected` 다.
 
-        함수를 직접 부르는 테스트로는 보이지 않는다. HTTP 로 때려야 보인다.
+        Content-Length 를 못 읽으면 **남은 본문을 비우고 나서** 400 을 낸다. 읽지 않은
+        본문이 소켓에 남은 채 연결을 닫으면 macOS 는 FIN 이 아니라 **RST** 를 보내고,
+        그러면 이미 보낸 응답까지 함께 날아가 클라이언트가 `ConnectionResetError` 를
+        맞는다. 길이를 모르니 정확히 비울 수 없어 짧은 시한 안에 최선으로 버린다.
+
+        **인과는 증명하지 못했다.** 전체 스위트를 커버리지와 함께 돌릴 때 이 경로에서
+        `ConnectionResetError` 가 두 번 났고, 이 조치 뒤로는 안 난다. 다만 **옛 코드로
+        되돌려도 재현되지 않아** 이 조치가 원인을 없앤 것인지 확인할 수 없다.
+        기전(읽지 않은 수신 데이터 + close → RST)은 분명하고 조치는 그 자체로 옳지만,
+        "고쳤다"고 적지는 않는다.
         """
         raw = self.headers.get("Content-Length", 0)
         try:
             n = int(raw)
         except (TypeError, ValueError) as exc:
+            # 길이를 모르니 정확히 비워낼 수 없다. 남은 것을 짧은 시한 안에 버린다.
+            self._drain()
             raise BadRequest("Content-Length 가 숫자가 아니다: %r" % (raw,)) from exc
         if n <= 0:
             return {}
+        body = self.rfile.read(n)          # 파싱보다 먼저 — 남기면 RST 가 된다
         try:
-            return json.loads(self.rfile.read(n))
+            return json.loads(body)
         except (ValueError, UnicodeDecodeError) as exc:
             raise BadRequest("본문이 JSON 이 아니다: %s" % exc) from exc
+
+    def _drain(self, limit=1 << 20):
+        """길이를 모르는 남은 본문을 버린다. 못 버려도 넘어간다 — 최선 노력이다."""
+        try:
+            saved = self.connection.gettimeout()
+            self.connection.settimeout(0.2)
+        except OSError:
+            return
+        try:
+            dropped = 0
+            while dropped < limit:
+                chunk = self.rfile.read1(65536)
+                if not chunk:
+                    break
+                dropped += len(chunk)
+        except (OSError, ValueError):
+            pass
+        finally:
+            try:
+                self.connection.settimeout(saved)
+            except OSError:
+                pass
 
     def _resolve_project(self, parts):
         if len(parts) < 1:
@@ -2224,12 +2257,27 @@ class Handler(BaseHTTPRequestHandler):
         try:
             return handler()
         except BadRequest as exc:
-            return self._json({"error": str(exc)}, 400)
+            return self._error(400, str(exc))
         except BrokenPipeError:
             raise                      # 클라이언트가 끊은 것 — 여기서 쓸 곳이 없다
         except Exception as exc:
             traceback.print_exc()
-            return self._json({"error": "%s: %s" % (type(exc).__name__, exc)}, 500)
+            return self._error(500, "%s: %s" % (type(exc).__name__, exc))
+
+    def _error(self, status, message):
+        """오류 응답. **연결을 닫는다.**
+
+        본문을 읽다 실패했으면 그 본문이 소켓에 남아 있을 수 있다. keep-alive 로 연결을
+        재사용하면 남은 바이트가 **다음 요청의 시작으로 읽힌다.** 무엇이 남았는지 모르는
+        채로 연결을 이어 쓰는 것보다 닫는 편이 낫다.
+        """
+        self.close_connection = True
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.wfile.write(json.dumps({"error": message}, ensure_ascii=False).encode())
 
     def do_OPTIONS(self):
         self.send_response(200)

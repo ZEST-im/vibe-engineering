@@ -28,16 +28,17 @@ Each line below is a question the agent cannot answer on its own, and the machin
 | **Review** | Is the work as good as I think it is | `/vibe-review` — the assessment you would give someone else |
 | **Loop** | When do I go again, when do I give up | Backoff, error budgets, idle distinguished from broken |
 | **Graph** | What is blocked, what can start now | `depends_on`, cycle and dangling-reference detection |
+| **Retrieval** | What does it cost to know something | Search over tasks, archives, decisions, docs and commit messages — snippets with locators, ranked and explained, no server needed |
 
 ### What is next
 
 | | Decides | Why it is not done |
 |---|---|---|
-| **Retrieval** | What does it cost to know something | Archiving made session start cheap by *not reading* history. That history is now unreachable — "why did we decide this?" has no answer short of loading everything. Saving more is not the next step; making the unread usable is. |
 | **Graph, part two** | What should I do *first* | Detection landed. Using it has not — critical path, what unblocks the most, dependencies that cross projects. Detection says "not this one"; the next step says "this one". |
 | **Knowledge** | What do we know at all | Decision logs already accumulate. What is missing is linkage — decisions, tasks, phases and reviews pointing at each other, so a lesson learned once is findable later instead of living in a commit message. |
 
-Retrieval comes first, because the corpus it would search already exists.
+Knowledge comes next, because retrieval now makes the corpus reachable — linking it is
+the part that turns a searchable pile into something you can be reminded by.
 
 ---
 

@@ -74,6 +74,7 @@ This matters because:
 | `/vibe-harness update <id>` | Update task details |
 | `/vibe-harness list [status]` | List tasks |
 | `/vibe-harness sync` | Sync tasks from PROGRESS.md / devlog |
+| `/vibe-harness search <query>` | Search tasks, archives, decisions, docs and commit messages — snippets with locators, no server needed |
 | `/vibe-harness report` | Today's completed work summary |
 | `/vibe-harness export` | Export all tasks to JSON file (`vibe-harness/kanban-export.json`) |
 | `/vibe-harness import` | Import tasks from JSON file (merge mode: keeps newer version) |
@@ -178,6 +179,40 @@ question.
 **4. Rules live in `SKILL.md`; lookups live in `references/`.** If it is something you
 consult while doing a particular job — a field list, an API shape, install steps — it does
 not belong in the file loaded on every invocation.
+
+### Search the record before reading it
+
+Archiving made session start cheap by *not reading* history. That only works if the
+unread stays reachable — otherwise "why did we decide this?" costs a full load, and the
+saving turns into amnesia.
+
+**Reach for search before you open files**, whenever the question is about the past:
+
+- "why is it done this way" · "have we hit this before" · "what did we decide about X"
+- before re-litigating a decision, or re-solving a problem that feels familiar
+- when a plan mentions something you have no context for
+
+```bash
+python3 scripts/search.py 이중 계상        # or ~/.claude/skills/vibe-harness/search.py
+python3 scripts/search.py --json --limit 20 coverage
+```
+
+It searches tasks, archives, decisions, project markdown **and commit messages** — the
+last one matters most, because that is where the reasoning usually ends up. Every hit
+comes back with a locator you can open (`docs/PLAN.md:42`, `git show a1b2c3`).
+
+**No server needed.** It reads the JSON and the working tree directly, so it works when
+the board UI is not running — which is the normal state.
+
+Three habits that keep it useful:
+
+- **A zero-result search is a claim about the corpus, not about reality.** The response
+  tells you how many records it scanned; if that number looks wrong, suspect the search
+  before concluding the thing never happened.
+- **Grep is still better for code.** Source files are deliberately outside this corpus —
+  they would swamp the documents. Use `Grep`/`Explore` for implementation, this for intent.
+- **Don't put search results into every session.** It costs only when asked, and that is
+  the whole reason session start stayed at 867 tokens.
 
 ### Archiving is a routine, not a migration
 
