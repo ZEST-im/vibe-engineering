@@ -34,3 +34,4 @@ private/
 
 # e2e 스킬 검증용 임시 산출물
 test_temp/
+.check-venv/

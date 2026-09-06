@@ -91,16 +91,17 @@ nothing about that half — a lint-only failure looks exactly like a passing bui
 open the run. It happened: four commits went in with a red pipeline because ruff was not
 installed locally and only the aggregate status of an *older* run was checked.
 
-Reproduce both halves before pushing:
+Run all of it with one command:
 
 ```bash
-python3 -m unittest discover -s tests          # what CI runs on 3.11 / 3.12 / 3.13
-python3 -m venv /tmp/lintenv && /tmp/lintenv/bin/pip install -q ruff==0.16.3
-/tmp/lintenv/bin/ruff check scripts tests      # the exact CI command and version
+python3 scripts/check.py            # compile, tests, lint, coverage + floor
+python3 scripts/check.py --fast     # tests only — says so, and says not to push
 ```
 
-Pin the same version CI pins. A newer ruff finds different things, so "passes locally"
-stops meaning "passes in CI".
+It reads the pinned tool versions **out of the workflow** rather than carrying its own, so
+the two cannot drift; if the workflow is missing or its format changed it refuses instead of
+guessing. Guessing would produce the one outcome worse than no check: green locally, red in
+CI. Tools land in `.check-venv/` (gitignored) and are reinstalled only when the pins move.
 
 And after pushing, check the run **for that commit** — `gh run list` shows the newest run
 first, which is not necessarily yours yet.
