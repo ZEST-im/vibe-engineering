@@ -208,5 +208,50 @@ class InstallListsAgreeTest(unittest.TestCase):
                 f"{fn}() 이 SKILL_RUNTIME_FILES 를 쓰지 않는다 — 목록이 다시 갈라졌다")
 
 
+class SiblingModulesAreInstalledTest(unittest.TestCase):
+    """`server.py` 가 경로로 읽는 형제 모듈은 **설치 목록에 반드시 있어야 한다.**
+
+    검색을 `search.py` 로 뽑으면서 서버가 그것을 부르게 됐다. 이제 그 파일이 없으면
+    서버는 **import 조차 안 된다** — 기능 하나가 빠지는 게 아니라 보드 전체가 안 뜬다.
+
+    이 레포는 같은 계열로 이미 한 번 당했다: 설치 목록이 세 곳에 흩어져
+    `setup.py` 단독 설치가 `reconcile_runs.py` 를 빠뜨렸다. 그때는 조용한 결손이었고
+    이번엔 즉사라 더 나쁘다.
+
+    파일명을 여기 다시 적지 않는다. **소스에서 뽑아 대조한다** — 적으면 갈라진다.
+    """
+
+    def sibling_names(self):
+        with open(os.path.join(SCRIPTS, "server.py"), encoding="utf-8") as fh:
+            tree = ast.parse(fh.read())
+        found = set()
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Name)
+                    and node.func.id == "_load_sibling"):
+                for arg in node.args:
+                    if isinstance(arg, ast.Constant) and str(arg.value).endswith(".py"):
+                        found.add(arg.value)
+        return found
+
+    def test_server_actually_loads_siblings(self):
+        """이 검사가 무의미해지지 않게. 하나도 못 찾으면 대조할 것이 없다."""
+        self.assertTrue(self.sibling_names(),
+                        "_load_sibling 호출을 하나도 못 찾았다 — 이름이 바뀌었는지 확인")
+
+    def test_every_sibling_is_in_the_install_list(self):
+        with open(os.path.join(SCRIPTS, "setup.py"), encoding="utf-8") as fh:
+            setup_src = fh.read()
+        for name in sorted(self.sibling_names()):
+            self.assertIn('"%s"' % name, setup_src,
+                          "server.py 가 %s 를 읽는데 설치 목록에 없다 — "
+                          "설치본에서 서버가 import 조차 안 된다" % name)
+
+    def test_every_sibling_exists(self):
+        for name in sorted(self.sibling_names()):
+            self.assertTrue(os.path.exists(os.path.join(SCRIPTS, name)),
+                            "server.py 가 없는 파일을 읽으려 한다: %s" % name)
+
+
 if __name__ == "__main__":
     unittest.main()

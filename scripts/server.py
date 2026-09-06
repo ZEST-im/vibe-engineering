@@ -39,6 +39,23 @@ from urllib import error as urllib_error
 import subprocess
 import traceback
 
+
+def _load_sibling(name, filename):
+    """같은 디렉토리의 모듈을 읽는다.
+
+    `import search` 로 하지 않는 이유는 설치본 때문이다 — 스킬 디렉토리에 파일이
+    평평하게 깔리고 `sys.path` 에 들어 있다는 보장이 없다. 경로로 읽으면 어디에
+    설치돼도 같은 파일을 집는다.
+    """
+    import importlib.util
+    here = os.path.dirname(os.path.abspath(__file__))
+    spec = importlib.util.spec_from_file_location(name, os.path.join(here, filename))
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules.setdefault(name, mod)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 from vibe_runtime import (
     approval_required, expires_at, load_policy, new_identity, parse_time,
     read_runtime, run_test_gate, runtime_lock, sanitized_runtime, utc_now,
@@ -254,138 +271,20 @@ def _pipeline_health(now=None):
 # 그래서 **파일이 아니라 스니펫을 돌려준다.** qmd 검토에서 가져온 유일한 원칙이다.
 # 의존은 추가하지 않는다 — 몇 천 건짜리 JSON 에 검색 엔진은 과하고, npm 전역 설치가
 # zero-dependencies 를 깬다. 이게 그때 qmd 를 반려한 이유였다.
-SEARCH_SNIPPET_CHARS = 160
-SEARCH_DEFAULT_LIMIT = 10
-SEARCH_MAX_LIMIT = 50
-# 검색 대상 필드. 본문이 긴 것부터 — 여기 없는 필드는 매칭돼도 스니펫을 못 만든다.
-SEARCH_FIELDS = ("title", "description", "details", "why", "review")
+# 검색은 `scripts/search.py` 가 정본이다. 여기서 다시 구현하지 않는다 —
+# 서버가 꺼져 있어도 검색은 돼야 하고(CLAUDE.md 규정), 구현이 둘이면 갈라진다.
+# 갈라지면 한쪽만 코퍼스가 좁아져도 아무도 모른다.
+_SEARCH = _load_sibling("vh_search", "search.py")
 
+SEARCH_SNIPPET_CHARS = _SEARCH.SNIPPET_CHARS
+SEARCH_DEFAULT_LIMIT = _SEARCH.DEFAULT_LIMIT
+SEARCH_MAX_LIMIT = _SEARCH.MAX_LIMIT
+SEARCH_FIELDS = _SEARCH.FIELDS
 
-def repair_query(raw):
-    """퍼센트 인코딩 없이 온 질의를 되살린다. (질의, 알림) 을 돌려준다.
-
-    ## 무엇이 났던 일인가
-
-        curl -G --data-urlencode "q=이중 계상"  → 6건
-        curl "...?q=이중 계상"                  → {"query": "ì´ì¤", "total": 0}
-
-    `http.server` 는 요청 라인을 **latin-1 로** 디코드한다(HTTP 규격이 그렇다). 퍼센트
-    인코딩된 질의는 `parse_qs` 가 UTF-8 로 풀어주지만, 날 바이트로 온 것은 한 글자가
-    바이트 수만큼의 latin-1 문자로 흩어진다. 그리고 **아무 말 없이 0건이 나온다.**
-
-    PMF10 의 판단 기준에 적어둔 문장이 그대로 걸린 것이다 — "검색이 빈 결과를 내면
-    검색기부터 의심한다." 검색기가 자기한테 그 말을 못 하고 있었다.
-
-    ## 왜 이 판정이 안전한가
-
-    되살릴 수 있을 때만 되살린다. latin-1 로 다시 인코딩해서 **UTF-8 로 읽히면** 그건
-    원래 UTF-8 바이트였다는 뜻이다.
-
-    `café` 처럼 정당한 latin-1 질의는 건드리지 않는다 — `b"caf\xe9"` 는 유효한 UTF-8 이
-    아니라 복구가 실패하고, 그러면 원본 그대로 간다. 코드포인트 범위만 봐서는 둘을
-    가를 수 없다(퍼센트 인코딩으로 제대로 온 `café` 의 é 도 U+00E9 다).
-
-    ## 400 을 내지 않는 이유
-
-    계획서에는 "복구 못 하면 400" 이라고 적었는데, 구현하며 틀린 것을 알았다. 복구 실패는
-    **정당한 latin-1 질의와 구별되지 않는다.** 400 을 내면 `café` 검색이 막힌다.
-    조용하지 않게 만드는 것이 목적이었으므로, 되살리고 **되살렸다고 말하는** 것으로 답한다.
-    """
-    if not raw or all(ord(ch) < 128 for ch in raw):
-        return raw, None
-    try:
-        fixed = raw.encode("latin-1").decode("utf-8")
-    except (UnicodeEncodeError, UnicodeDecodeError):
-        return raw, None
-    if fixed == raw:
-        return raw, None
-    return fixed, ("질의가 퍼센트 인코딩 없이 왔다 — %r 로 되살렸다. "
-                   "`curl -G --data-urlencode` 를 쓰면 이 단계가 필요 없다" % fixed)
-
-
-def _snippet(text, needle, width=SEARCH_SNIPPET_CHARS):
-    """매칭 지점 주변만 잘라낸다. 파일도 필드 전체도 아니다."""
-    body = " ".join(str(text or "").split())
-    at = body.lower().find(needle.lower())
-    if at < 0:
-        return None
-    half = max(0, (width - len(needle)) // 2)
-    start = max(0, at - half)
-    end = min(len(body), at + len(needle) + half)
-    return ("…" if start else "") + body[start:end] + ("…" if end < len(body) else "")
-
-
-def _search_records(kanban_dir):
-    """검색 대상. 어디서 왔는지(source)를 함께 들고 다닌다 — 없으면 찾아도 못 연다."""
-    out = []
-    data = _read_kanban(kanban_dir)
-    for task in data.get("tasks") or []:
-        out.append(("task", task))
-    for task in _list_archives(kanban_dir):
-        out.append(("archive", task))
-    try:
-        with open(os.path.join(kanban_dir, "decisions.json"), encoding="utf-8") as fh:
-            doc = json.load(fh)
-        for dec in doc.get("decisions") or []:
-            out.append(("decision", dec))
-    except (FileNotFoundError, ValueError, OSError):
-        pass
-    return out
-
-
-def _search(kanban_dir, query, limit=SEARCH_DEFAULT_LIMIT):
-    """스니펫 검색. 한 레코드가 여러 필드에서 걸려도 **한 번만** 돌려준다.
-
-    같은 태스크를 필드 수만큼 반복해 실으면 결과가 부풀어 검색의 목적이 사라진다.
-    """
-    q, repaired = repair_query(str(query or "").strip())
-    if not q:
-        return {"query": "", "hits": [], "total": 0,
-                "note": "q 가 비었다 — 검색어 없이 부르면 전량을 돌려주게 되므로 거부한다"}
-    try:
-        limit = int(limit or SEARCH_DEFAULT_LIMIT)
-    except (TypeError, ValueError):
-        # 쿼리스트링은 사용자 입력이다. 숫자가 아니면 500 이 아니라 기본값으로 떨어진다.
-        limit = SEARCH_DEFAULT_LIMIT
-    limit = max(1, min(limit, SEARCH_MAX_LIMIT))
-
-    hits = []
-    for source, rec in _search_records(kanban_dir):
-        matched = []
-        snippet = None
-        for field in SEARCH_FIELDS:
-            frag = _snippet(rec.get(field), q)
-            if frag is None:
-                continue
-            matched.append(field)
-            if snippet is None:
-                snippet = frag
-        if not matched:
-            continue
-        hits.append({
-            "source": source,
-            "id": rec.get("id"),
-            "title": rec.get("title"),
-            "phase": rec.get("phase"),
-            "date": rec.get("completed_at") or rec.get("updated_at") or rec.get("created_at"),
-            "fields": matched,
-            "snippet": snippet,
-        })
-
-    # 최근 것이 대개 더 쓸모 있다. 날짜가 없는 레코드는 뒤로.
-    hits.sort(key=lambda h: h.get("date") or "", reverse=True)
-    total = len(hits)
-    out = {"query": q, "total": total, "hits": hits[:limit]}
-    notes = []
-    # 되살린 사실을 먼저 말한다. 조용히 고치면 다음에도 같은 방식으로 부른다.
-    if repaired:
-        notes.append(repaired)
-    if total > limit:
-        notes.append("%d건 중 %d건만 실었다. limit 로 늘리거나 검색어를 좁힌다"
-                     % (total, limit))
-    if notes:
-        out["note"] = " / ".join(notes)
-    return out
+repair_query = _SEARCH.repair_query
+_snippet = _SEARCH.snippet
+_search_records = _SEARCH.records
+_search = _SEARCH.search
 
 
 # 아카이브는 문서로 규정돼 있었다(qq 5단계, done 30건 또는 50KB 초과 시). 2주 뒤

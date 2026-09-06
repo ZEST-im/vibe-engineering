@@ -32,7 +32,14 @@ _spec.loader.exec_module(srv)
 
 
 def board(tasks=(), archived=(), decisions=()):
-    d = tempfile.mkdtemp()
+    """**`vibe-harness/` 안에 만든다.** 실제 배치와 같아야 한다.
+
+    처음엔 `mkdtemp()` 바로 아래에 뒀는데, 코퍼스가 마크다운까지 넓어지자 보드의
+    부모(= 공유 임시 루트)를 훑으면서 **다른 테스트의 파일이 코퍼스에 섞였다.**
+    픽스처가 현실과 다르면 그 차이가 언젠가 검사 내용을 바꾼다.
+    """
+    d = os.path.join(tempfile.mkdtemp(), "vibe-harness")
+    os.makedirs(d)
     with open(os.path.join(d, "kanban.json"), "w", encoding="utf-8") as fh:
         json.dump({"version": 1, "next_id": 99, "tasks": list(tasks)}, fh, ensure_ascii=False)
     if archived:
