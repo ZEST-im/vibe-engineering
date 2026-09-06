@@ -222,6 +222,21 @@ From these, derive:
 
 If no `CURRENT_PHASE.md` exists anywhere (`private/` / root / `docs/`) but the project already has kanban tasks, the session-start hook nudges you. Run `/vibe-harness phase init` to scaffold it, or ask the user how they want to scope the session before creating new tasks. Don't silently start work without a scope.
 
+### A working tree you are not alone in
+
+The session-start hook also reports uncommitted changes it finds in the tree. Read that
+warning before you touch anything: **at session start, nothing in the tree is yours.** It
+is either a previous session's leftovers or a session that is running right now — parallel
+agents share one checkout, and the tree does not say who wrote what.
+
+The accident this prevents is specific. `git add -A` does not distinguish, so one session
+commits another's in-flight files; that is how internal figures reached a public repo.
+
+- Stage **paths you named**, not `-A` / `.`, whenever the hook warned.
+- 🔴 `.git/index.lock` means another git process is running *now*. Wait, don't force it.
+- The warning never blocks and never fails a command. It is information, and acting on it
+  is your job — a check that stops work gets switched off, and then it protects nothing.
+
 ---
 
 ## ⚠️ Code Review (MANDATORY — Claude MUST follow)

@@ -94,7 +94,7 @@ HOOKS = [
 HOOK_IDS = {entry["_id"] for _, _, entry in HOOKS}
 
 # Helper scripts copied alongside hooks (not registered as hooks themselves).
-HOOK_HELPERS = ["vibe-harness-record-run.py"]
+HOOK_HELPERS = ["vibe-harness-record-run.py", "vibe-harness-worktree-guard.py"]
 
 
 # 스킬 디렉토리를 복사할 때 따라가면 안 되는 것들

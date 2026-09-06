@@ -76,6 +76,17 @@ PYEOF
   echo ""
 }
 
+# 한 워킹트리를 여러 세션이 공유하는지. 3주 연속 지적된 P1 이고, 이미 사내 수치를
+# 공개 레포로 밀어 올린 경로다. 잠글 수 없다는 것이 아무것도 안 해도 된다는 뜻은
+# 아니다 — 최소한 감지는 만들 수 있다. **막지는 않는다**: 오탐 한 번에 작업이 멈추면
+# 그 검사는 곧 꺼지고, 꺼진 검사는 있다고 믿게 만들어 없는 것보다 나쁘다.
+warn_if_worktree_shared() {
+  local guard="$HOME/.claude/hooks/vibe-harness-worktree-guard.py"
+  [[ -f "$guard" ]] || return 0
+  [[ -n "$PY_BIN" ]] || return 0
+  "$PY_BIN" -X utf8 "$guard" "$CWD" --session-start 2>/dev/null
+}
+
 find_phase_file() {
   local dir="$1"
   local depth=0
@@ -164,6 +175,7 @@ if [[ -z "$PHASE_FILE" ]]; then
   fi
   warn_if_pipeline_stale
   warn_if_archive_overdue
+  warn_if_worktree_shared
   exit 0
 fi
 
@@ -183,4 +195,5 @@ echo "  Do NOT touch 목록을 반드시 준수하세요."
 echo ""
 warn_if_pipeline_stale
 warn_if_archive_overdue
+warn_if_worktree_shared
 exit 0
