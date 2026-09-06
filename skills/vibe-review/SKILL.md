@@ -65,6 +65,13 @@ The output path is a default, not a requirement — if the repo already has a pl
 this kind of document, use it and stay consistent. What matters is that all weeks for one
 person live in one directory beside one `history.json`, because the review is a series.
 
+**Do not write a review into a public repository.** A review names what is weak, quotes
+real numbers, and scores the person who wrote the code. That is exactly the material you
+would not paste into a public issue. If the repo is public, write to a path the repo does
+not track (`private/reviews/` or similar) and, where the team has somewhere central to
+put them, send it there — `scripts/review_sync.py` does that for this project.
+Check the repository's visibility before choosing the path, not after.
+
 **Do not assume a stack.** Nothing here depends on a language, framework, or CI system.
 Find the project's own checks before running anything (see below), and if the repo has no
 tests or no CI at all, that is the review's most important finding — not a reason to skip

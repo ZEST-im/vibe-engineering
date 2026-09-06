@@ -299,6 +299,7 @@ SKILL_CODE_FILES = (
     ("scripts/vibe_runtime.py", "vibe_runtime.py"),
     ("scripts/reconcile_runs.py", "reconcile_runs.py"),
     ("scripts/kanban_edit.py", "kanban_edit.py"),
+    ("scripts/review_sync.py", "review_sync.py"),
     ("scripts/enroll.py", "enroll.py"),
     ("skills/vibe-harness/SKILL.md", "SKILL.md"),
 )

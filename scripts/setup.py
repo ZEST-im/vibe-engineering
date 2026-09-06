@@ -34,6 +34,7 @@ SKILL_RUNTIME_FILES = (
     "kanban.html",
     "reconcile_runs.py",
     "kanban_edit.py",
+    "review_sync.py",
     "enroll.py",
     "setup.py",
 )
