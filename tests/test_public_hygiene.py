@@ -36,6 +36,7 @@
 import os
 import re
 import subprocess
+import tempfile
 import unittest
 
 
@@ -43,8 +44,17 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DENY_FILE = os.path.join(ROOT, "private", "DENY.txt")
 ALLOW_MARK = "public-ok"
 
-# 바이너리·생성물은 본문 검사 대상이 아니다.
-SKIP_SUFFIXES = (".png", ".jpg", ".jpeg", ".gif", ".ico", ".pdf", ".zip", ".woff", ".woff2")
+# **바이너리로 추적해도 되는 것.** 여기 있는 확장자만이다.
+#
+# 이 목록은 "본문 검사에서 뺀다"가 아니라 **"이 바이너리는 검토했다"는 선언**이다.
+# 게이트는 읽을 수 없는 파일에 대해 아무 말도 할 수 없으므로, 목록 밖의 바이너리가
+# 추적되고 있으면 그것 자체를 신고한다 — "못 읽었으니 깨끗하다"는 결론은 낼 수 없다.
+#
+# 실제로 뚫렸다: `.coverage`(53KB SQLite, 로컬 절대경로 포함)가 공개 레포에 올라가
+# 있었는데 게이트는 초록이었다. 읽다 UnicodeDecodeError 가 나면 조용히 건너뛰었기
+# 때문이다. 여기 새 확장자를 추가하는 것은 가볍게 할 일이 아니다.
+BINARY_OK = (".png", ".jpg", ".jpeg", ".gif", ".ico", ".pdf", ".zip", ".woff", ".woff2")
+SKIP_SUFFIXES = BINARY_OK
 
 # 이 파일 자신은 규칙의 예시를 담고 있으므로 대상에서 뺀다.
 # git ls-files 는 항상 "/" 로 구분된 경로를 준다. os.path.relpath 는 Windows 에서
@@ -98,6 +108,47 @@ def read(path):
             return fh.read().splitlines()
     except (UnicodeDecodeError, FileNotFoundError):
         return []
+
+
+def is_text(full):
+    """줄 단위 검사가 닿을 수 있는 파일인가. False 면 규칙 넷 중 무엇도 이걸 못 본다.
+
+    **UTF-8 디코딩만으로는 부족하다.** SQLite 헤더 `SQLite format 3\x00` 은 전부
+    유효한 UTF-8 코드포인트라 그냥 읽힌다 — 처음에 그렇게 짰다가 `.coverage` 를
+    흉내낸 픽스처를 놓쳤다. 그래서 **NUL 바이트를 먼저 본다**: git 자신이 바이너리를
+    가르는 데 쓰는 판정이고, 텍스트 파일에는 나타나지 않는다.
+    """
+    try:
+        with open(full, "rb") as fh:
+            chunk = fh.read(8192)
+    except OSError:
+        # 추적돼 있는데 디스크에 없다 — 검사할 내용이 없는 것이지 바이너리는 아니다.
+        return True
+    if b"\0" in chunk:
+        return False
+    try:
+        chunk.decode("utf-8")
+    except UnicodeDecodeError:
+        # 8KB 경계에서 멀티바이트 문자가 잘렸을 수 있다. 그때는 전체로 다시 본다.
+        try:
+            with open(full, encoding="utf-8") as fh:
+                fh.read()
+        except UnicodeDecodeError:
+            return False
+    return True
+
+
+def unscannable_tracked(paths=None, root=None):
+    """**읽을 수 없는데 허용 목록에도 없는** 추적 파일.
+
+    게이트의 눈먼 곳이다. 규칙 넷은 전부 줄 단위 검사라 바이너리에는 닿지 못하는데,
+    닿지 못한 것과 깨끗한 것이 여태 구별되지 않았다.
+    """
+    root = ROOT if root is None else root
+    paths = tracked_files() if paths is None else paths
+    return sorted(p for p in paths
+                  if not p.lower().endswith(BINARY_OK)
+                  and not is_text(os.path.join(root, p)))
 
 
 def scan(matcher):
@@ -156,6 +207,63 @@ class ExactDenyListTest(unittest.TestCase):
                 failures.append(f"  {path}:{n}  ({term!r})\n      {line}")
         self.assertEqual([], failures,
                          "금칙 문자열이 추적 파일에 있다:\n" + "\n".join(failures))
+
+
+class NothingIsSilentlySkippedTest(unittest.TestCase):
+    """게이트가 **못 본 것**과 **깨끗한 것**은 다르다.
+
+    규칙 넷은 전부 줄 단위 검사라 바이너리에 닿지 못한다. 닿지 못하면 조용히
+    건너뛰었고, 그래서 `.coverage`(53KB SQLite, 로컬 절대경로 포함)가 공개 레포에
+    올라간 채로 게이트는 초록이었다.
+
+    이 레포가 반복해 온 실패는 코드 결함이 아니라 **성공처럼 보이는 침묵**이다.
+    게이트 자신이 그 형태를 하나 갖고 있었다.
+    """
+
+    def test_every_tracked_binary_is_a_declared_asset(self):
+        found = unscannable_tracked()
+        self.assertEqual(
+            [], found,
+            "읽을 수 없는데 허용 목록에도 없는 추적 파일: " + ", ".join(found)
+            + "\n  게이트는 이 파일들에 대해 아무것도 말하지 못한다 — '못 읽었으니 "
+              "깨끗하다'는 결론은 낼 수 없다.\n  추적에서 빼거나(대개 이쪽), 검토한 뒤 "
+              "BINARY_OK 에 확장자를 추가할 것.")
+
+    def test_it_catches_a_binary_that_is_not_on_the_list(self):
+        """`.coverage` 를 되돌리면 잡혀야 한다. 이 시나리오가 정확히 그것이다."""
+        d = tempfile.mkdtemp()
+        with open(os.path.join(d, ".coverage"), "wb") as fh:
+            fh.write(b"SQLite format 3\x00\x01\x02")
+        self.assertEqual([".coverage"],
+                         unscannable_tracked([".coverage"], root=d))
+
+    def test_a_declared_asset_is_not_flagged(self):
+        """스크린샷까지 신고하면 목록이 곧 무시된다."""
+        d = tempfile.mkdtemp()
+        with open(os.path.join(d, "shot.png"), "wb") as fh:
+            fh.write(b"\x89PNG\r\n\x1a\n\x00")
+        self.assertEqual([], unscannable_tracked(["shot.png"], root=d))
+
+    def test_text_is_not_flagged(self):
+        d = tempfile.mkdtemp()
+        with open(os.path.join(d, "a.md"), "w", encoding="utf-8") as fh:
+            fh.write("한글도 UTF-8 이다\n")
+        self.assertEqual([], unscannable_tracked(["a.md"], root=d))
+
+    def test_a_tracked_file_missing_on_disk_is_not_called_a_binary(self):
+        """검사할 내용이 없는 것과 바이너리인 것은 다르다."""
+        self.assertEqual([], unscannable_tracked(["gone.txt"], root=tempfile.mkdtemp()))
+
+    def test_the_allowlist_is_asset_types_only(self):
+        """여기에 확장자를 넣는 것은 '이 바이너리는 검토했다'는 선언이다.
+
+        신고를 잠재우려고 `.coverage` 나 `.db` 를 넣기 시작하면 이 게이트는 끝난다.
+        """
+        self.assertEqual(
+            {".png", ".jpg", ".jpeg", ".gif", ".ico", ".pdf", ".zip", ".woff", ".woff2"},
+            set(BINARY_OK),
+            "허용 목록이 바뀌었다. 새 항목이 정말 검토된 자산 유형인지 확인할 것 — "
+            "생성물(커버리지·DB·캐시)은 추적에서 빼는 것이 답이지 여기 넣는 것이 아니다")
 
 
 class GateItselfTest(unittest.TestCase):

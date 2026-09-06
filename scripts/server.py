@@ -37,6 +37,7 @@ from urllib import request as urllib_request
 from urllib import error as urllib_error
 
 import subprocess
+import traceback
 
 from vibe_runtime import (
     approval_required, expires_at, load_policy, new_identity, parse_time,
@@ -2212,6 +2213,10 @@ def _start_mission_watcher():
 
 # ── Handler ─────────────────────────────────────────
 
+class BadRequest(Exception):
+    """클라이언트가 보낸 것을 읽을 수 없다. 500 이 아니라 400 이다."""
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
@@ -2230,8 +2235,26 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(html.encode())
 
     def _body(self):
-        n = int(self.headers.get("Content-Length", 0))
-        return json.loads(self.rfile.read(n)) if n else {}
+        """요청 본문을 JSON 으로. **읽을 수 없으면 400 이지 침묵이 아니다.**
+
+        여기가 뚫려 있었다. 깨진 JSON 이나 숫자가 아닌 Content-Length 가 오면 예외가
+        핸들러 밖으로 나가고, socketserver 는 **응답을 하나도 쓰지 않은 채 연결을
+        끊었다.** 클라이언트가 받는 것은 400 이 아니라 `RemoteDisconnected` 다 —
+        무엇이 잘못됐는지도, 서버가 살아 있는지도 알 수 없다.
+
+        함수를 직접 부르는 테스트로는 보이지 않는다. HTTP 로 때려야 보인다.
+        """
+        raw = self.headers.get("Content-Length", 0)
+        try:
+            n = int(raw)
+        except (TypeError, ValueError) as exc:
+            raise BadRequest("Content-Length 가 숫자가 아니다: %r" % (raw,)) from exc
+        if n <= 0:
+            return {}
+        try:
+            return json.loads(self.rfile.read(n))
+        except (ValueError, UnicodeDecodeError) as exc:
+            raise BadRequest("본문이 JSON 이 아니다: %s" % exc) from exc
 
     def _resolve_project(self, parts):
         if len(parts) < 1:
@@ -2242,6 +2265,25 @@ class Handler(BaseHTTPRequestHandler):
             return key, projects[key]["kanban_dir"], parts[1:]
         return None, None, parts
 
+    def _guarded(self, handler):
+        """모든 요청의 마지막 방어선.
+
+        핸들러에서 예외가 새어 나가면 socketserver 는 **응답 없이 연결을 끊는다.**
+        그건 이 프로젝트가 반복해 온 '성공처럼 보이는 침묵'의 HTTP 판이다 — 밖에서
+        보면 서버가 죽은 것과 구별되지 않는다.
+
+        500 을 돌려주는 것이 조용히 끊는 것보다 낫다. 관측 가능하기 때문이다.
+        """
+        try:
+            return handler()
+        except BadRequest as exc:
+            return self._json({"error": str(exc)}, 400)
+        except BrokenPipeError:
+            raise                      # 클라이언트가 끊은 것 — 여기서 쓸 곳이 없다
+        except Exception as exc:
+            traceback.print_exc()
+            return self._json({"error": "%s: %s" % (type(exc).__name__, exc)}, 500)
+
     def do_OPTIONS(self):
         self.send_response(200)
         for h, v in [("Access-Control-Allow-Origin", "*"),
@@ -2251,6 +2293,9 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
+        return self._guarded(self._get)
+
+    def _get(self):
         parsed = urlparse(self.path)
         p = parsed.path.rstrip("/")
 
@@ -2350,6 +2395,9 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_POST(self):
+        return self._guarded(self._post)
+
+    def _post(self):
         p = urlparse(self.path).path.rstrip("/")
 
         # ── Register project ──
@@ -2469,6 +2517,9 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_PUT(self):
+        return self._guarded(self._put)
+
+    def _put(self):
         p = urlparse(self.path).path.rstrip("/")
         if p.startswith("/api/"):
             parts = p[5:].split("/")
@@ -2505,6 +2556,9 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_DELETE(self):
+        return self._guarded(self._delete)
+
+    def _delete(self):
         p = urlparse(self.path).path.rstrip("/")
         if p.startswith("/api/"):
             parts = p[5:].split("/")
