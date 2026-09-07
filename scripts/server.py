@@ -317,6 +317,103 @@ def _archive_hint(kanban_dir, tasks):
 #
 # 그래서 선택 필드 `depends_on: [id, ...]` 을 둔다. 핵심은 표현이 아니라 **구별**이다.
 # 지금은 막힌 태스크와 지금 당장 할 수 있는 태스크가 보드에서 똑같아 보인다.
+# 말로 적힌 선행관계를 **감지만** 한다. 자동으로 채우지 않는다.
+#
+# `depends_on` 은 PMF08 이 실측 근거로 만들었는데(당시 484건 중 22건이 선행관계를 말로
+# 적고 있었다) **9일 뒤 사용 0건 / 2,141** 이었다. 진단은 맞았고 배선이 없었다.
+# 사람이 기억해서 채우는 필드는 안 채워진다 — 그래서 감지를 붙인다.
+#
+# **넓게 잡지 않는다.** 넓은 규칙(선행|먼저|의존…)은 hot 511건 중 85건을 잡는데,
+# 표본을 열어보니 대부분 의존이 아니라 서술이었다. 규칙을 넓게 잡으면 규칙이 꺼진다.
+#
+# 좁히는 근거 셋 (전부 실제 표본에서 나왔다):
+#   1. **번호를 가리키지 않으면 링크를 만들 수 없다.** "마이그레이션 후에 배포"는
+#      사람에게는 의존이지만 보드가 옮겨 담을 대상이 없다.
+#   2. **번호가 태스크 id 로 실재해야 한다.** impactbook_ai 표본의 `#569`·`#570` 은
+#      PR 번호였다. 검증 없이 제안하면 보드가 없는 의존을 말한다.
+#   3. **"전례가 있어"는 의존이 아니다.** pante_bde #48 의 `#47 에서 … 틀렸던 전례가
+#      있어` 가 그 형태다. 참조와 선행은 다르다.
+#
+# 결정 참조(`결정 #7`·`decisions #11`)는 **따로 분류한다** — 그건 선행관계가 아니라
+# 결정↔태스크 링크가 말로 적힌 것이고, 그쪽은 역방향 조회의 재료다.
+PROSE_DEP = re.compile(
+    r"(?:(선행|선결|blocked by)\s*[:：]?\s*#(\d+))"
+    r"|(?:#(\d+)\s*(?:을|를|이|가)?\s*(선행|선결))"
+    r"|(?:#(\d+)\s*[^\n]{0,12}?(?:먼저|끝난 뒤|완료 후|이후에)\s)")
+PROSE_DECISION = re.compile(r"(?:결정|decisions?)\s*#(\d+)")
+
+# 선행조건이 지금 판단에 영향을 주는 상태들. done 의 선행조건은 이력이다.
+DEPENDENCY_ACTIVE = ("backlog", "todo", "in_progress", "review")
+
+# `/context` 에 실을 표본 수. 총 건수는 `note` 가 말하므로 목록은 표본이면 된다.
+PROSE_IN_CONTEXT = 5
+
+# 번호를 안 가리키는 선행 서술. **`depends_on` 으로 옮길 수 없는 것들이다** —
+# 표본의 절반이 이 형태였다: "G2B 수집 완료 후", "UI 병합 완료 후".
+# 사람에게는 분명한 선행조건인데 가리키는 대상이 태스크가 아니다(활동·단계·외부 사건).
+PROSE_PREREQ = re.compile(r"(선행|선결)\s*[:：]|blocked by|완료 후|끝난 뒤|이후에\s|(?<![가-힣])먼저\s")
+
+# 이 말이 근처에 있으면 선행이 아니다. **전부 실제 표본에서 나온 오탐의 형태다.**
+#   · "#47 에서 … 틀렸던 **전례**가 있어"        → 참조지 선행이 아니다
+#   · "근접 **선행기술** 후보 제시"               → 특허 도메인 용어. 의존과 무관
+#   · "다른 항목은 여기 **의존하지 않는다**"      → 부정문. 반대를 말한다
+PROSE_NOT_DEP = re.compile(
+    r"전례|사례|참고|예전|과거에|같은 형태|처럼"
+    r"|선행기술|선행 기술"
+    r"|의존하지\s*않|의존 없|영향\s*없")
+
+
+def _prose_dependency_candidates(tasks, archived=()):
+    """`depends_on` 이 비었는데 본문이 선행관계를 말하는 태스크.
+
+    **제안만 한다.** 자동으로 채우면 오탐이 보드에 들어가고, 보드가 틀린 의존을
+    말하는 것은 아무 말도 안 하는 것보다 나쁘다.
+    """
+    known = {str(t.get("id")) for t in list(tasks) + list(archived)
+             if t.get("id") is not None}
+    out = []
+    for t in tasks:
+        if t.get("depends_on"):
+            continue
+        blob = " ".join(str(t.get(f) or "") for f in ("title", "description", "details"))
+        if not blob.strip():
+            continue
+        decisions = sorted({d for d in PROSE_DECISION.findall(blob)})
+        # 결정 참조는 선행 후보에서 뺀다 — 같은 `#N` 이 양쪽에 잡히지 않게.
+        without_decisions = PROSE_DECISION.sub(" ", blob)
+
+        mentions = set()
+        for match in PROSE_DEP.finditer(without_decisions):
+            near = without_decisions[max(0, match.start() - 30):match.end() + 30]
+            if PROSE_NOT_DEP.search(near):
+                continue                      # 참조지 선행이 아니다
+            for group in match.groups():
+                if group and group.isdigit() and group in known:
+                    mentions.add(group)
+
+        prereq = None
+        if not mentions:
+            hit = PROSE_PREREQ.search(without_decisions)
+            if hit:
+                near = without_decisions[max(0, hit.start() - 40):hit.end() + 60]
+                if not PROSE_NOT_DEP.search(near):
+                    prereq = " ".join(near.split())
+
+        if not (mentions or decisions or prereq):
+            continue
+        entry = {"id": t.get("id"), "title": t.get("title"),
+                 "status": t.get("status")}
+        if mentions:
+            entry["suggests_depends_on"] = sorted(mentions, key=lambda x: int(x))
+        if prereq:
+            # 옮겨 담을 수 없다. **그래서 옮기라고 말하지 않는다** — 있다는 사실만 말한다.
+            entry["prose_prerequisite"] = prereq
+        if decisions:
+            entry["mentions_decisions"] = decisions
+        out.append(entry)
+    return out
+
+
 def _dependency_report(tasks, archived=()):
     """의존 관계를 훑어 막힌 것·없는 참조·순환을 돌려준다.
 
@@ -351,7 +448,7 @@ def _dependency_report(tasks, archived=()):
         if unmet and t.get("status") not in ("done",):
             blocked[tid] = unmet
 
-    return {
+    report = {
         "blocked": blocked,
         "unknown_refs": unknown,
         "cycles": _dependency_cycles(edges),
@@ -360,6 +457,54 @@ def _dependency_report(tasks, archived=()):
             if t.get("status") in ("todo", "backlog") and str(t.get("id")) not in blocked
         ),
     }
+
+    # ── "막힌 것 없음" 과 "의존 데이터가 없음" 은 다르다 ───────────────────
+    #
+    # PMF12 에서 검색이 같은 실수를 했다: 없는 경로를 가리켜도 `0건` 을 돌려줘서
+    # "그런 기록은 없구나"로 읽혔다. 여기도 같다 — `blocked: {}` 는 "아무것도 막혀
+    # 있지 않다"로 읽히는데, 실제로는 **아무도 의존을 선언하지 않았다**는 뜻일 수 있다.
+    #
+    # 실측(2026-09-07, 22개 프로젝트): `depends_on` 사용 **0 / 2,141**.
+    # 그런데 활성 태스크 **28건**이 선행조건을 본문에 적고 있다. 그 상태에서
+    # `blocked: {}` 를 내보내는 것은 침묵이 아니라 **거짓 신호**다.
+    if not tasks:
+        return report          # 빈 보드에는 오해할 것이 없다. 말을 걸지 않는다.
+    declared = sum(1 for t in tasks if t.get("depends_on"))
+    report["declared"] = declared
+    # 완료된 태스크의 선행조건은 이력이다. 지금 판단에 쓰이는 것만 싣는다.
+    candidates = [c for c in _prose_dependency_candidates(tasks, archived)
+                  if c.get("status") in DEPENDENCY_ACTIVE]
+    stated = [c for c in candidates if c.get("suggests_depends_on")
+              or c.get("prose_prerequisite")]
+    if not declared:
+        # **짧게 쓴다.** 처음엔 문단으로 썼더니 이 문자열 하나가 프로젝트당 600 B 였고,
+        # 22개 프로젝트에서 세션마다 값을 치른다. 이유는 SKILL.md 가 설명한다 —
+        # 여기 필요한 것은 설명이 아니라 신호다.
+        report["note"] = ("의존 미선언 — blocked/ready 는 '없음'이 아니라 '판단 불가'다"
+                          + (" · 본문 선행조건 %d건" % len(stated) if stated else ""))
+    if candidates:
+        # **옮기라고 시키지 않는다.** 대부분은 옮길 수 없는 형태다 —
+        # 실측에서 28건 중 depends_on 으로 표현 가능한 것은 1건뿐이었다.
+        #
+        # **본문 발췌를 여기 싣지 않는다.** 처음엔 실었더니 `/context` 가 프로젝트당
+        # 최대 3,278 B(약 1,092 tok) 늘고 pante_bde 는 응답의 41% 가 이 항목이 됐다.
+        # PMF10 이 세션 시작을 867 tok 으로 만든 것을 그대로 되돌리는 셈이다.
+        #
+        # 그래서 "어디에 있다"까지만 말한다. 문장이 필요하면 그때 찾는다 —
+        # 검색(PMF12)이 있으니 그 비용이 이미 싸다. PMF10 규칙 3 과 같다:
+        # 요약을 읽고, 근거가 실제로 문제될 때 원본을 연다.
+        #
+        # 목록도 5건까지다. `note` 가 이미 총 건수를 말하므로 목록은 "어떤 종류인지"를
+        # 보이는 표본이면 된다. 20건까지 실었을 때 salpim-maru 는 1,890 B 였다.
+        # 제목도 싣지 않는다. id 로 열 수 있고, 제목 5개가 300 B 다.
+        report["stated_in_prose"] = [
+            {k: v for k, v in c.items()
+             if k not in ("prose_prerequisite", "title", "status")}
+            | ({"prose": True} if c.get("prose_prerequisite") else {})
+            for c in candidates[:PROSE_IN_CONTEXT]
+        ]
+        report["stated_in_prose_total"] = len(candidates)
+    return report
 
 
 def _dependency_cycles(edges):

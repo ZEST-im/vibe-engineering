@@ -145,7 +145,8 @@ class BackwardCompatibilityTest(unittest.TestCase):
 
     def test_empty_board(self):
         rep = srv._dependency_report([])
-        self.assertEqual({"blocked": {}, "unknown_refs": {}, "cycles": [], "ready": []}, rep)
+        self.assertEqual({"blocked": {}, "unknown_refs": {}, "cycles": [], "ready": []}, rep,
+                         "빈 보드에는 오해할 것이 없다 — 말을 걸면 그게 소음이다")
 
     def test_task_without_id_does_not_crash(self):
         srv._dependency_report([{"title": "id 없음", "status": "todo"}])

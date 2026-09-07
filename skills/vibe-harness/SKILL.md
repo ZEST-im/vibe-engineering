@@ -257,6 +257,30 @@ From these, derive:
 
 If no `CURRENT_PHASE.md` exists anywhere (`private/` / root / `docs/`) but the project already has kanban tasks, the session-start hook nudges you. Run `/vibe-harness phase init` to scaffold it, or ask the user how they want to scope the session before creating new tasks. Don't silently start work without a scope.
 
+### Prerequisites: what the board can and cannot know
+
+`depends_on: [id, ...]` is optional and expresses **one shape only** — this task waits on
+that task. When it is set, `/context` reports `blocked`, `ready`, dangling references and
+cycles, and those answers are correct.
+
+**Do not force other shapes into it.** Measured across 22 projects: of the active tasks
+that state a prerequisite in their own text, **1 could be expressed as task→task and 27
+could not** — they wait on activities, phases or external events ("after the G2B import",
+"once the merge lands"). Inventing task ids for those makes the board lie.
+
+So the rule is narrow:
+
+- **A task waits on another task, and you know its id** → set `depends_on`. This is the
+  case `/context` can act on.
+- **Anything else** → say it plainly in `details`. That is not a failure to use the
+  field; it is a prerequisite the field cannot hold.
+
+**Read `dependencies.note` before trusting `blocked`.** An empty `blocked` means one of
+two different things, and `/context` now says which: *nothing is blocked*, or *nobody
+declared a dependency, so there is nothing to judge*. `stated_in_prose` lists the active
+tasks whose text mentions a prerequisite — treat it as a reading aid, not a to-do list.
+Most entries there cannot and should not become `depends_on`.
+
 ### A working tree you are not alone in
 
 The session-start hook also reports uncommitted changes it finds in the tree. Read that
