@@ -414,6 +414,91 @@ def _prose_dependency_candidates(tasks, archived=()):
     return out
 
 
+# 결정 본문이 태스크를 말로 가리키는 경우. `task_id` 가 비었을 때의 보조 경로다.
+#
+# **`#` 를 반드시 요구한다.** 처음엔 `#` 를 선택으로 뒀다가 실제 데이터에서 바로 틀렸다:
+#   "결정→태스크 58% 로 연결은 이미 대부분 있다" → 백분율 58 을 태스크 58 로 읽었다.
+# 번호 앞의 `#` 는 사람이 "이걸 가리킨다"고 표시한 것이다. 그 표시가 없는 숫자는
+# 백분율·개수·연도일 수 있고, 검증 없이 이으면 **보드가 없는 링크를 말한다.**
+DECISION_TASKREF = re.compile(r"(?:태스크|task)\s*#(\d+)|#(\d+)\s*(?:번)?\s*(?:태스크|task)")
+
+
+def links_for_task(task_id, decisions, task_ids=()):
+    """이 태스크를 다루는 결정들. **필드를 늘리지 않고 계산한다.**
+
+    ## 왜 역방향 필드를 만들지 않는가
+
+    지금은 결정 → 태스크 한 방향만 저장된다(`task_id`, 채워진 비율 58%). 태스크에서
+    거꾸로 물으려면 결정 전체를 훑어야 한다 — 그래서 "역방향 링크 필드를 추가"가
+    자연스러운 답처럼 보인다.
+
+    **두 방향을 사람이 맞춰 쓰면 반드시 갈라진다.** 이 레포는 같은 종류의 드리프트를
+    이미 두 번 겪었다(설치 목록이 세 곳, status 리터럴이 네 곳). 갈라진 링크는 없는
+    링크보다 나쁘다 — 있다고 믿게 만든다.
+
+    그리고 계산 비용이 이미 싸다. 결정은 프로젝트당 최대 68건이고, PMF12 실측에서
+    2,600 레코드 전문 스캔이 180ms 였다.
+
+    ## 말로 적힌 링크도 센다
+
+    실측(2026-09-08, 22개 프로젝트): 저장된 `task_id` **133건**, 그 밖에 결정 본문이
+    태스크를 말로 가리키는 것 **13건**, 태스크 본문이 결정을 말로 가리키는 것 **14건**.
+    **말로 적힌 27건은 필드를 하나도 늘리지 않고 얻는다.**
+
+    ## 어떻게 이어졌는지 함께 돌려준다
+
+    `via` 가 없으면 틀렸을 때 어디를 고쳐야 하는지 모른다 — 검색의 `locator`·순위의
+    `why_ranked` 와 같은 규율이다.
+    """
+    want = str(task_id)
+    known = {str(t) for t in task_ids}
+    out = []
+    for dec in decisions or []:
+        via = []
+        if str(dec.get("task_id") or "") == want:
+            via.append("task_id")
+        else:
+            blob = " ".join(str(dec.get(f) or "")
+                            for f in ("title", "why", "revisit"))
+            for match in DECISION_TASKREF.finditer(blob):
+                num = match.group(1) or match.group(2)
+                # 실재하는 태스크 번호만. 검증 없이 이으면 없는 링크를 말한다.
+                if num == want and (not known or num in known):
+                    via.append("decision_text")
+                    break
+        if via:
+            out.append({"id": dec.get("id"), "title": dec.get("title"),
+                         "phase": dec.get("phase"), "via": via})
+    return out
+
+
+def task_link_report(task, decisions, task_ids=()):
+    """한 태스크의 링크. 저장된 것과 말로 적힌 것을 **구별해서** 돌려준다."""
+    tid = task.get("id")
+    found = links_for_task(tid, decisions, task_ids)
+    seen = {str(d["id"]) for d in found}
+
+    # 태스크 본문이 결정을 가리키는 쪽. 반대 방향에서 못 찾은 것만 더한다.
+    blob = " ".join(str(task.get(f) or "")
+                    for f in ("title", "description", "details"))
+    by_id = {str(d.get("id")): d for d in decisions or []}
+    for num in sorted(set(PROSE_DECISION.findall(blob)), key=lambda x: int(x)):
+        if num in seen:
+            for entry in found:
+                if str(entry["id"]) == num and "task_text" not in entry["via"]:
+                    entry["via"].append("task_text")
+            continue
+        dec = by_id.get(num)
+        if dec is None:
+            # 없는 결정을 가리킨다. **조용히 버리지 않는다** — 오타이거나 지워진 것이다.
+            found.append({"id": num, "title": None, "via": ["task_text"],
+                          "missing": True})
+        else:
+            found.append({"id": dec.get("id"), "title": dec.get("title"),
+                          "phase": dec.get("phase"), "via": ["task_text"]})
+    return {"task": tid, "decisions": found}
+
+
 def _dependency_report(tasks, archived=()):
     """의존 관계를 훑어 막힌 것·없는 참조·순환을 돌려준다.
 
@@ -2527,8 +2612,19 @@ class Handler(BaseHTTPRequestHandler):
                                           (qs.get("limit") or [SEARCH_DEFAULT_LIMIT])[0]))
 
             if rest == ["decisions"]:
-                data = _read_decisions(kanban_dir)
-                return self._json(data["decisions"])
+                decisions = _read_decisions(kanban_dir)["decisions"]
+                # `?task=<id>` — 이 태스크를 다루는 결정만. **역방향 필드가 아니라 계산이다.**
+                want = (parse_qs(parsed.query).get("task") or [""])[0].strip()
+                if want:
+                    data = _read_kanban(kanban_dir)
+                    tasks = data.get("tasks", []) + _list_archives(kanban_dir)
+                    ids = {str(t.get("id")) for t in tasks}
+                    match = next((t for t in tasks if str(t.get("id")) == want), None)
+                    if match is None:
+                        # 없는 태스크에 빈 목록을 돌려주면 "관련 결정이 없다"로 읽힌다.
+                        return self._json({"error": "unknown task", "task": want}, 404)
+                    return self._json(task_link_report(match, decisions, ids))
+                return self._json(decisions)
 
             if rest == ["velocity"]:
                 return self._json(_get_velocity(kanban_dir))

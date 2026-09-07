@@ -196,11 +196,30 @@ def set_task(kanban_dir, task_id, fields, require_lock=False):
     return target
 
 
-def show_task(kanban_dir, task_id):
+def show_task(kanban_dir, task_id, with_links=True):
+    """태스크 하나. **이걸 다루는 결정도 함께 돌려준다.**
+
+    저장된 링크는 결정 → 태스크 한 방향뿐이라(`task_id`), 태스크에서 거꾸로 물으려면
+    결정 전체를 훑어야 했다. 역방향 필드를 만들지 않고 **계산한다** — 두 방향을 사람이
+    맞춰 쓰면 반드시 갈라지고, 갈라진 링크는 없는 링크보다 나쁘다.
+
+    서버를 거치지 않는다. "서버가 꺼져 있어도 정상"이 규정이므로 링크 조회도 그래야 한다.
+    """
     srv = _server()
-    for t in srv._read_kanban(kanban_dir).get("tasks") or []:
+    data = srv._read_kanban(kanban_dir)
+    hot = data.get("tasks") or []
+    archived = srv._list_archives(kanban_dir)
+    # **아카이브까지 본다.** 2,141건 중 대부분이 아카이브에 있고, "이 태스크에 관해
+    # 뭘 결정했지"는 대개 지난 일에 대한 질문이다. hot 만 보면 링크 조회가 반쪽이다.
+    for t in hot + archived:
         if str(t.get("id")) == str(task_id):
-            return t
+            if not with_links:
+                return t
+            decisions = srv._read_decisions(kanban_dir).get("decisions") or []
+            ids = {str(x.get("id")) for x in hot + archived}
+            out = dict(t)
+            out["links"] = srv.task_link_report(t, decisions, ids)["decisions"]
+            return out
     raise SystemExit(f"태스크 {task_id} 없음")
 
 
