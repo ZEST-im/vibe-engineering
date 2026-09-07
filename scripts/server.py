@@ -1886,11 +1886,24 @@ def _project_key_for_dir(kanban_dir):
     return None
 
 
+def _sort_position(task):
+    """정렬용 position. 타입이 섞여도 숫자로 비교한다.
+
+    칸반은 사람이 손으로도 고치고 여러 세션이 동시에 쓴다. 실제로 한 보드에 int 159 개와
+    str 7 개가 섞여 있었고, 그대로 비교하다 sync 가 통째로 죽었다 — 보드 하나의 흠이 그
+    머신의 동기화 전체를 멈춘다. 읽는 쪽이 견딘다.
+    """
+    try:
+        return float(task.get("position") or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def _snapshot_source(key, info):
     kanban_dir = info.get("kanban_dir", "")
     data = _read_kanban(kanban_dir)
     tasks = data.get("tasks", []) + _list_archives(kanban_dir)
-    tasks.sort(key=lambda t: (t.get("position") or 0, str(t.get("id", 0))))
+    tasks.sort(key=lambda t: (_sort_position(t), str(t.get("id", 0))))
     decisions = _read_decisions(kanban_dir).get("decisions", [])
     return {
         "key": key,
