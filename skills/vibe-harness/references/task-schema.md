@@ -57,6 +57,29 @@ The default path for an agent is to read and edit `vibe-harness/kanban.json` and
   - **Append a run to `runs.json`** — `{agent, model, tokens, time_seconds, commit, ts}` for the agent that did the work (see runs.json section). Agent-agnostic: record it whether the work was done by Codex, Claude, Gemini, or any other agent.
   - Any verification notes (tests run, manual checks) belong in `details`.
 - **Atomic writes**: Write to `kanban.json.tmp` first, then rename over `kanban.json`. The server does this; agents editing directly should do the same to avoid leaving the file half-written.
+### Task ids and the prefix
+
+`sync.json`'s `id_prefix` is prepended to every id this machine mints (`hgB99`). The
+number after it is one shared sequence — prefixed and bare ids are counted together when
+the next id is chosen.
+
+**The prefix must be unique per person *and* per machine.** Distinguishing people is not
+enough: one person working from two checkouts mints from the same `next_id` in a
+git-tracked file, so both machines hand out the same number. With distinct prefixes those
+become `hg99` and `hgB99` — different ids, no collision. With the same prefix they are the
+same id, and the board has two tasks claiming it.
+
+```
+hg    mac-studio      hgB   macbook
+```
+
+Two things this does **not** solve, both known:
+
+- The number itself is still minted twice, so the two boards drift on `next_id` until
+  they merge. Ids stay unique, which is the invariant that matters.
+- Changing a prefix does not rename past ids, and it should not. Commit messages, decision
+  records and reviews cite ids by their exact text; renaming breaks those links silently.
+
 - **`depends_on`** (optional, `[id, ...]`): tasks that must be done first. The board is a
   flat list, so before this the relation could only be written in prose — 22 of 484 tasks
   across the fleet did exactly that, which people read and the board did not.

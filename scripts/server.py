@@ -751,14 +751,40 @@ def _id_prefix():
         return None
 
 
+# id 끝의 번호. `hg67`·`hgB99` 처럼 접두어가 붙어도 같은 수열이다.
+ID_TAIL = re.compile(r"(\d+)$")
+
+
+def id_number(task_id):
+    """id 에서 번호만 뽑는다. 읽을 수 없으면 None."""
+    if isinstance(task_id, int):
+        return task_id
+    match = ID_TAIL.search(str(task_id or ""))
+    return int(match.group(1)) if match else None
+
+
 def _numeric_ids(items):
-    """정수로 읽히는 id 만 추린다 — 접두어가 섞인 뒤에도 next_id 계산이 깨지지 않게."""
+    r"""id 들의 번호. **접두어를 벗겨서 센다.**
+
+    ## 여기가 조용히 꺼져 있었다
+
+    예전 구현은 `int(id)` 라 접두어가 붙은 id 를 **통째로 건너뛰었다.** 그러면
+    바로 아래 `_mint_id` 의 안전망("next_id 가 실제 최대값보다 뒤처져 있으면 맞춘다")이
+    접두어를 쓰는 보드에서 아무것도 보지 못한다.
+
+    재현: `next_id: 5` 인 보드에 `hg40`·`hg41` 이 있으면 다음 발급이 **`hg5`** 였다.
+    중복을 막으려고 둔 장치가 중복 생성기가 된 것이다. 접두어를 쓰는 머신에서는
+    이 보정이 처음부터 죽어 있었다.
+
+    테스트(`test_data_integrity.id_number`)는 이미 `(\d+)$` 로 벗겨서 세고 있었고
+    주석에 "server 의 _numeric_ids 와 같은 규칙"이라 적혀 있었다 — **같지 않았다.**
+    이제 그쪽이 이 함수를 쓴다.
+    """
     out = []
     for it in items or []:
-        try:
-            out.append(int(it.get("id")))
-        except (TypeError, ValueError):
-            continue
+        num = id_number((it or {}).get("id"))
+        if num is not None:
+            out.append(num)
     return out
 
 

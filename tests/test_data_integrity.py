@@ -5,7 +5,6 @@ runs.json append-only)은 문서에만 있고 어디서도 강제되지 않았�
 """
 import importlib.util
 import json
-import re
 import os
 import sys
 import unittest
@@ -61,15 +60,69 @@ def archived_tasks():
     return out
 
 
-def id_number(task_id):
-    """id 에서 번호만 뽑는다. 접두어가 붙어도(hg67) 같은 수열이다.
+def load_server():
+    """server.py 를 한 번만 읽는다.
 
-    server.py 의 _numeric_ids 와 같은 규칙 — 읽을 수 없으면 None 이고 비교에서 빠진다.
+    `setdefault` 만 쓰면 부를 때마다 새 모듈 객체를 만들어 exec 하므로, 같은 함수를
+    두 번 가져와도 서로 다른 객체가 된다 — "정본이 하나"를 검사할 수가 없다.
     """
-    if isinstance(task_id, int):
-        return task_id
-    m = re.search(r"(\d+)$", str(task_id or ""))
-    return int(m.group(1)) if m else None
+    cached = sys.modules.get("vh_server_ids")
+    if cached is not None:
+        return cached
+    spec = importlib.util.spec_from_file_location(
+        "vh_server_ids", os.path.join(SCRIPTS, "server.py"))
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["vh_server_ids"] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+# **여기 다시 구현하지 않는다.** 예전엔 같은 규칙이라 적어두고 실제로는 달랐다 —
+# 이쪽은 `(\d+)$` 로 접두어를 벗겼고 server 는 `int(id)` 라 접두어 id 를 통째로
+# 건너뛰었다. 그래서 `_mint_id` 의 중복 방지 보정이 접두어 보드에서 죽어 있었고,
+# `next_id: 5` 인 보드에 `hg40`·`hg41` 이 있으면 `hg5` 가 발급됐다.
+id_number = load_server().id_number
+
+
+class IdNumberingSurvivesPrefixesTest(unittest.TestCase):
+    """접두어가 붙어도 번호 수열은 하나다.
+
+    ## 조용히 꺼져 있던 안전망
+
+    `_mint_id` 에는 "next_id 가 실제 최대값보다 뒤처져 있으면 발급 직전에 맞춘다"는
+    보정이 있다. 그런데 `_numeric_ids` 가 `int(id)` 라 **접두어 id 를 통째로
+    건너뛰었다.** 접두어를 쓰는 보드에서는 그 보정이 아무것도 보지 못했다.
+
+    재현: `next_id: 5` 인 보드에 `hg40`·`hg41` 이 있으면 다음 발급이 **`hg5`** 였다.
+    중복을 막으려고 둔 장치가 중복 생성기가 된 것이다.
+    """
+
+    def test_a_prefixed_board_still_corrects_a_stale_next_id(self):
+        srv = load_server()
+        board = {"next_id": 5, "tasks": [{"id": "hg40"}, {"id": "hg41"}]}
+        self.assertEqual("hg42", srv._mint_id(board, "hg")[0],
+                         "접두어 보드에서 중복 방지 보정이 죽어 있다")
+
+    def test_a_mixed_case_prefix_is_read(self):
+        """머신을 가르는 접두어(`hgB`)에는 대문자가 들어간다."""
+        srv = load_server()
+        self.assertEqual(99, srv.id_number("hgB99"))
+        board = {"next_id": 1, "tasks": [{"id": "hgB99"}]}
+        self.assertEqual("hgB100", srv._mint_id(board, "hgB")[0])
+
+    def test_bare_numbers_still_work(self):
+        srv = load_server()
+        self.assertEqual(93, srv.id_number(93))
+        self.assertEqual(93, srv.id_number("93"))
+
+    def test_an_unreadable_id_is_skipped_not_crashing(self):
+        srv = load_server()
+        self.assertIsNone(srv.id_number("no-digits"))
+        self.assertEqual([7], srv._numeric_ids([{"id": "x"}, {"id": "hg7"}]))
+
+    def test_the_two_implementations_are_one(self):
+        """예전엔 '같은 규칙'이라 적어두고 실제로는 달랐다. 이제 같은 함수다."""
+        self.assertIs(id_number, load_server().id_number)
 
 
 class KanbanIntegrityTest(unittest.TestCase):
