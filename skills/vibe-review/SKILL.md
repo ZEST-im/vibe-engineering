@@ -268,6 +268,32 @@ Append to `docs/developer-reviews/<handle>/history.json`:
 }
 ```
 
+### Point the priorities at something
+
+Each `priority` and each `resolved` entry may carry `tasks` and `decisions` — the ids that
+addressed the finding:
+
+```json
+{ "category": "병렬 세션이 워킹트리를 공유", "severity": "critical",
+  "status": "repeated", "consecutive_weeks": 3, "tasks": [78] }
+```
+
+**Why this exists.** W36's P1 ran for three weeks and was finally closed by a specific
+task, but nothing in the record connected the two — the link lived in whoever remembered
+it, and memory ends with the session. A review that names a problem and never points at
+its resolution makes the next reviewer re-derive the whole history.
+
+Two rules, both learned by getting them wrong:
+
+- **Only ids you verified exist.** Search the board for the work before writing the id
+  (`python3 scripts/search.py <the finding>`). A review that cites a task which is not
+  there is a broken link, and a broken link is worse than none — it looks answered.
+- **Leave it out rather than guess.** An empty `tasks` is honest; a wrong one is not.
+  If the finding was addressed by work you cannot locate, say so in `evidence` instead.
+
+`schema_version` is `2` once any entry uses these fields. Older entries stay valid — the
+fields are optional, and nothing backfills them automatically.
+
 Append only. **Read the previous entry before writing the new one** — `status` and
 `consecutive_weeks` are the mechanism that makes a stagnant problem impossible to ignore,
 and they only work if you carry them forward. A category at three consecutive weeks

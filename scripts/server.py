@@ -345,6 +345,16 @@ PROSE_DECISION = re.compile(r"(?:결정|decisions?)\s*#(\d+)")
 # 선행조건이 지금 판단에 영향을 주는 상태들. done 의 선행조건은 이력이다.
 DEPENDENCY_ACTIVE = ("backlog", "todo", "in_progress", "review")
 
+# 백틱 안의 것은 **예시**다. 실제로 걸렸다 — 태스크 hg94 의 details 가 이 기능을
+# 설명하며 `결정 #99` 를 예로 적었고, 그것이 유일한 `missing` 참조로 신고됐다.
+# 코드로 감싼 참조는 "이렇게 쓴다"는 설명이고 "이걸 가리킨다"가 아니다.
+CODE_SPAN = re.compile(r"`[^`\n]*`")
+
+
+def _without_examples(text):
+    """참조를 찾기 전에 코드 스팬을 지운다. 예시를 링크로 읽지 않게."""
+    return CODE_SPAN.sub(" ", str(text or ""))
+
 # `/context` 에 실을 표본 수. 총 건수는 `note` 가 말하므로 목록은 표본이면 된다.
 PROSE_IN_CONTEXT = 5
 
@@ -375,7 +385,8 @@ def _prose_dependency_candidates(tasks, archived=()):
     for t in tasks:
         if t.get("depends_on"):
             continue
-        blob = " ".join(str(t.get(f) or "") for f in ("title", "description", "details"))
+        blob = _without_examples(
+            " ".join(str(t.get(f) or "") for f in ("title", "description", "details")))
         if not blob.strip():
             continue
         decisions = sorted({d for d in PROSE_DECISION.findall(blob)})
@@ -458,8 +469,8 @@ def links_for_task(task_id, decisions, task_ids=()):
         if str(dec.get("task_id") or "") == want:
             via.append("task_id")
         else:
-            blob = " ".join(str(dec.get(f) or "")
-                            for f in ("title", "why", "revisit"))
+            blob = _without_examples(" ".join(str(dec.get(f) or "")
+                                              for f in ("title", "why", "revisit")))
             for match in DECISION_TASKREF.finditer(blob):
                 num = match.group(1) or match.group(2)
                 # 실재하는 태스크 번호만. 검증 없이 이으면 없는 링크를 말한다.
@@ -479,8 +490,8 @@ def task_link_report(task, decisions, task_ids=()):
     seen = {str(d["id"]) for d in found}
 
     # 태스크 본문이 결정을 가리키는 쪽. 반대 방향에서 못 찾은 것만 더한다.
-    blob = " ".join(str(task.get(f) or "")
-                    for f in ("title", "description", "details"))
+    blob = _without_examples(" ".join(str(task.get(f) or "")
+                                      for f in ("title", "description", "details")))
     by_id = {str(d.get("id")): d for d in decisions or []}
     for num in sorted(set(PROSE_DECISION.findall(blob)), key=lambda x: int(x)):
         if num in seen:

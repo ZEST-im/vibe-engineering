@@ -126,6 +126,32 @@ class RefusesToGuessTest(unittest.TestCase):
         self.assertEqual([], server.links_for_task(999, [dec], {"1", "2"}))
 
 
+class ExamplesAreNotReferencesTest(unittest.TestCase):
+    """백틱 안의 것은 **예시**다.
+
+    실제로 걸렸다 — 태스크 hg94 의 details 가 이 기능을 설명하며 `결정 #99` 를 예로
+    적었고, 그것이 22개 프로젝트 전체에서 유일한 `missing` 참조로 신고됐다.
+    **문서가 자기 자신을 끊긴 링크로 만든 것이다.**
+
+    코드로 감싼 참조는 "이렇게 쓴다"는 설명이고 "이걸 가리킨다"가 아니다.
+    """
+
+    def test_a_backticked_reference_is_ignored(self):
+        found = links(task(1, "없는 결정을 가리키면(`결정 #99`) missing 으로 싣는다"),
+                      [decision(1)])
+        self.assertEqual([], found, "예시로 적은 참조를 실제 링크로 읽었다")
+
+    def test_a_plain_reference_next_to_an_example_still_counts(self):
+        """예시를 지우다 진짜 참조까지 지우면 반대로 틀린다."""
+        found = links(task(1, "형식은 `결정 #99` 이고, 이 태스크는 결정 #7 을 따른다"),
+                      [decision(7)])
+        self.assertEqual([7], [d["id"] for d in found])
+
+    def test_the_corpus_has_no_broken_links_left(self):
+        """이 규칙을 넣기 전 유일한 끊긴 참조가 문서 예시였다."""
+        self.assertEqual(" ", server._without_examples("`결정 #99`").strip() or " ")
+
+
 class ReachesTheArchiveTest(unittest.TestCase):
     """2,141건 중 대부분이 아카이브에 있다. hot 만 보면 링크 조회가 반쪽이다."""
 

@@ -175,6 +175,18 @@ def clone_state():
         "머지하거나 리베이스한다")
 
 
+def _bytecode_caches():
+    """`scripts/`·`tests/` 아래의 `__pycache__`. venv 안은 건드리지 않는다."""
+    found = []
+    for top in ("scripts", "tests"):
+        base = os.path.join(ROOT, top)
+        for dirpath, dirnames, _files in os.walk(base):
+            dirnames[:] = [d for d in dirnames if d != ".check-venv"]
+            if os.path.basename(dirpath) == "__pycache__":
+                found.append(dirpath)
+    return found
+
+
 def venv_python(path=VENV):
     sub = "Scripts" if os.name == "nt" else "bin"
     return os.path.join(path, sub, "python")
@@ -216,6 +228,16 @@ def main(argv=None):
     state, detail = clone_state()
     bad_state = state in ("rewritten", "diverged")
     print(f"\n── 클론 상태\n   {'FAIL' if bad_state else 'PASS'}  {state}: {detail}")
+
+    # **낡은 바이트코드가 주입 검증을 오염시킨다.**
+    #
+    # `cp backup.py live.py` 로 파일을 되돌리면 내용은 옛것인데 **mtime 도 옛것**이라
+    # `.pyc` 가 여전히 유효해 보인다. 그러면 주입된 버전이 계속 로드되고, 복구했는데
+    # 테스트가 실패한다 — 원인을 코드에서 찾다 30분을 버렸다(2026-09-08).
+    #
+    # 위반 주입은 이 레포의 채택 기준이므로 그 절차를 오염시키는 것은 검사 자체의 결함이다.
+    for cache in _bytecode_caches():
+        shutil.rmtree(cache, ignore_errors=True)
 
     results = [("clone", not bad_state)]
     results.append(("compileall",

@@ -77,6 +77,36 @@ class VersionsComeFromTheWorkflowTest(unittest.TestCase):
             check.WORKFLOW = saved
 
 
+class ClearsStaleBytecodeTest(unittest.TestCase):
+    """**낡은 `.pyc` 가 위반 주입 검증을 오염시킨다.**
+
+    `cp backup.py live.py` 로 되돌리면 내용은 옛것인데 **mtime 도 옛것**이라 `.pyc` 가
+    여전히 유효해 보인다. 그러면 주입된 버전이 계속 로드되고 **복구했는데 테스트가
+    실패한다** — 2026-09-08 에 그렇게 걸려서 원인을 코드에서 찾았다.
+
+    위반 주입은 이 레포가 새 검사를 채택하는 기준이다. 그 절차를 오염시키는 것은
+    검사 자체의 결함이라 진입점이 매번 지운다.
+    """
+
+    def test_the_entrypoint_clears_caches(self):
+        with open(os.path.join(SCRIPTS, "check.py"), encoding="utf-8") as fh:
+            body = fh.read()
+        self.assertIn("_bytecode_caches", body,
+                      "낡은 바이트코드를 안 지우면 주입 검증이 조용히 거짓말한다")
+
+    def test_it_finds_the_caches_that_matter(self):
+        found = check._bytecode_caches()
+        for path in found:
+            self.assertIn("__pycache__", path)
+            self.assertNotIn(".check-venv", path,
+                             "venv 안의 캐시를 지우면 도구를 매번 다시 컴파일한다")
+
+    def test_it_does_not_reach_outside_the_repo(self):
+        for path in check._bytecode_caches():
+            self.assertTrue(os.path.abspath(path).startswith(os.path.abspath(check.ROOT)),
+                            "레포 밖을 지우려 한다: %s" % path)
+
+
 class CoversEveryCiJobTest(unittest.TestCase):
     """CI 에 잡이 하나 늘었는데 로컬 진입점이 모르면 다시 절반만 보게 된다."""
 
