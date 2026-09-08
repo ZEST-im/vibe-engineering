@@ -70,7 +70,7 @@ become `hg99` and `hgB99` — different ids, no collision. With the same prefix 
 same id, and the board has two tasks claiming it.
 
 ```
-hg    mac-studio      hgB   macbook
+hgA   mac-studio      hgB   macbook
 ```
 
 Two things this does **not** solve, both known:
@@ -79,6 +79,9 @@ Two things this does **not** solve, both known:
   they merge. Ids stay unique, which is the invariant that matters.
 - Changing a prefix does not rename past ids, and it should not. Commit messages, decision
   records and reviews cite ids by their exact text; renaming breaks those links silently.
+  mac-studio minted bare `hg*` ids before 2026-09-08, so `hg92` and `hgA99` coexist on that
+  board. Both are that machine's; only the prefix changed. `id_number()` reads the trailing
+  number either way, so they share one sequence.
 
 - **`depends_on`** (optional, `[id, ...]`): tasks that must be done first. The board is a
   flat list, so before this the relation could only be written in prose — 22 of 484 tasks

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "next_id": 99,
+  "next_id": 100,
   "tasks": [
     {
       "id": 78,
@@ -507,6 +507,28 @@
       "review": "",
       "created_by": "hogun",
       "assigned_to": "hogun"
+    },
+    {
+      "id": "hgA99",
+      "title": "mac-studio 접두어 hg → hgA — 규약대로 머신을 드러내게",
+      "description": "",
+      "details": "`sync.json` 의 `id_prefix` 를 `hg` → `hgA`. 규약은 사람+머신이고 macbook 이 `hgB` 다.\n\n**왜 이 세션이었나.** 규약을 세운 커밋(hg97)이 macbook 에서 작성돼 \"mac-studio 는 이 머신에서 바꿀 수 없다\" 고 적어 두었다. 이 세션이 mac-studio 라 후속을 여기서 처리했다.\n\n**바꾸기 전에 확인한 것 4가지.**\n- `ID_PREFIX_RE` = `^[A-Za-z][A-Za-z0-9]{0,7}$` → `hgA` 통과 (`1hg`·`hg-a`·9자는 거부)\n- `id_number('hgA99')` = 99 → `hg99`·`hgB99` 와 같은 수열\n- 중앙이 덮어쓰지 않는다 — 하네스 스크립트에 중앙 접두어를 읽는 코드가 없고, 내 uid 는 중앙 배정 저장소에도 없다\n- 서버 재시작 불필요 — `_load_sync_config()` 가 호출마다 파일을 읽는다\n\n**적용 방법.** `enroll --id-prefix` 는 토큰을 필수로 요구하며 `runs_token` 을 항상 덮어쓴다. 커맨드라인에 시크릿을 노출하지 않으려고 해당 키만 원자적으로 교체했다(0600 유지, 다른 키·시크릿 값 보존 확인).\n\n**발급 검증.** 실제 보드를 오염시키지 않도록 임시 보드로 확인했다. `next_id: 5, tasks: [hg92, hgB41]` → `hgA93` 발급 — 뒤처진 next_id 를 실측 최대값으로 맞추는 보정이 대문자 접두어에서도 작동한다(hg97 이 되살린 그 장치).\n\n**과거 id 는 바꾸지 않는다.** 커밋·결정 기록이 정확한 문자열로 참조하므로 `hg92` 와 `hgA99` 가 공존한다. 같은 머신 것이고 접두어만 바뀌었다.\n\n**문서 교정.** `task-schema.md` 규약 표가 `hg = mac-studio` 로 남아 있어 `hgA` 로 고치고, 과거 `hg*` 가 왜 공존하는지 적었다. `enroll.py --id-prefix` 도움말 예시도 같이.\n\n653 tests OK · check.py 전부 통과.",
+      "status": "done",
+      "priority": "medium",
+      "category": "infra",
+      "target_date": "",
+      "started_at": "",
+      "completed_at": "2026-09-08T15:06:56+09:00",
+      "lines_added": 12,
+      "lines_removed": 3,
+      "tokens_used": 0,
+      "created_at": "2026-09-08T15:06:56+09:00",
+      "updated_at": "2026-09-08T15:06:56+09:00",
+      "position": 0,
+      "phase": "PHASE_PMF13",
+      "review": "",
+      "created_by": "hogun",
+      "assigned_to": ""
     }
   ]
 }

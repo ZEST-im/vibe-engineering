@@ -489,7 +489,7 @@ def main(argv=None):
     ap.add_argument("--id-prefix", metavar="접두어",
                     help="칸반 태스크 ID 접두어. **사람마다 그리고 머신마다 달라야 한다** "
                          "— 사람만 가르면 한 사람의 두 머신이 같은 id 를 발급한다 "
-                         "(예: hg = mac-studio, hgB = macbook)")
+                         "(예: hgA = mac-studio, hgB = macbook)")
     ap.add_argument("--update-skill", action="store_true",
                     help="레포의 코드를 설치본으로 반영 (서버는 설치본에서 돈다)")
     ap.add_argument("--repair", action="store_true",
