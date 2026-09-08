@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "next_id": 102,
+  "next_id": 103,
   "tasks": [
     {
       "id": 78,
@@ -573,6 +573,28 @@
       "review": "",
       "created_by": "hogun",
       "assigned_to": ""
+    },
+    {
+      "id": "hgA102",
+      "title": "커밋 지점 충돌 감지 — 원격이 움직였고 내 파일이 그 파일이다",
+      "description": "",
+      "details": "가드에 `upstream_overlap()` + `overlap_message()`, check.py 에 `upstream_conflict()` + `conflict_fails_gate()` 를 두고 커밋 직전 게이트에 배선했다.\n\n**무엇을 말하나.** 원격이 앞섰다 + 내가 들고 있는 더티 파일이 하필 그 앞선 커밋이 건드린 파일이다. 겹치면 FAIL, 겹치지 않으면 \"원격이 N커밋 앞섬 (pull 하면 됩니다)\" 알림만. 겹침만 이름을 댄다 — 겹치지도 않은 파일까지 늘어놓으면 경고가 소음이 되고 소음은 안 읽힌다.\n\n**설계 충돌을 좁혀서 풀었다.** check.py 에는 `clone_state()` 와 함께 \"네트워크는 건드리지 않는다. fetch 는 ss 의 일이고 여기서 또 하면 느리고 오프라인에서 막힌다\" 는 규칙이 이미 적혀 있었다. 승인된 설계는 fetch 였다. 부딪히는 구간이 생각보다 좁았다 — **들고 있는 파일이 없으면 무엇과도 겹칠 수 없다.** 그래서 fetch 는 트리가 더러울 때만 한다. 깨끗하면 네트워크를 안 탄다. `clone_state()` 는 여전히 받아둔 ref 로만 본다(저기서 보는 재작성·분기는 fetch 없이 판단할 수 있고, 여기서 보는 \"내 파일이 그 파일인가\" 는 아니다).\n\n**fetch 실패는 FAIL 이 아니다.** 오프라인에서 커밋을 못 하게 만들면 안 된다. 모른다고 말하고 비켜선다 — 가드의 기존 규율(주장을 증거보다 세게 하지 않는다)과 같다. **모른다는 것은 겹친다는 것이 아니다.**\n\n**테스트가 진짜 결함을 하나 잡았다.** 미추적 파일이 새 디렉토리 안에 있으면 `git status --porcelain` 이 `?? docs/` 로 접는다. 파일 이름으로 비교하는 쪽에서는 그게 조용한 누락이다 — `docs/new.md` 를 찾는데 목록에는 `docs/` 만 있다. `dirty_paths(untracked_all=True)` 를 추가해 겹침 판정에서만 파일 단위로 받는다. 세어서 보여주는 쪽은 접힌 편이 짧으니 기본값은 유지했다. 이건 원래 사고와 같은 계열이다 — `git add -A` 는 그 파일을 담는데 경고는 디렉토리 이름만 말한다.\n\n**mock 없이 검증했다.** 로컬 bare 저장소를 원격으로 두면 네트워크 없이 진짜 fetch 를 돌릴 수 있다. git 출력을 흉내내면 흉내낸 것을 검사하게 된다.\n\n**TDD.** 14개 먼저 쓰고 전부 RED(기능 부재) → GREEN. 이어서 fetch 정책 5개 RED → GREEN. 총 19개. 위반 주입으로 FAIL 경로가 실제로 소리내는 것을 확인했다(원격이 shared.txt 를 밀고 내가 그 파일을 들고 있는 상황 → FAIL + 파일명 지목).\n\n683 tests OK (664 → 683).\n\n**남긴 것.** main() 이 `_guard_module()` 을 두 번 부른다(충돌 판정 안에서 한 번, 메시지 렌더에 한 번). 동작에 영향은 없고 정리 여지만 있다. main() 의 출력 자체는 수동 확인이다 — 이 레포는 print 를 단위 테스트하지 않는다.",
+      "status": "done",
+      "priority": "medium",
+      "category": "infra",
+      "target_date": "",
+      "started_at": "2026-09-08T18:21:37+09:00",
+      "completed_at": "2026-09-08T18:31:00+09:00",
+      "lines_added": 458,
+      "lines_removed": 3,
+      "tokens_used": 0,
+      "created_at": "2026-09-08T18:21:10+09:00",
+      "updated_at": "2026-09-08T18:31:00+09:00",
+      "position": 0,
+      "phase": "PHASE_PMF14",
+      "review": "",
+      "created_by": "hogun",
+      "assigned_to": "hogun"
     }
   ]
 }

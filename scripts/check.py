@@ -126,6 +126,55 @@ def unverified_here(clone=None):
     return notes
 
 
+GUARD = os.path.join(ROOT, "scripts", "hooks", "vibe-harness-worktree-guard.py")
+
+
+def _guard_module():
+    """워킹트리 가드를 모듈로 읽는다. 파일명에 하이픈이 있어 import 가 안 된다.
+
+    없거나 깨져 있으면 None — 이 검사가 없다고 다른 검사를 막지 않는다.
+    """
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("vh_guard_for_check", GUARD)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+    except Exception:
+        return None
+
+
+def upstream_conflict(repo=None):
+    """커밋 직전 충돌 신호. **깨끗한 트리에서는 네트워크를 타지 않는다.**
+
+    이 파일에는 `clone_state()` 가 "네트워크는 건드리지 않는다" 는 규칙과 함께 있다.
+    그 규칙과 정확성이 부딪히는데, 부딪히는 구간이 생각보다 좁다 — **들고 있는 파일이
+    없으면 무엇과도 겹칠 수 없다.** 그러니 fetch 는 답을 바꿀 수 있을 때만 한다.
+
+    `clone_state()` 는 여전히 받아둔 ref 로만 본다. 저기서 보는 것(재작성·분기)은
+    fetch 없이도 판단할 수 있고, 여기서 보는 것(내 파일이 그 파일인가)은 아니다.
+    """
+    repo = repo or ROOT
+    guard = _guard_module()
+    if guard is None:
+        return None
+
+    holding = guard.dirty_paths(repo, untracked_all=True)
+    found = guard.upstream_overlap(repo, fetch=bool(holding))
+    if found is not None:
+        found["fetched"] = bool(holding) and not found["fetch_failed"]
+    return found
+
+
+def conflict_fails_gate(found):
+    """겹침만 막는다.
+
+    앞선 것만으로 멈추면 오탐이 잦아지고, 잦은 오탐은 검사를 끄게 만든다.
+    fetch 실패도 막지 않는다 — **모른다는 것은 겹친다는 것이 아니다.**
+    """
+    return bool(found and found["overlap"])
+
+
 def clone_state():
     """이 클론이 원격과 어떤 관계인지. **분기의 종류까지** 가른다.
 
@@ -239,7 +288,20 @@ def main(argv=None):
     for cache in _bytecode_caches():
         shutil.rmtree(cache, ignore_errors=True)
 
-    results = [("clone", not bad_state)]
+    # 코드가 멀쩡하고 클론이 갈라지지 않았어도, **내가 들고 있는 파일이 하필 원격이
+    # 건드린 파일이면** 지금 커밋하는 것이 손으로 풀 일을 만든다. 2026-09-08 하루에
+    # 두 번 그랬다.
+    conflict = upstream_conflict()
+    conflict_bad = conflict_fails_gate(conflict)
+    guard = _guard_module()
+    conflict_text = guard.overlap_message(conflict) if guard else None
+    if conflict_text:
+        print(f"\n── 원격과의 충돌\n   {'FAIL' if conflict_bad else 'PASS'}")
+        print(conflict_text)
+    else:
+        print("\n── 원격과의 충돌\n   PASS  겹치는 파일 없음")
+
+    results = [("clone", not bad_state), ("conflict", not conflict_bad)]
     results.append(("compileall",
                     run("컴파일", [sys.executable, "-m", "compileall", "-q",
                                  "scripts", "tests"])))

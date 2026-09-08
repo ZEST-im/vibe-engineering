@@ -71,12 +71,20 @@ def toplevel(start):
     return out.strip() if out else None
 
 
-def dirty_paths(repo):
+def dirty_paths(repo, untracked_all=False):
     """미커밋 경로. 추적/미추적을 가리지 않는다 — `add -A` 도 가리지 않기 때문이다.
 
     `-z` 로 읽는다. 공백이나 개행이 든 경로를 줄 단위로 자르면 조용히 빠진다.
+
+    `untracked_all` 은 미추적 파일을 하나씩 받는다. 기본 `git status` 는 통째로
+    미추적인 디렉토리를 `docs/` 한 줄로 접는데, **파일 이름으로 비교해야 하는 쪽에서는
+    그게 조용한 누락이 된다** — `docs/new.md` 를 찾는데 목록에는 `docs/` 만 있다.
+    세어서 보여주는 쪽은 접힌 편이 짧으니 기본값은 그대로 둔다.
     """
-    out = _git(repo, "status", "--porcelain", "-z")
+    args = ["status", "--porcelain", "-z"]
+    if untracked_all:
+        args.append("-uall")
+    out = _git(repo, *args)
     if not out:
         return []
     paths = []
@@ -112,6 +120,84 @@ def survey(start, now=None, active_minutes=ACTIVE_MINUTES):
         "recent": recent,
         "active_minutes": active_minutes,
     }
+
+
+def upstream_overlap(repo_start, fetch=False, remote="origin"):
+    """원격이 앞섰는지, 그 변경이 내 더티 파일과 겹치는지. 판단은 하지 않는다.
+
+    `survey()` 와 같은 규약이다 — 증거만 모으고, 무엇을 할지는 부르는 쪽이 정한다.
+
+    커밋 직전에 필요한 정보는 트리가 더러운지가 아니라 **내가 들고 있는 파일이 하필
+    원격이 건드린 파일인지**다. 겹치지 않으면 그냥 pull 하면 되고, 겹치면 손으로
+    풀어야 한다.
+
+    `fetch=True` 는 네트워크를 탄다. 그게 정확성의 대가다 — 이미 받아둔 ref 만 보면
+    오늘 다른 세션이 밀어넣은 것을 못 본다. 실패하면 `fetch_failed` 로 말하고 계속
+    간다. **모른다는 것은 겹친다는 것이 아니다.**
+    """
+    repo = toplevel(repo_start)
+    if not repo:
+        return None
+
+    fetch_failed = False
+    if fetch:
+        # 얕게, 조용히. 실패는 이 검사만의 문제다.
+        fetch_failed = _git(repo, "fetch", "--quiet", remote) is None
+
+    upstream = _git(repo, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}")
+    upstream = upstream.strip() if upstream else None
+
+    behind = 0
+    incoming = []
+    if upstream:
+        counts = _git(repo, "rev-list", "--left-right", "--count", "HEAD..." + upstream)
+        if counts:
+            parts = counts.split()
+            if len(parts) == 2 and parts[1].isdigit():
+                behind = int(parts[1])
+        if behind:
+            names = _git(repo, "diff", "--name-only", "-z", "HEAD..." + upstream)
+            if names:
+                incoming = [n for n in names.split("\0") if n]
+
+    # 겹침은 파일 이름으로 판정하므로 미추적도 파일 단위로 받아야 한다.
+    dirty = dirty_paths(repo, untracked_all=True)
+    overlap = sorted(set(incoming) & set(dirty))
+    return {
+        "repo": repo,
+        "upstream": upstream,
+        "fetch_failed": fetch_failed,
+        "behind": behind,
+        "incoming": incoming,
+        "dirty": dirty,
+        "overlap": overlap,
+    }
+
+
+def overlap_message(found):
+    """커밋 직전 경고문. 행동이 필요 없으면 None.
+
+    겹침만 이름을 댄다. 겹치지도 않은 파일까지 늘어놓으면 경고가 소음이 되고,
+    소음은 안 읽힌다.
+    """
+    if not found:
+        return None
+
+    lines = []
+    if found["overlap"]:
+        lines.append("  🔴 원격이 %d커밋 앞섰고, 그중 %d건이 **당신이 들고 있는 파일**입니다"
+                     % (found["behind"], len(found["overlap"])))
+        lines.append("     " + _names(found["overlap"]))
+        lines.append("     지금 커밋하면 pull 에서 손으로 풀어야 합니다. "
+                     "겹친 파일을 stash 하거나 먼저 커밋하고 pull 하세요")
+    elif found["behind"]:
+        lines.append("  ⚠ 원격이 %d커밋 앞섰습니다 — 겹치는 파일은 없습니다 (pull 하면 됩니다)"
+                     % found["behind"])
+
+    if found["fetch_failed"]:
+        lines.append("  ⚠ fetch 실패 — 원격 상태를 **모릅니다**. 위 판단은 받아둔 ref 기준입니다")
+
+    return "\n".join(lines) if lines else None
 
 
 def _names(paths):
