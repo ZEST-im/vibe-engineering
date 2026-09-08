@@ -1,14 +1,16 @@
 # Vibe Engineering
 
+[![tests](https://github.com/ZEST-im/vibe-engineering/actions/workflows/tests.yml/badge.svg)](https://github.com/ZEST-im/vibe-engineering/actions/workflows/tests.yml)
+![python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue)
+![license](https://img.shields.io/badge/license-MIT-green)
+
 **Session harness for Claude Code.**  
 Scope boundaries, task accountability, phase gates, and code review — built for AI-speed development.
 
-Vibe coding is fast. But it drifts. Vibe Engineering gives Claude a frame: what to work on, what not to touch, when to stop, and what happened.
+Vibe coding is fast. But it drifts. Vibe Engineering gives Claude a frame: what to work on, what not to touch,
+when to stop, and what happened.
 
-**How it got here.** It started as **vibe-kanban** — just a board to track what the agent was doing. Tracking alone
-turned out to be too little: the agent needed boundaries, gates, and a record, so the board grew into a session
-harness and the project became **vibe-harness**. What that harness actually does is engineer the conditions the
-agent works under, which is a broader job than holding a session together — hence **vibe-engineering**.
+![Kanban](docs/screenshot-kanban-dark.png)
 
 ---
 
@@ -29,27 +31,36 @@ Each line below is a question the agent cannot answer on its own, and the machin
 | **Loop** | When do I go again, when do I give up | Backoff, error budgets, idle distinguished from broken |
 | **Graph** | What is blocked, what can start now | `depends_on`, cycle and dangling-reference detection |
 | **Retrieval** | What does it cost to know something | Search over tasks, archives, decisions, docs and commit messages — snippets with locators, ranked and explained, no server needed |
+| **Knowledge** | What did we decide, and where is it | Decisions, tasks, phases and reviews pointing at each other. Reverse lookups are **computed, not stored** — two hand-maintained directions always drift, and a link that lies is worse than no link |
+| **Gates** | Did the check actually check | Public-hygiene gate, worktree-sharing guard, HTTP-surface tests. Each one is adopted only after an injected violation proves it fires — a check that never fails is not a check |
 
 ### What is next
 
 | | Decides | Why it is not done |
 |---|---|---|
-| **Graph, part two** | What should I do *first* | Detection landed. Using it has not — critical path, what unblocks the most, dependencies that cross projects. Detection says "not this one"; the next step says "this one". |
-| **Knowledge** | What do we know at all | Decision logs already accumulate. What is missing is linkage — decisions, tasks, phases and reviews pointing at each other, so a lesson learned once is findable later instead of living in a commit message. |
+| **Concurrency** | Whose commit is this | One worktree, several agent sessions. Detection exists at session start, but the collision lands at commit time: the remote moved and the files you are holding are the ones that moved. It happened twice in one day, the second time while shipping the Knowledge row above. |
+| **Ordering** | What should I do *first* | Not with the dependency field. Measured across 22 projects: it expresses **3.5%** of what active tasks actually wait on — 28 prerequisites written in prose, 1 of them task-to-task. The rest wait on activities, phases and outside events. The field stays and is accurate when filled; ordering needs a shape that is not task-to-task, and that shape is not designed yet. |
 
-Knowledge comes next, because retrieval now makes the corpus reachable — linking it is
-the part that turns a searchable pile into something you can be reminded by.
+Both rows are here because measurement contradicted the plan. Ordering was going to be built on
+`depends_on` until the corpus was counted; concurrency was assumed handled once detection shipped.
 
 ---
 
-### Kanban View (Dark)
-![Kanban Dark](docs/screenshot-kanban-dark.png)
+## The other views
 
-### List View
+**List** — every field editable inline, one row per task.
+
 ![List View](docs/screenshot-list.png)
 
-### Detail Panel
+**Detail panel** — the work report: what changed, why, code delta, tokens spent.
+
 ![Detail Panel](docs/screenshot-detail.png)
+
+**Light theme** — same board, one toggle.
+
+![Kanban Light](docs/screenshot-kanban-light.png)
+
+> Screenshots use a synthetic demo board, not a real one.
 
 ---
 
@@ -477,9 +488,18 @@ python3 ~/.claude/skills/vibe-harness/server.py configure-sync \
 
 ## Requirements
 
-- Python 3.6+
+- Python 3.11+ — CI verifies 3.11, 3.12 and 3.13
 - Claude Code CLI
-- macOS (LaunchAgent auto-start; server works on any OS)
+- macOS or Windows for auto-start (LaunchAgent / Task Scheduler); the server itself runs anywhere
+
+---
+
+## How it got here
+
+It started as **vibe-kanban** — just a board to track what the agent was doing. Tracking alone turned out to be
+too little: the agent needed boundaries, gates, and a record, so the board grew into a session harness and the
+project became **vibe-harness**. What that harness actually does is engineer the conditions the agent works
+under, which is a broader job than holding a session together — hence **vibe-engineering**.
 
 ---
 
