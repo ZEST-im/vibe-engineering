@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "next_id": 100,
+  "next_id": 101,
   "tasks": [
     {
       "id": 78,
@@ -529,6 +529,28 @@
       "review": "",
       "created_by": "hogun",
       "assigned_to": ""
+    },
+    {
+      "id": "hgA100",
+      "title": "설치본에 references/ 가 없다 — SKILL.md 의 포인터 5개가 죽어 있다",
+      "description": "",
+      "details": "`--update-skill` 이 `references/**` 를 복사하지 않아 설치본에 그 디렉토리가 **아예 없었다**. 설치본 `SKILL.md` 는 조회 표로 5개를 가리키는데, 에이전트가 읽는 것은 설치본이므로 포인터 5개가 전부 죽어 있었다.\n\n**왜 갈렸나.** 설치 경로가 둘인데 규칙이 다르다. `setup.py` 는 `copytree` 로 디렉토리를 통째 복사해 references 를 포함하고, `enroll --update-skill` 은 개별 파일 화이트리스트라 SKILL.md 만 가져왔다. 화이트리스트에는 이유가 있다 — 설치본에 `sync.json`·`projects.json` 같은 머신 로컬 상태가 함께 살아서 통째로 덮으면 날아간다. 다만 `references/` 는 순수 레포 문서라 로컬 대응물이 없다. 보호할 것이 없는데 같이 빠졌다.\n\n**기존 테스트가 왜 못 잡았나.** `test_skills.py::test_referenced_support_files_exist` 가 SKILL.md 의 포인터를 뽑아 검사하는데 **레포에** 있는지만 본다. 레포에는 다 있으니 통과한다. 설치 계획을 대조하는 테스트가 없었다.\n\n**목록을 두 곳에 적지 않았다.** 포인터를 화이트리스트에 손으로 또 나열하면 갈라진다 — 이미 그렇게 갈라졌다. `skill_reference_files()` 가 SKILL.md 를 파싱해 정본으로 삼고 설치 계획이 그것을 따라간다. 새 참조 문서를 추가할 때 잊을 곳이 없다. 경로는 유지한다(평평하게 깔면 SKILL.md 의 경로와 어긋나 여전히 못 찾는다). `..` 는 받지 않는다.\n\n**침묵도 함께 고쳤다.** 근본 원인은 파일 누락이 아니라 `--update-skill` 이 \"10개 반영\" 성공만 보고하고 무엇이 빠졌는지 말하지 않은 것이다. `missing_installed_references()` 를 두고 경고를 찍는다 — 화이트리스트를 고쳐도 이미 설치된 머신은 그대로고, 누가 파일을 지울 수도 있다. `--dry-run` 목록도 basename 대신 상대경로로 바꿨다. basename 만 찍으면 references 하위가 평평해 보여서, 설치본에 그 디렉토리가 없는 것을 아무도 눈치채지 못했다.\n\n**TDD.** 테스트 11개를 먼저 쓰고 7개 RED 확인(3 FAIL + 4 ERROR, 전부 \"기능 없음\"). 통과한 4개는 지켜야 할 가드다 — 머신 로컬 보존, 재실행 멱등성, 원본 실재, 전제. GREEN 후 위반 주입으로 경고가 실제로 소리내는 것을 확인했다(api.md 삭제 → `['references/api.md']` 보고 → 복구).\n\n**적용 결과.** 10개 → 15개 반영. 설치본 포인터 5개 전부 실재 확인. `hgA` 규약 표도 설치본에 반영됐다(이번 전환 때 확인할 수 없었던 것). 머신 로컬 `id_prefix`·`runs_token` 보존 확인.\n\n664 tests OK (653 → 664) · check.py 전부 통과.\n\n**남긴 것.** 같은 정규식이 세 곳에 있다 — `enroll.SKILL_POINTER_RE`, 신규 테스트, `test_skills.py::ref_re`. 테스트가 독립 파싱하는 것은 교차 검증이라 의도적이지만 세 번째는 정리 여지가 있다. CLI 출력(경고 줄·dry-run 상대경로)은 수동 확인만 했다 — 이 레포는 print 를 단위 테스트하지 않는다.",
+      "status": "done",
+      "priority": "medium",
+      "category": "infra",
+      "target_date": "",
+      "started_at": "2026-09-08T15:15:00+09:00",
+      "completed_at": "2026-09-08T15:21:10+09:00",
+      "lines_added": 239,
+      "lines_removed": 3,
+      "tokens_used": 0,
+      "created_at": "2026-09-08T15:11:06+09:00",
+      "updated_at": "2026-09-08T15:21:10+09:00",
+      "position": 0,
+      "phase": "PHASE_PMF13",
+      "review": "",
+      "created_by": "hogun",
+      "assigned_to": "hogun"
     }
   ]
 }

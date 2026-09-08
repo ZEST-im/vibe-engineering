@@ -306,6 +306,26 @@ SKILL_CODE_FILES = (
 )
 
 
+# SKILL.md 가 `references/x.md` 꼴로 가리키는 조회 문서. 목록을 여기 손으로 또 적지
+# 않는다 — SKILL.md 가 정본이고 설치가 그것을 따라간다. 두 곳에 적으면 갈라지고,
+# 실제로 갈라져서 설치본에 references/ 가 통째로 없었다.
+SKILL_POINTER_RE = re.compile(r"`(references/[A-Za-z0-9_./-]+)`")
+SKILL_MD_REL = "skills/vibe-harness/SKILL.md"
+
+
+def skill_reference_files(repo_root):
+    """SKILL.md 가 가리키는 참조 문서의 상대경로. 정렬해 돌려준다."""
+    md = os.path.join(repo_root, SKILL_MD_REL)
+    try:
+        with open(md, encoding="utf-8") as fh:
+            text = fh.read()
+    except OSError:
+        return ()
+    # 경로 이탈은 받지 않는다 — SKILL.md 는 신뢰하지만 규칙은 좁게 둔다.
+    return tuple(sorted({rel for rel in SKILL_POINTER_RE.findall(text)
+                         if ".." not in rel.split("/")}))
+
+
 def skill_install_plan(repo_root, dest=SKILL_DIR):
     """(원본, 대상) 목록. 존재하는 것만 담는다."""
     plan = []
@@ -313,7 +333,23 @@ def skill_install_plan(repo_root, dest=SKILL_DIR):
         src = os.path.join(repo_root, rel)
         if os.path.exists(src):
             plan.append((src, os.path.join(dest, name)))
+    skill_root = os.path.join(repo_root, os.path.dirname(SKILL_MD_REL))
+    for rel in skill_reference_files(repo_root):
+        src = os.path.join(skill_root, rel)
+        if os.path.exists(src):
+            # 경로를 유지한다. 평평하게 깔면 SKILL.md 의 경로와 어긋나 여전히 못 찾는다.
+            plan.append((src, os.path.join(dest, *rel.split("/"))))
     return plan
+
+
+def missing_installed_references(repo_root, dest=SKILL_DIR):
+    """SKILL.md 가 가리키는데 설치본에 없는 것.
+
+    화이트리스트를 고쳐도 이미 설치된 머신은 그대로고, 누가 파일을 지울 수도 있다.
+    "N개 반영" 만 말하고 끝나면 그 상태를 알 방법이 없다.
+    """
+    return [rel for rel in skill_reference_files(repo_root)
+            if not os.path.exists(os.path.join(dest, *rel.split("/")))]
 
 
 def install_skill_files(repo_root, dest=SKILL_DIR):
@@ -321,6 +357,7 @@ def install_skill_files(repo_root, dest=SKILL_DIR):
     os.makedirs(dest, exist_ok=True)
     copied = []
     for src, target in skill_install_plan(repo_root, dest):
+        os.makedirs(os.path.dirname(target), exist_ok=True)
         shutil.copy2(src, target)
         copied.append(target)
     return copied
@@ -524,15 +561,23 @@ def main(argv=None):
 
     # 코드 반영은 다른 단계와 독립이다. 서버가 최신이어야 나머지가 의미를 갖는다.
     if a.update_skill:
+        repo = repo_root_of_this_script()
         if a.dry_run:
-            plan = skill_install_plan(repo_root_of_this_script())
+            plan = skill_install_plan(repo)
             print("skill     : %d개 파일 반영 예정" % len(plan))
             for _src, dest in plan:
-                print("            %s" % os.path.basename(dest))
+                # basename 만 찍으면 references/ 하위가 평평해 보인다 — 그래서
+                # 설치본에 그 디렉토리가 없는 것을 아무도 눈치채지 못했다.
+                print("            %s" % os.path.relpath(dest, SKILL_DIR))
         else:
-            copied = install_skill_files(repo_root_of_this_script())
+            copied = install_skill_files(repo)
             print("skill     : %d개 파일 반영 → %s" % (len(copied), SKILL_DIR))
             print("            머신 로컬(sync.json·projects.json·users.json)은 보존됐다")
+            # 반영한 것만 말하고 끝내면 빠진 것을 알 방법이 없다.
+            missing = missing_installed_references(repo)
+            if missing:
+                print("            ⚠ SKILL.md 가 가리키는데 설치본에 없다: %s"
+                      % ", ".join(missing))
 
     if a.update_skill and not a.token and not a.repair and not a.add_project:
         print("\n확인:  python3 %s --all --dry-run" % resolve_script_path())
