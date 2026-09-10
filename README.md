@@ -128,12 +128,36 @@ cd vibe-engineering
 python3 scripts/setup.py
 ```
 
-This does four things:
+Four steps, in this order:
 
-1. Copies `server.py`, `vibe_runtime.py`, `worker.py`, `kanban.html`, `SKILL.md` → `~/.claude/skills/vibe-harness/`
-2. Installs a macOS LaunchAgent — server auto-starts on login at port 4242
-3. Registers a code review hook in `~/.claude/settings.json`
-4. Migrates old project registry if upgrading from a prior version
+1. **Copies the runtime** → `~/.claude/skills/vibe-harness/` — `server.py`,
+   `vibe_runtime.py`, `worker.py`, `kanban.html`, `reconcile_runs.py`, `kanban_edit.py`,
+   `search.py`, `review_sync.py`, `enroll.py`, `setup.py` — plus four skill directories
+   under `~/.claude/skills/`: `vibe-harness`, `vibe-planning`, `vibe-design`, `vibe-review`.
+2. **Migrates the old project registry**, if you are upgrading from a prior version.
+3. **Installs an auto-start agent** — a macOS LaunchAgent labelled
+   `com.vibe-harness.server`, so the server comes up on login at port 4242.
+   On Windows a Scheduled Task takes its place. If this step fails, setup continues —
+   auto-start is a convenience, the hooks are the part that collects data.
+4. **Registers five hooks** in `~/.claude/settings.json` and copies their scripts into
+   `~/.claude/hooks/`:
+
+| Event | Hook id | What it does |
+|---|---|---|
+| `PreToolUse` (`Edit`\|`Write`) | `vibe-harness-scope-guard` | **Can block an edit** — refuses writes to paths the current phase lists under *Do NOT touch* |
+| `PostToolUse` (`Bash`) | `vibe-harness-code-review` | On `git push` / `gh pr create`, prints a review gate with the diff summary |
+| `SessionStart` | `vibe-harness-session-start` | Injects the current phase, scope, and board state |
+| `Stop` | `vibe-harness-stop-gate` | Warns when tasks are left `in_progress` or `review` |
+| `SessionEnd` | `vibe-harness-token-collector` | Parses the session transcript and records real token usage |
+
+Two helper scripts are copied to `~/.claude/hooks/` without being registered as hooks:
+`vibe-harness-record-run.py` (used by the collector) and `vibe-harness-worktree-guard.py`
+(used at session start).
+
+Everything written lives under your home directory: `~/.claude/settings.json`,
+`~/.claude/hooks/`, `~/.claude/skills/`, and one LaunchAgent plist. Nothing else is
+touched, and no data leaves the machine unless you opt into
+[token usage attribution](#token-usage-attribution-opt-in).
 
 After setup, the cloned repo is only needed for updates.
 
@@ -177,6 +201,15 @@ After this one-time bootstrap, every future update is just the single `setup.py 
 ```bash
 python3 scripts/setup.py uninstall
 ```
+
+Removes the five hook entries from `~/.claude/settings.json`, the hook scripts and
+helpers from `~/.claude/hooks/`, the auto-start agent, and the `vibe-planning`,
+`vibe-design`, and `vibe-review` skill directories.
+
+**`~/.claude/skills/vibe-harness/` is left in place on purpose** — your project registry
+(`projects.json`) and the server log live there. Delete that directory yourself if you
+want it gone. Per-project `vibe-harness/` data directories are never touched: they are
+your records, and they are in your repositories.
 
 ---
 
@@ -488,9 +521,12 @@ python3 ~/.claude/skills/vibe-harness/server.py configure-sync \
 
 ## Requirements
 
-- Python 3.11+ — CI verifies 3.11, 3.12 and 3.13
+- Python 3.11+ — the versions CI actually runs (3.11, 3.12, 3.13). Older ones are
+  untested. The code needs 3.8 at minimum (`shutil.copytree(dirs_exist_ok=…)`), so
+  3.8–3.10 will probably work; nothing verifies that, so it is not claimed here.
 - Claude Code CLI
-- macOS or Windows for auto-start (LaunchAgent / Task Scheduler); the server itself runs anywhere
+- macOS for the auto-start agent. The server itself runs anywhere Python does, and
+  Windows has its own path (Scheduled Task) — see [docs/vibe-harness-windows.md](docs/vibe-harness-windows.md).
 
 ---
 

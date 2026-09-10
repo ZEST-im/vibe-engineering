@@ -32,6 +32,19 @@ PHASES = os.path.join(PRIVATE, "PHASES.md")
 # 지금 진행 중인 Phase 의 계획을 담는 문서. 열린 항목이 있는 게 정상이다.
 LIVE_DOCS = {"PHASES.md", "CURRENT_PHASE.md"}
 
+# **계획 문서가 아닌 것.** `private/` 에는 Phase 계획서만 있는 게 아니라 제품 산출물도
+# 있다 — 제출 문안, 포스팅 초안. 이들은 Phase 를 **출처로 인용**할 뿐 주제가 Phase 가
+# 아니고, 아직 살아 있어서(제출 전이다) "닫혔다"고 적는 것은 거짓이 된다.
+#
+# 계기: PMF14 에서 제출 문안에 대조 근거로 `PHASE_PMF14` 를 적자 이 검사가 걸렸다.
+# 체크박스가 있는 문서만 보도록 좁히는 방법도 있었지만, 그러면 체크박스가 없는
+# `PHASE_PMF06_SPEC.md` 가 규칙에서 빠진다 — **유령 항목만이 아니라 "닫힌 문서를 다시
+# 열어보는 것"까지 막는 규칙**이라 좁히면 약해진다. 그래서 범주를 선언한다.
+#
+# 탈출구는 `ProductDocsAreNotPlansTest` 가 막는다 — 여기 넣어놓고 계획 체크리스트를
+# 적으면 잡힌다.
+PRODUCT_DOCS = {"MARKETPLACE_SUBMISSION.md", "geeknews-post.md"}
+
 OPEN_BOX = "- [ ]"
 PHASE_IN_DOC = re.compile(r"PHASE_(PMF|MVP|SEED|SCALE|GTM)\d+")
 DONE_PHASE = re.compile(r"^##\s+(PHASE_\w+)\s+✅", re.M)
@@ -86,7 +99,7 @@ class ClosedPhasesHaveNoOpenBoxesTest(unittest.TestCase):
         """
         offenders = []
         for name in private_docs():
-            if name in LIVE_DOCS:
+            if name in LIVE_DOCS or name in PRODUCT_DOCS:
                 continue
             body = read(name)
             open_count = body.count(OPEN_BOX)
@@ -116,7 +129,7 @@ class ClosedPhasesHaveNoOpenBoxesTest(unittest.TestCase):
         """닫은 문서는 첫머리에서 그 사실을 말해야 한다. 안 그러면 또 열어본다."""
         missing = []
         for name in private_docs():
-            if name in LIVE_DOCS:
+            if name in LIVE_DOCS or name in PRODUCT_DOCS:
                 continue
             body = read(name)
             mentioned = set("PHASE_" + m.group(0)[6:] for m in PHASE_IN_DOC.finditer(body))
@@ -180,6 +193,43 @@ class TheGuardItselfTest(unittest.TestCase):
         self.assertIn("- [x]", body, "닫힌 체크박스 표기를 못 찾는다 — 형식이 바뀌었나")
         self.assertEqual(OPEN_BOX.replace(" ]", "x]"), "- [x]",
                          "열림/닫힘 마커가 같은 규약이 아니다")
+
+
+class ProductDocsAreNotPlansTest(unittest.TestCase):
+    """`PRODUCT_DOCS` 면제가 탈출구가 되지 않게.
+
+    여기 이름을 올려놓고 계획 체크리스트를 적으면 그 문서의 유령 항목은 아무도 안 본다.
+    `BINARY_OK` 에 생성물을 넣지 못하게 막은 것과 같은 형태의 가드다.
+    """
+
+    def test_every_exempt_doc_exists(self):
+        """이름이 바뀌면 면제만 남고 문서는 규칙 밖으로 빠진다."""
+        missing = [n for n in sorted(PRODUCT_DOCS)
+                   if not os.path.exists(os.path.join(PRIVATE, n))]
+        self.assertEqual([], missing,
+                         "PRODUCT_DOCS 에 있는데 실재하지 않는 문서: " + ", ".join(missing))
+
+    def test_exempt_docs_carry_no_checklist(self):
+        """제품 산출물에 계획 체크리스트가 생기면 그것은 계획 문서다 — 면제를 거둬야 한다."""
+        offenders = []
+        for name in sorted(PRODUCT_DOCS):
+            path = os.path.join(PRIVATE, name)
+            if not os.path.exists(path):
+                continue
+            body = read(name)
+            boxes = body.count(OPEN_BOX) + body.count("- [x]")
+            if boxes:
+                offenders.append("%s: 체크박스 %d개" % (name, boxes))
+        self.assertEqual(
+            [], offenders,
+            "계획 문서가 아니라고 면제한 문서에 체크리스트가 있다: " + ", ".join(offenders)
+            + " — PRODUCT_DOCS 에서 빼고 계획 문서로 다루거나, 체크리스트를 계획서로 옮길 것")
+
+    def test_exemption_stays_small(self):
+        """면제가 늘어나면 이 검사는 이름만 남는다."""
+        self.assertLessEqual(
+            len(PRODUCT_DOCS), 3,
+            "계획 문서 아님 면제가 3개를 넘었다 — 규칙이 아니라 목록이 되고 있다")
 
 
 if __name__ == "__main__":

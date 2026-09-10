@@ -1,4 +1,4 @@
-"""스킬 문서가 선언한 것이 실제로 존재하는지 대조한다.
+"""공개 문서가 선언한 것이 실제로 존재하는지 대조한다.
 
 W35 리뷰 P2, 2주 연속 지적: `tests/test_skills.py` 10개는 전부 **포장**을 본다 —
 frontmatter, 참조 파일 존재, README 등재. 이 제품이 파는 것은 스크립트가 아니라 그 안의
@@ -13,32 +13,69 @@ frontmatter, 참조 파일 존재, README 등재. 이 제품이 파는 것은 �
    만났고, "설치본 없음"으로 발견되기까지 며칠이 걸렸다.
 
 여기서 검사하는 것은 전부 **기계적으로 확인 가능한 주장**이다. 산문은 대상이 아니다.
+
+## PMF14 에서 넓힌 것 — 정문이 검사 밖이었다
+
+이 파일은 만들어질 때 `SKILL.md` + `references/*.md` **6개만** 봤다. README 는 이 제품의
+정문이고 가장 많이 읽히는 파일인데 범위 밖이었다. 그리고 두 종류의 주장은 **어느 문서에
+대해서도** 검사되지 않았다:
+
+- **설치 경로로 부르는 명령** — `~/.claude/skills/vibe-harness/server.py ...`.
+  옛 추출 규칙은 `scripts/` 로 시작하는 것만 봤고, 문서의 그런 호출은 19건이다.
+- **서브커맨드** — `server.py register`, `setup.py upgrade`, `kanban_edit.py add`.
+  플래그는 봤지만 서브커맨드는 한 번도 안 봤다.
+
+**넓히기 전에 쟀고 드리프트는 0 이었다** (엔드포인트·스크립트·플래그·서브커맨드·
+설치 경로 전부). 그래서 이 검사의 근거는 "문서가 틀렸다"가 아니라 **"검사가 없으면
+낡는다"** 이고, 그 주장은 이 레포가 이미 실증했다 — 넉 달 미체크였던 계획 문서의
+유령 항목 49개, 세 곳으로 갈라진 설치 목록. 처음부터 통과하는 검사이므로
+**채택 근거는 위반 주입뿐이다.**
 """
 import ast
+import functools
 import importlib.util
 import os
 import re
+import subprocess
 import sys
 import unittest
 
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPTS = os.path.join(ROOT, "scripts")
-SKILL_DOCS = [os.path.join(ROOT, "skills", "vibe-harness", "SKILL.md")]
-_REFS = os.path.join(ROOT, "skills", "vibe-harness", "references")
-if os.path.isdir(_REFS):
-    SKILL_DOCS += [os.path.join(_REFS, f) for f in sorted(os.listdir(_REFS)) if f.endswith(".md")]
 
 # 문서가 프로젝트 키 자리에 쓰는 표기들. 전부 같은 뜻이다.
 KEY_PLACEHOLDERS = ("{project_key}", "{project}", "{key}", "{p}")
 
+# 문서가 설치본을 부를 때 쓰는 접두어. 종류마다 대조 대상이 다르다.
+INSTALL_SKILL_PREFIX = "~/.claude/skills/vibe-harness/"
+INSTALL_HOOKS_PREFIX = "~/.claude/hooks/"
+PLUGIN_PREFIX = "${CLAUDE_PLUGIN_ROOT}/scripts/"
 
+
+def public_docs():
+    """검사 범위를 **git 에게 묻는다** — 추적되는 마크다운 전부.
+
+    목록을 여기 적지 않는다. 적으면 공개 문서가 하나 늘 때 또 갈라지고, 이 파일 자신이
+    6개만 적어둔 탓에 정문을 놓쳤다. `private/` 은 추적되지 않으므로 자동으로 범위
+    밖이다 — 경계가 내 판단이 아니라 git 이 정한 것이고, 공개 위생 게이트가 쓰는 것과
+    같은 경계다.
+
+    git 이 없거나 실패하면 **멈춘다.** 조용히 빈 목록으로 떨어지면 이 파일의 검사
+    전부가 항상 통과한다.
+    """
+    out = subprocess.run(["git", "ls-files", "*.md"], cwd=ROOT,
+                         capture_output=True, text=True, check=True)
+    return [p for p in out.stdout.splitlines() if p.strip()]
+
+
+@functools.lru_cache(maxsize=1)
 def doc_text():
     out = []
-    for path in SKILL_DOCS:
-        with open(path, encoding="utf-8") as fh:
-            out.append((os.path.relpath(path, ROOT), fh.read()))
-    return out
+    for rel in public_docs():
+        with open(os.path.join(ROOT, rel), encoding="utf-8") as fh:
+            out.append((rel, fh.read()))
+    return tuple(out)
 
 
 def load_module(name, filename):
@@ -50,18 +87,236 @@ def load_module(name, filename):
     return mod
 
 
-def argparse_options(filename):
-    """소스를 파싱해 add_argument 로 선언된 이름을 모은다. import 부작용을 피한다."""
-    with open(os.path.join(SCRIPTS, filename), encoding="utf-8") as fh:
+# --------------------------------------------------------------------------
+# 문서에서 명령을 뽑는다
+# --------------------------------------------------------------------------
+
+def _logical_lines(text):
+    r"""백슬래시로 이어진 셸 명령만 한 줄로 합친다. 그 외에는 줄을 넘지 않는다.
+
+    옛 규칙은 파일 전체에서 `\s+` 로 이어 붙여, 산문에 적힌 `--flag` 가 몇 줄 위의
+    스크립트 호출에 딸린 것처럼 읽혔다. 줄을 넘지 않으면 그 오탐이 사라지는데
+    여러 줄로 쓴 실제 예시를 놓치므로, `\` 로 이어진 것만 명시적으로 합친다.
+    """
+    buf = []
+    for raw in text.splitlines():
+        line = raw.rstrip()
+        if line.endswith("\\"):
+            buf.append(line[:-1].rstrip())
+            continue
+        buf.append(line)
+        yield " ".join(buf)
+        buf = []
+    if buf:
+        yield " ".join(buf)
+
+
+# URL 안의 `.../scripts/setup.py` 는 로컬 호출이 아니다. README 의 부트스트랩
+# `curl -sL https://raw.githubusercontent.com/.../scripts/setup.py` 가 그 예다.
+# **URL 은 이 검사의 대상이 아니다** — 확인하려면 네트워크를 타야 하고, 테스트가
+# 네트워크를 타면 CI 가 남의 가용성에 묶인다. 대조하지 않는다는 것을 여기 적어둔다.
+URL = re.compile(r"https?://\S+")
+
+
+def _command_segments(text):
+    """한 줄에 명령이 둘이면 뒤 명령의 플래그가 앞 스크립트에 붙는다. 끊어준다."""
+    for logical in _logical_lines(text):
+        for seg in re.split(r"&&|\|\||[;|]", URL.sub(" ", logical)):
+            yield seg
+
+
+# 경로 접두어(선택) + 스크립트 이름. 앞 글자가 단어·`.`·`-`·`/`·`~`·`$` 면 매치하지
+# 않는다 — 그렇게 하지 않으면 `vibe-harness-record-run.py` 안에서 `run.py` 를 찾아낸다.
+SCRIPT_CALL = re.compile(
+    r"(?<![\w./~$-])((?:[~$]?[\w.${}/~-]*/)?)([a-z][a-z0-9_]*\.py)(?![\w.-])")
+
+# 생략 표기가 든 경로는 **실재할 수 없다** — 문서가 "이런 자리의 파일"을 가리키는
+# 자리표시자다(`~/.claude/skills/.../x.py`). `{project_key}` 를 자리표시자로 다루는 것과
+# 같은 이유로 대조 대상이 아니다. 실제로 이 규칙이 없을 때 이 레포의 산문이 걸렸다.
+PLACEHOLDER_PATH = ("...", "\u2026")
+
+# 서브커맨드 자리에 올 수 있는 모양. 경로·변수·숫자·따옴표는 값이지 주장이 아니다.
+SUBCOMMAND = re.compile(r"^[a-z][a-z0-9_-]*$")
+FLAG = re.compile(r"--[a-z][a-z-]*")
+
+
+@functools.lru_cache(maxsize=1)
+def documented_invocations():
+    """문서의 스크립트 호출을 `(경로종류, 이름) -> {flags, subcommands, docs}` 로.
+
+    **경로 자체가 주장이다** — 문서가 `~/.claude/skills/...` 로 부르면 그 파일이 설치
+    목록에 있어야 한다. 옛 규칙은 `scripts/` 만 봐서 설치 경로 호출이 통째로 검사
+    밖이었다. 설치 목록이 갈라져 `reconcile_runs.py` 가 빠진 이력이 있는 레포에서
+    가장 아픈 자리다.
+    """
+    found = {}
+    for rel, text in doc_text():
+        for seg in _command_segments(text):
+            m = SCRIPT_CALL.search(seg)
+            if not m:
+                continue
+            prefix, name = m.group(1), m.group(2)
+            if any(mark in prefix for mark in PLACEHOLDER_PATH):
+                continue
+            rest = seg[m.end():]
+            if prefix.startswith(INSTALL_SKILL_PREFIX):
+                kind, key = "install", name
+            elif prefix.startswith(INSTALL_HOOKS_PREFIX):
+                kind, key = "hook", name
+            elif prefix in ("", "./") or prefix.startswith(PLUGIN_PREFIX):
+                kind, key = "scripts", name
+            else:
+                kind, key = "repo", prefix + name
+            entry = found.setdefault((kind, key),
+                                     {"flags": set(), "subcommands": set(), "docs": set()})
+            entry["docs"].add(rel)
+            entry["flags"].update(FLAG.findall(rest))
+            toks = rest.split()
+            if toks and SUBCOMMAND.match(toks[0]):
+                entry["subcommands"].add(toks[0])
+    return tuple(sorted((k, frozenset(v["flags"]), frozenset(v["subcommands"]),
+                         frozenset(v["docs"])) for k, v in found.items()))
+
+
+def source_path(kind, key):
+    """문서가 부른 것에 대응하는 레포 안의 소스. 없으면 None."""
+    if kind in ("install", "scripts"):
+        return os.path.join(SCRIPTS, key)
+    if kind == "hook":
+        return os.path.join(SCRIPTS, "hooks", key)
+    return os.path.join(ROOT, key)
+
+
+# --------------------------------------------------------------------------
+# 코드에서 선언을 뽑는다
+# --------------------------------------------------------------------------
+
+def _iter_constants(node):
+    if isinstance(node, (ast.Tuple, ast.List, ast.Set)):
+        vals = [e.value for e in node.elts
+                if isinstance(e, ast.Constant) and isinstance(e.value, str)]
+        if len(vals) == len(node.elts):
+            return vals
+    return None
+
+
+def _static_str(node, env):
+    """정적으로 값이 정해지는 문자열이면 그 값, 아니면 None."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.Name):
+        return env.get(node.id)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left = _static_str(node.left, env)
+        right = _static_str(node.right, env)
+        return None if left is None or right is None else left + right
+    if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "replace" and len(node.args) == 2):
+        base = _static_str(node.func.value, env)
+        old = _static_str(node.args[0], env)
+        new = _static_str(node.args[1], env)
+        if None not in (base, old, new):
+            return base.replace(old, new)
+    return None
+
+
+def _walk_add_arguments(node, env, names, unresolved):
+    for child in ast.iter_child_nodes(node):
+        if isinstance(child, ast.For) and isinstance(child.target, ast.Name):
+            values = _iter_constants(child.iter)
+            if values is not None:
+                for value in values:
+                    inner = dict(env, **{child.target.id: value})
+                    for stmt in child.body:
+                        _walk_add_arguments(stmt, inner, names, unresolved)
+                for stmt in child.orelse:
+                    _walk_add_arguments(stmt, env, names, unresolved)
+                continue
+        if (isinstance(child, ast.Call) and isinstance(child.func, ast.Attribute)
+                and child.func.attr == "add_argument"):
+            for arg in child.args:
+                value = _static_str(arg, env)
+                if value is None:
+                    unresolved.append(ast.dump(arg)[:90])
+                else:
+                    names.add(value)
+        _walk_add_arguments(child, env, names, unresolved)
+
+
+def argparse_options(path):
+    """`add_argument` 로 선언된 이름. 읽을 수 없는 선언은 **가려내서 함께 돌려준다.**
+
+    `kanban_edit.py` 는 `"--" + f.replace("_", "-")` 를 루프로 돈다. 그 형태를 못 읽으면
+    **정상 문서를 위반이라고 부른다** — 검사가 정상을 위반이라 부르면 고쳐지는 건 데이터
+    쪽이라 검사가 없는 것보다 나쁘다(`backlog` 를 다섯 번째 status 로 몰랐던 것과 같은
+    종류의 실수다). 그래서 루프 상수를 대입해 정적으로 평가하고, 그래도 못 읽은 것이
+    남으면 `unresolved` 로 돌려 **호출자가 침묵하지 못하게** 한다.
+    """
+    with open(path, encoding="utf-8") as fh:
         tree = ast.parse(fh.read())
-    names = set()
+    names, unresolved = set(), []
+    _walk_add_arguments(tree, {}, names, unresolved)
+    return names, unresolved
+
+
+def declared_subcommands(path):
+    """서브커맨드로 받아들이는 이름. argparse 서브파서와 `sys.argv[1]` 비교 둘 다.
+
+    선언이 하나도 없으면 빈 집합이고, 그 스크립트의 첫 위치 인자는 **값**이다
+    (`worker.py <project_key>`). 값을 서브커맨드 주장으로 읽으면 고칠 수 없는 위반이
+    생기고, 고칠 수 없는 위반이 목록에 남으면 목록이 무시된다.
+    """
+    with open(path, encoding="utf-8") as fh:
+        tree = ast.parse(fh.read())
+
+    def is_argv1(node):
+        return (isinstance(node, ast.Subscript)
+                and isinstance(node.value, ast.Attribute) and node.value.attr == "argv"
+                and isinstance(node.slice, ast.Constant) and node.slice.value == 1)
+
+    out = set()
     for node in ast.walk(tree):
         if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
-                and node.func.attr == "add_argument"):
+                and node.func.attr == "add_parser"):
             for arg in node.args:
                 if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
-                    names.add(arg.value)
-    return names
+                    out.add(arg.value)
+        if isinstance(node, ast.Compare) and is_argv1(node.left):
+            for comparator in node.comparators:
+                if isinstance(comparator, ast.Constant) and isinstance(comparator.value, str):
+                    out.add(comparator.value)
+                for value in _iter_constants(comparator) or []:
+                    out.add(value)
+    return out
+
+
+# --------------------------------------------------------------------------
+# 검사
+# --------------------------------------------------------------------------
+
+class PublicDocScopeTest(unittest.TestCase):
+    """범위가 조용히 줄어들면 아래 검사 전부가 조용히 통과한다."""
+
+    def test_readme_is_in_scope(self):
+        """정문이 빠져 있던 것이 이 Phase 의 발견이다. 다시 빠지지 않게 못 박는다."""
+        self.assertIn("README.md", public_docs(),
+                      "README 가 주장 검증 범위 밖이다 — 가장 많이 읽히는 파일이다")
+
+    def test_skill_docs_are_still_in_scope(self):
+        docs = public_docs()
+        self.assertIn("skills/vibe-harness/SKILL.md", docs)
+        self.assertIn("skills/vibe-harness/references/api.md", docs)
+
+    def test_scope_is_wide_enough_to_be_real(self):
+        """범위를 손으로 적던 시절이 6개였다. 추적 문서 전체는 그보다 훨씬 많다."""
+        self.assertGreaterEqual(
+            len(public_docs()), 15,
+            "추적 마크다운이 15개 미만 — git ls-files 가 기대와 다르게 동작한다")
+
+    def test_private_docs_are_out_of_scope(self):
+        """`private/` 은 CI 에 없다. 범위에 들어오면 CI 와 로컬 결과가 갈라진다."""
+        leaked = [p for p in public_docs() if p.startswith("private/")]
+        self.assertEqual([], leaked, "추적되지 않아야 할 내부 문서가 범위에 들어왔다")
 
 
 class DocumentedEndpointsAreRoutedTest(unittest.TestCase):
@@ -114,36 +369,143 @@ class DocumentedEndpointsAreRoutedTest(unittest.TestCase):
 class DocumentedScriptsAndFlagsTest(unittest.TestCase):
     """문서가 시키는 명령이 실제로 먹히는가."""
 
-    INVOCATION = re.compile(r"scripts/([a-z_]+\.py)((?:\s+--?[a-z][a-z-]*)*)")
-
-    def invocations(self):
-        seen = {}
-        for _path, text in doc_text():
-            for script, flags in self.INVOCATION.findall(text):
-                bucket = seen.setdefault(script, set())
-                bucket.update(re.findall(r"--[a-z][a-z-]*", flags))
-        return seen
-
     def test_documented_scripts_exist(self):
-        missing = [s for s in sorted(self.invocations())
-                   if not os.path.exists(os.path.join(SCRIPTS, s))]
-        self.assertEqual([], missing, "문서가 부르는데 없는 스크립트: " + ", ".join(missing))
+        missing = []
+        for (kind, key), _flags, _subs, docs in documented_invocations():
+            path = source_path(kind, key)
+            if not os.path.exists(path):
+                missing.append("%s (%s) ← %s" % (key, kind, ", ".join(sorted(docs))))
+        self.assertEqual([], missing, "문서가 부르는데 없는 스크립트: " + "; ".join(missing))
 
     def test_documented_flags_exist(self):
         problems = []
-        for script, flags in sorted(self.invocations().items()):
-            if not os.path.exists(os.path.join(SCRIPTS, script)):
+        for (kind, key), flags, _subs, _docs in documented_invocations():
+            path = source_path(kind, key)
+            if not flags or not os.path.exists(path):
                 continue
-            declared = argparse_options(script)
-            for flag in sorted(flags):
-                if flag not in declared:
-                    problems.append(f"{script} {flag}")
+            declared, _unresolved = argparse_options(path)
+            problems += ["%s %s" % (key, f) for f in sorted(flags) if f not in declared]
         self.assertEqual([], problems,
                          "문서에 있는데 argparse 에 없는 플래그: " + ", ".join(problems))
 
+    def test_flag_extraction_is_complete_for_documented_scripts(self):
+        """읽지 못한 선언이 남으면 위 검사가 정상 문서를 위반이라 부르기 시작한다."""
+        incomplete = []
+        for (kind, key), flags, _subs, _docs in documented_invocations():
+            path = source_path(kind, key)
+            if not flags or not os.path.exists(path):
+                continue
+            _declared, unresolved = argparse_options(path)
+            if unresolved:
+                incomplete.append("%s: %s" % (key, unresolved[0]))
+        self.assertEqual(
+            [], incomplete,
+            "플래그 선언을 정적으로 읽을 수 없는 스크립트가 문서에 있다 — "
+            "_static_str 을 넓히지 않으면 정상 문서가 위반으로 잡힌다: " + "; ".join(incomplete))
+
     def test_extraction_found_something(self):
-        self.assertIn("reconcile_runs.py", self.invocations(),
+        names = {key for (_kind, key), _f, _s, _d in documented_invocations()}
+        self.assertIn("reconcile_runs.py", names,
                       "스크립트 호출 추출이 깨졌다 — 문서 형식이 바뀌었는지 확인")
+
+    def test_flags_are_attributed_to_the_right_script(self):
+        """여러 줄로 쓴 예시의 플래그를 잡아야 한다 — `\\` 로 이어진 것.
+
+        같은 스크립트가 경로 종류별로 따로 잡히므로(설치 경로 호출과 산문 언급) 이름으로
+        합쳐서 본다. 하나로 덮으면 산문 쪽 빈 집합이 실제 호출을 지운다.
+        """
+        by_name = {}
+        for (_kind, key), flags, _s, _d in documented_invocations():
+            by_name.setdefault(key, set()).update(flags)
+        self.assertIn("--project-root", by_name.get("worker.py", set()),
+                      "백슬래시로 이어진 예시의 플래그를 놓쳤다")
+
+
+class DocumentedSubcommandsTest(unittest.TestCase):
+    """서브커맨드는 지금까지 어느 문서에 대해서도 검사되지 않았다.
+
+    `server.py register` 가 사라지면 README 의 3단계가 그대로 안 먹는데, 플래그만 보던
+    검사는 아무 말도 하지 않았다.
+    """
+
+    def claims(self):
+        out = []
+        for (kind, key), _flags, subs, docs in documented_invocations():
+            path = source_path(kind, key)
+            if not subs or not os.path.exists(path):
+                continue
+            declared = declared_subcommands(path)
+            if not declared:
+                # 서브커맨드를 선언하지 않는 스크립트의 첫 인자는 값이다
+                continue
+            out.append((key, subs, declared, docs))
+        return out
+
+    def test_documented_subcommands_exist(self):
+        problems = []
+        for key, subs, declared, docs in self.claims():
+            for sub in sorted(subs):
+                if sub not in declared:
+                    problems.append("%s %s (선언: %s) ← %s"
+                                    % (key, sub, sorted(declared), ", ".join(sorted(docs))))
+        self.assertEqual([], problems,
+                         "문서에 있는데 스크립트가 받지 않는 서브커맨드: " + "; ".join(problems))
+
+    def test_subcommand_claims_were_actually_found(self):
+        total = sum(len(subs) for _k, subs, _d, _docs in self.claims())
+        self.assertGreaterEqual(
+            total, 8, "서브커맨드 주장이 8건 미만 — 추출이 깨졌다. "
+                      "register/serve/sync/configure-sync/upgrade/uninstall/add/set 는 문서에 있다")
+
+    def test_value_positionals_are_not_read_as_subcommands(self):
+        """`worker.py impactbook_ai` 의 프로젝트 키를 주장으로 읽으면 고칠 수 없는
+        위반이 생기고, 고칠 수 없는 위반이 목록에 남으면 목록이 무시된다."""
+        declared = declared_subcommands(os.path.join(SCRIPTS, "worker.py"))
+        self.assertEqual(set(), declared,
+                         "worker.py 가 서브커맨드를 선언하기 시작했다면 이 예외를 다시 볼 것")
+
+
+class InstallPathClaimsTest(unittest.TestCase):
+    """문서가 **설치 경로**로 부르는 파일은 설치 목록에 있어야 한다.
+
+    이 레포는 설치 목록이 갈라져 `setup.py` 단독 설치가 `reconcile_runs.py` 를 빠뜨린
+    이력이 있다. 그때는 목록끼리 대조해서 잡았고, 이번에는 **문서와 목록**을 대조한다 —
+    문서가 있다고 한 경로에 파일이 없으면 사용자는 "No such file" 만 본다.
+    """
+
+    SKILL_CALL = re.compile(re.escape(INSTALL_SKILL_PREFIX) + r"([A-Za-z0-9_.-]+\.py)")
+    HOOK_CALL = re.compile(re.escape(INSTALL_HOOKS_PREFIX) + r"([A-Za-z0-9_.-]+\.py)")
+
+    def setUp(self):
+        self.setup = load_module("setup_claims", "setup.py")
+
+    def found(self, pattern):
+        out = {}
+        for rel, text in doc_text():
+            for name in pattern.findall(text):
+                out.setdefault(name, set()).add(rel)
+        return out
+
+    def test_install_path_calls_are_in_the_install_list(self):
+        runtime = set(self.setup.SKILL_RUNTIME_FILES)
+        missing = ["%s ← %s" % (n, ", ".join(sorted(d)))
+                   for n, d in sorted(self.found(self.SKILL_CALL).items()) if n not in runtime]
+        self.assertEqual(
+            [], missing,
+            "문서가 설치 경로로 부르는데 설치 목록에 없는 파일: " + "; ".join(missing)
+            + " — 설치한 사용자는 'No such file' 만 본다")
+
+    def test_hook_path_calls_are_in_the_helper_list(self):
+        helpers = set(self.setup.HOOK_HELPERS)
+        missing = ["%s ← %s" % (n, ", ".join(sorted(d)))
+                   for n, d in sorted(self.found(self.HOOK_CALL).items()) if n not in helpers]
+        self.assertEqual([], missing,
+                         "문서가 훅 경로로 부르는데 헬퍼 목록에 없는 파일: " + "; ".join(missing))
+
+    def test_install_path_claims_were_actually_found(self):
+        self.assertGreaterEqual(
+            len(self.found(self.SKILL_CALL)), 4,
+            "설치 경로 호출이 4건 미만 — 추출이 깨졌다. README 와 SKILL.md 에 있다")
 
 
 class InstallListsAgreeTest(unittest.TestCase):
