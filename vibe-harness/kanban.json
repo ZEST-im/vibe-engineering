@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "next_id": 105,
+  "next_id": 106,
   "tasks": [
     {
       "id": "hg98",
@@ -238,6 +238,28 @@
       "tokens_used": 0,
       "created_at": "2026-09-08T18:21:10+09:00",
       "updated_at": "2026-09-08T18:31:00+09:00",
+      "position": 0,
+      "phase": "PHASE_PMF14",
+      "review": "",
+      "created_by": "hogun",
+      "assigned_to": "hogun"
+    },
+    {
+      "id": "hgB105",
+      "title": "두 머신 병렬 작업 병합 — 접두어 규약이 실제로 막아낸 첫 사례",
+      "description": "",
+      "details": "## 상황\n\nmac-studio(`zest.hogun`)와 macbook(`hoarchi`)이 09-08 같은 날 PMF14 를 나눠 작업했다.\nmac-studio 는 6건을 커밋했고, macbook 은 11:05~14:41 작업을 **커밋하지 않은 채** 뒀다.\n`ss` 로 발견 — main behind 6, 겹치는 파일 3개.\n\n## 접두어 규약이 작동했다\n\n둘 다 `next_id=99` 에서 발급을 시작했다. 접두어가 갈려 있어 실제 충돌은 없었다:\n\n| 머신 | 발급 | next_id |\n|---|---|---|\n| mac-studio | hgA99~hgA102 | 103 |\n| macbook | hgB99~hgB104 | 105 |\n\n**사람만 갈랐으면 hg99 가 두 개 생겼을 상황이다.** 어제(`326c790`) 넣은 규약이\n하루 만에 실제 사례를 막았다. 병합 next_id 는 max=105.\n\n## 조용히 사라질 뻔한 것\n\n원격 `93e148e` 가 **hg92 의 details 를 교정**했는데, 로컬은 같은 hg92 를 아카이브로\n옮기는 중이었다. 로컬 판본만 취하면 교정이 없어진다 — 그 교정이 하필\n\"앞서 틀리게 적은 것\" 을 바로잡는 대목이었다.\n아카이브 쪽 hg92 에 원격 details 를 옮겨 붙여 보존했다.\n\n**병합 도구는 이걸 충돌로 보고하지 않는다.** 한쪽은 파일 A 에서 지우고 다른 쪽은\n파일 A 에서 고쳤을 뿐, 파일 B(아카이브)는 한쪽만 건드렸기 때문이다.\n\n## 충돌 해결\n\n- `README.md` — 원격은 'How it got here' 절 신설, 로컬은 Requirements 정밀화.\n  다른 것이라 **둘 다 유지**. 로컬 주장 2건(`dirs_exist_ok` at setup.py:133,\n  windows 문서 실재)은 실물 확인 후 채택\n- `kanban.json` — 로컬 7건 + 원격 신규 4건 = 11건.\n  손실 검사로 base 23 · 원격 27 이 전부 kanban ∪ archive 에 살아있음을 확인\n\n## 검증\n\n736 tests 통과 (로컬 706 + 원격 신규 test_skill_references·test_upstream_overlap).\nruff clean, coverage 62% (하한 55). `scripts/check.py` 6종 전부 PASS.\n원격이 이번에 넣은 '원격과의 충돌' 검사도 통과 — 그 검사가 잡으려던 상황을\n지나온 뒤라 의미가 있다.\n\n## 후속\n\n푸시 후 **그 커밋의** CI 확인 뒤 hgB99~hgB103 을 done 으로.\n`stash@{0}` (ss-1224 runs.json) 는 base 가 777M/$485 로 낡았다 — 현재 1.35B/$905.\n추월된 잔여물이라 정리 대상.",
+      "status": "review",
+      "priority": "medium",
+      "category": "infra",
+      "target_date": "",
+      "started_at": "2026-09-11T00:45:00+09:00",
+      "completed_at": "",
+      "lines_added": 1859,
+      "lines_removed": 481,
+      "tokens_used": 0,
+      "created_at": "2026-09-11T00:45:00+09:00",
+      "updated_at": "2026-09-11T00:45:00+09:00",
       "position": 0,
       "phase": "PHASE_PMF14",
       "review": "",
