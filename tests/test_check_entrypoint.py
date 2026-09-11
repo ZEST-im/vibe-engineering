@@ -15,6 +15,7 @@ import ast
 import importlib.util
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -334,3 +335,138 @@ class CloneStateTest(unittest.TestCase):
             body = fh.read()
         self.assertIn('("rewritten", "diverged")', body,
                       "재작성·분기 상태가 check 를 실패시키지 않는다")
+
+
+def _fake_repo(root, suite_needs_private):
+    """`private/` 에 의존하는(또는 안 하는) 최소 레포를 만든다.
+
+    실제 스위트로 검사하면 느리고, 무엇이 실패를 만들었는지도 흐려진다.
+    여기서 만드는 것은 **성질 하나만 가진 트리**다.
+    """
+    for sub in ("tests", "scripts", "private", ".git", ".check-venv",
+                os.path.join("tests", "__pycache__")):
+        os.makedirs(os.path.join(root, sub), exist_ok=True)
+    _put(os.path.join(root, "private", "PLAN.md"), "# 로컬 전용\n")
+    _put(os.path.join(root, "scripts", "thing.py"), "VALUE = 1\n")
+    _put(os.path.join(root, ".git", "HEAD"), "ref: refs/heads/main\n")
+    _put(os.path.join(root, ".check-venv", "marker"), "x\n")
+    _put(os.path.join(root, "tests", "__pycache__", "stale.pyc"), "x\n")
+    guard = "" if suite_needs_private else """
+        if not os.path.isdir(PRIVATE):
+            self.skipTest("private/ 없음")"""
+    _put(os.path.join(root, "tests", "test_needs_private.py"), f"""
+import os
+import unittest
+
+PRIVATE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "private")
+
+
+class T(unittest.TestCase):
+    def test_reads_private(self):{guard}
+        self.assertTrue(os.path.isdir(PRIVATE), "private/ 가 없다")
+""")
+
+
+def _put(path, body):
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(body)
+
+
+class PrivateFreeRunTest(unittest.TestCase):
+    """**로컬에는 있고 CI 에는 없는 것**이 초록을 갈라놓는다.
+
+    2026-09-11: `private/` 를 읽는 검사가 가드 없이 들어가 CI 3버전이 전부 깨졌다.
+    로컬은 통과했다 — 여기엔 `private/` 가 늘 있기 때문이다. `check.py` 는 그 사실을
+    **유보로 출력하고 있었다.** 알고도 보고만 한 것이다.
+
+    가드 관용구를 정적으로 세는 방법도 있었지만 이 레포에 이미 세 가지가 쓰이고
+    (`skipTest`·`@skipUnless`·부재 시 빈 값 헬퍼) 네 번째가 나오면 조용히 뚫린다.
+    **규칙을 넓게 잡으면 규칙이 꺼진다.** 그래서 대리 지표가 아니라 성질 자체를 본다 —
+    `private/` 없이도 초록인가.
+    """
+
+    def test_the_copy_leaves_private_behind(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            src = os.path.join(tmp, "src")
+            _fake_repo(src, suite_needs_private=True)
+            dest = check.copy_without_private(src, os.path.join(tmp, "out"))
+            self.assertFalse(os.path.exists(os.path.join(dest, "private")),
+                             "사본에 private/ 가 따라왔다 — CI 조건이 아니다")
+
+    def test_the_copy_brings_what_the_suite_needs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            src = os.path.join(tmp, "src")
+            _fake_repo(src, suite_needs_private=True)
+            dest = check.copy_without_private(src, os.path.join(tmp, "out"))
+            self.assertTrue(os.path.isdir(os.path.join(dest, "tests")))
+            self.assertTrue(os.path.isdir(os.path.join(dest, "scripts")))
+
+    def test_the_copy_skips_venv_and_stale_bytecode(self):
+        """복사가 무거우면 이 단계는 곧 꺼진다. 낡은 .pyc 는 주입 검증을 오염시킨다."""
+        with tempfile.TemporaryDirectory() as tmp:
+            src = os.path.join(tmp, "src")
+            _fake_repo(src, suite_needs_private=True)
+            dest = check.copy_without_private(src, os.path.join(tmp, "out"))
+            for skipped in (".check-venv", os.path.join("tests", "__pycache__")):
+                self.assertFalse(os.path.exists(os.path.join(dest, skipped)),
+                                 f"{skipped} 가 사본에 따라왔다")
+
+    def test_the_copy_keeps_git_because_the_suite_asks_git(self):
+        """**`.git` 을 빼면 오탐이 22건 난다.** 처음에 빼봤고, 그래서 안다.
+
+        이 스위트는 git 을 데이터 소스로 쓴다 — 검사 범위를 `git ls-files` 에 묻고
+        (PMF14 가 그렇게 바꿨다), 추적 여부로 배포 목록을 검증한다. `.git` 이 없으면
+        그 검사들이 "추적 안 됨"으로 무너진다. 7.2MB / 0.3초라 뺄 이유도 없었다.
+
+        **오탐이 작업을 멈추면 그 검사는 곧 꺼지고, 꺼진 검사는 없는 것보다 나쁘다.**
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            src = os.path.join(tmp, "src")
+            _fake_repo(src, suite_needs_private=True)
+            dest = check.copy_without_private(src, os.path.join(tmp, "out"))
+            self.assertTrue(os.path.exists(os.path.join(dest, ".git", "HEAD")),
+                            ".git 이 빠졌다 — git 에게 묻는 검사가 전부 무너진다")
+
+    def test_a_suite_that_needs_private_is_caught(self):
+        """이것이 이 단계의 존재 이유다. 못 잡으면 나머지는 장식이다."""
+        with tempfile.TemporaryDirectory() as tmp:
+            src = os.path.join(tmp, "src")
+            _fake_repo(src, suite_needs_private=True)
+            ran, ok = check.private_free_tests(src)
+            self.assertTrue(ran, "private/ 가 있는데 돌지 않았다")
+            self.assertFalse(ok, "private/ 에 의존하는 스위트를 통과시켰다")
+
+    def test_a_guarded_suite_passes_there(self):
+        """가드가 있으면 통과해야 한다 — 오탐이 나면 이 단계는 곧 꺼진다."""
+        with tempfile.TemporaryDirectory() as tmp:
+            src = os.path.join(tmp, "src")
+            _fake_repo(src, suite_needs_private=False)
+            ran, ok = check.private_free_tests(src)
+            self.assertTrue(ran)
+            self.assertTrue(ok, "가드가 있는 스위트를 실패시켰다 — 오탐")
+
+    def test_it_does_not_run_when_there_is_no_private(self):
+        """`private/` 가 없으면 평소 실행이 이미 그 환경이다. 두 번 돌릴 이유가 없다."""
+        with tempfile.TemporaryDirectory() as tmp:
+            src = os.path.join(tmp, "src")
+            _fake_repo(src, suite_needs_private=True)
+            shutil.rmtree(os.path.join(src, "private"))
+            ran, ok = check.private_free_tests(src)
+            self.assertFalse(ran, "private/ 가 없는데 사본을 만들어 돌렸다")
+            self.assertTrue(ok)
+
+    def test_the_entrypoint_wires_it_in(self):
+        """함수만 있고 아무도 안 부르면 검사가 있다고 믿게 만든다 — 없는 것보다 나쁘다."""
+        with open(os.path.join(SCRIPTS, "check.py"), encoding="utf-8") as fh:
+            body = fh.read()
+        self.assertIn("private_free_tests(", body)
+        self.assertIn('"private-free"', body,
+                      "결과 목록에 이름이 없으면 실패해도 게이트를 막지 않는다")
+
+    def test_fast_mode_says_it_skipped_the_private_free_run(self):
+        """조용히 건너뛰면 '못 본 것'과 '깨끗한 것'이 같아 보인다."""
+        with open(os.path.join(SCRIPTS, "check.py"), encoding="utf-8") as fh:
+            body = fh.read()
+        fast = body[body.index("if a.fast:"):body.index("else:", body.index("if a.fast:"))]
+        self.assertIn("private", fast,
+                      "--fast 가 private-free 단계를 건너뛴 사실을 말하지 않는다")

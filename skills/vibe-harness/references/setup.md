@@ -94,7 +94,7 @@ installed locally and only the aggregate status of an *older* run was checked.
 Run all of it with one command:
 
 ```bash
-python3 scripts/check.py            # compile, tests, lint, coverage + floor
+python3 scripts/check.py            # compile, tests, private-free, lint, coverage + floor
 python3 scripts/check.py --fast     # tests only — says so, and says not to push
 ```
 
@@ -139,6 +139,14 @@ Where there is no remote (a local-only repo), the directory name is the fallback
 versions, and it cannot give you a different `git config`. A test that quietly depends on the
 host — `init.defaultBranch` being `main` rather than `master`, a locale, a tool on `$PATH` —
 passes locally and fails there, and the local green is not wrong so much as narrow.
+
+One such gap is closed rather than stated. `private/` is gitignored, so it exists here and
+never in CI; a check that read it without a skip guard passed locally and broke all three
+CI versions (2026-09-11). The `private-free` step copies the working tree without `private/`
+and runs the suite again there, so that environment is reproduced instead of assumed. It is
+skipped by `--fast`, which says so. The step tests the property — is the suite green without
+`private/` — rather than counting guard idioms; three are already in use here, and a rule
+that has to enumerate them is a rule a fourth one walks past.
 
 That gap cannot be closed, so the check **states it every run**, under `여기서 확인하지
 못한 것`, and it prints on success too — a caveat you only see when something already failed

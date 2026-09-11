@@ -29,6 +29,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import venv
 
 
@@ -118,7 +119,7 @@ def unverified_here(clone=None):
                      "지금 통과한 것과 푸시될 것이 같지 않다" % n)
 
     if os.path.isdir(os.path.join(ROOT, "private")):
-        notes.append("`private/` 는 CI 에 없다 — 그것을 읽는 검사는 저기서 skip 된다")
+        notes.append("`private/` 는 CI 에 없다 — `private-free` 단계가 그 환경을 재현한다 (--fast 에서는 건너뛴다)")
 
     if clone and clone[0] != "aligned":
         notes.append("클론 상태가 `%s` 다. 통과는 '갈라지지 않았다'까지만 말한다"
@@ -236,6 +237,52 @@ def _bytecode_caches():
     return found
 
 
+# 복사에서 빼는 것. `private/` 는 **CI 에 없어서** 빼고, 나머지는 무겁거나 상태를
+# 옮겨서 뺀다 — 특히 `__pycache__` 는 낡은 .pyc 로 주입 검증을 오염시킨다.
+#
+# **`.git` 은 빼지 않는다.** 처음에 뺐다가 오탐 22건을 봤다 — 이 스위트는 git 을
+# 데이터 소스로 쓴다(검사 범위를 `git ls-files` 에 묻고, 추적 여부로 배포 목록을
+# 검증한다). 7.2MB / 0.3초라 아낄 것도 없었다.
+PRIVATE_FREE_SKIP = ("private", ".check-venv", "__pycache__",
+                     ".pytest_cache", "htmlcov", "node_modules", ".coverage")
+
+
+def copy_without_private(root=ROOT, dest=None):
+    """워킹트리를 `private/` 없이 복사한다. 복사본 경로를 돌려준다."""
+    dest = dest or tempfile.mkdtemp(prefix="vh-nopriv-")
+    shutil.copytree(root, dest, symlinks=True, dirs_exist_ok=True,
+                    ignore=shutil.ignore_patterns(*PRIVATE_FREE_SKIP))
+    return dest
+
+
+def private_free_tests(root=ROOT, python=None, verbose=False):
+    """`private/` 없는 사본에서 스위트를 돌린다. `(ran, ok)`.
+
+    **왜 사본인가.** 로컬에는 `private/` 가 늘 있어서 평소 실행은 CI 환경이 아니다.
+    2026-09-11 에 그 차이로 CI 3버전이 전부 깨졌고, 로컬은 초록이었다. 이 파일은 그
+    사실을 **유보로 출력만 하고 있었다** — 알고도 막지 않은 것이다.
+
+    **왜 가드를 세지 않는가.** 정적으로 `skipTest` 를 찾는 방법도 있었지만 이 레포에
+    이미 세 관용구가 쓰인다(`skipTest`·`@skipUnless`·부재 시 빈 값 헬퍼). 네 번째가
+    나오면 조용히 뚫린다. 대리 지표 대신 성질을 본다 — `private/` 없이도 초록인가.
+
+    `private/` 가 없으면 **돌지 않는다.** 그땐 평소 실행이 이미 그 환경이다.
+    """
+    if not os.path.isdir(os.path.join(root, "private")):
+        return False, True
+    tmp = tempfile.mkdtemp(prefix="vh-nopriv-")
+    try:
+        dest = copy_without_private(root, os.path.join(tmp, "tree"))
+        done = subprocess.run(
+            [python or sys.executable, "-m", "unittest", "discover", "-s", "tests"],
+            cwd=dest, capture_output=True, text=True)
+        if done.returncode != 0 and verbose:
+            print((done.stderr or done.stdout).rstrip()[-4000:])
+        return True, done.returncode == 0
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def venv_python(path=VENV):
     sub = "Scripts" if os.name == "nt" else "bin"
     return os.path.join(path, sub, "python")
@@ -310,9 +357,19 @@ def main(argv=None):
                                 "-s", "tests"])))
 
     if a.fast:
-        print("\n  --fast: 린트·커버리지를 건너뛰었다. **이 상태로 푸시하지 말 것** — "
-              "CI 의 절반만 본 것이다.")
+        print("\n  --fast: 린트·커버리지와 `private/` 없는 재실행을 건너뛰었다. "
+              "**이 상태로 푸시하지 말 것** — CI 의 절반만 본 것이다.")
     else:
+        # 로컬에는 있고 CI 에는 없는 것이 초록을 갈라놓는다. 여기서만 도는 단계다 —
+        # CI 는 이미 이 환경이라 저기서 또 돌 이유가 없다.
+        print("\n── private/ 없는 환경")
+        ran, nopriv_ok = private_free_tests(verbose=True)
+        if ran:
+            print(f"   {'PASS' if nopriv_ok else 'FAIL'}  (사본에서 스위트 재실행)")
+            results.append(("private-free", nopriv_ok))
+        else:
+            print("   SKIP  private/ 가 없다 — 평소 실행이 이미 그 환경이다")
+
         tools, floor = ci_pins()
         py = ensure_venv(tools)
         results.append(("ruff", run("린트", [py, "-m", "ruff", "check", "scripts", "tests"])))

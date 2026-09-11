@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "next_id": 106,
+  "next_id": 107,
   "tasks": [
     {
       "id": "hg98",
@@ -260,6 +260,28 @@
       "tokens_used": 0,
       "created_at": "2026-09-11T00:45:00+09:00",
       "updated_at": "2026-09-11T01:20:00+09:00",
+      "position": 0,
+      "phase": "PHASE_PMF14",
+      "review": "",
+      "created_by": "hogun",
+      "assigned_to": "hogun"
+    },
+    {
+      "id": "hgB106",
+      "title": "로컬에만 있는 것이 초록을 갈라놓는다 — private/ 없는 환경을 재현한다",
+      "description": "",
+      "details": "## 계기\n\n같은 날 CI 가 3버전 전부 깨졌다. 원인은 `private/` 를 읽는 검사에 skip 가드가 없던 것.\n**로컬은 초록이었다** — 여기엔 `private/` 가 늘 있기 때문이다.\n\n그런데 `check.py` 는 이미 알고 있었다. 매 실행 유보로 출력하고 있었다:\n`\"private/ 는 CI 에 없다 — 그것을 읽는 검사는 저기서 skip 된다\"`.\n**알고도 보고만 했다.** PMF14 의 `load_setup()` 과 같은 형태다 — 보고와 차단은 다르다.\n\n## 가드를 세지 않고 성질을 본다\n\n정적으로 `skipTest` 를 찾는 방법을 먼저 검토하고 **기각**했다. 이 레포에 이미 세\n관용구가 쓰인다 — `skipTest`(본문/setUp), `@unittest.skipUnless`(클래스 데코레이터),\n부재 시 빈 값을 주는 헬퍼(`private_docs()`). 넷째가 나오면 조용히 뚫린다.\n**규칙을 넓게 잡으면 규칙이 꺼진다.**\n\n그래서 대리 지표(가드가 있는가) 대신 성질을 본다 — **`private/` 없이도 초록인가.**\n워킹트리를 `private/` 빼고 임시 복사해 스위트를 한 번 더 돌린다.\n\n## `.git` 을 빼봤다가 오탐 22건\n\n처음엔 속도를 위해 `.git` 도 제외했다. 정상 트리에서 22건이 터졌다 —\n이 스위트는 **git 을 데이터 소스로 쓴다.** 검사 범위를 `git ls-files '*.md'` 에 묻고\n(PMF14 가 그렇게 바꿨다), 추적 여부로 배포 목록을 검증한다. 7.2MB / 0.3초라 아낄\n것도 없었다. **오탐이 작업을 멈추면 그 검사는 곧 꺼진다.**\n\n테스트에 그 이유를 박아뒀다(`test_the_copy_keeps_git_because_the_suite_asks_git`) —\n다음 사람이 같은 최적화를 시도하면 테스트가 먼저 말한다.\n\n## 검증 — 주입으로 확인\n\n오늘 CI 를 깨뜨린 그 상태(skip 가드 제거)를 되살려 대조했다:\n\n| 실행 | 결과 |\n|---|---|\n| 평소 실행 (로컬, private/ 있음) | **OK** — 버그가 안 보인다 |\n| private-free 단계 | **FAIL** — 잡았다 |\n\n`.git` 을 포함하도록 고친 뒤에도 여전히 잡는 것까지 재확인했다. 복구 후 오탐 0.\n\n## 비용\n\n스위트 실행 2회 → 3회 (tests / private-free / coverage). check.py 약 2분 → 3.5분.\n`--fast` 는 건너뛰고 **건너뛴 사실을 말한다.**\n\n## 남은 것\n\n`private/` 말고도 \"로컬에만 있는 것\"이 또 있으면 같은 방식으로 닫을 수 있다.\n지금 아는 것은 이것 하나라 일반화하지 않았다 — 두 번째 사례가 나오면 그때.",
+      "status": "review",
+      "priority": "medium",
+      "category": "qa",
+      "target_date": "",
+      "started_at": "2026-09-11T01:50:00+09:00",
+      "completed_at": "",
+      "lines_added": 205,
+      "lines_removed": 4,
+      "tokens_used": 0,
+      "created_at": "2026-09-11T01:50:00+09:00",
+      "updated_at": "2026-09-11T01:50:00+09:00",
       "position": 0,
       "phase": "PHASE_PMF14",
       "review": "",
