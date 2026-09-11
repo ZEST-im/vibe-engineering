@@ -204,6 +204,8 @@ class ProductDocsAreNotPlansTest(unittest.TestCase):
 
     def test_every_exempt_doc_exists(self):
         """이름이 바뀌면 면제만 남고 문서는 규칙 밖으로 빠진다."""
+        if not private_docs():
+            self.skipTest("private/ 없음 — 로컬 전용 검사 (CI 는 항상 이 경로)")
         missing = [n for n in sorted(PRODUCT_DOCS)
                    if not os.path.exists(os.path.join(PRIVATE, n))]
         self.assertEqual([], missing,
@@ -211,6 +213,8 @@ class ProductDocsAreNotPlansTest(unittest.TestCase):
 
     def test_exempt_docs_carry_no_checklist(self):
         """제품 산출물에 계획 체크리스트가 생기면 그것은 계획 문서다 — 면제를 거둬야 한다."""
+        if not private_docs():
+            self.skipTest("private/ 없음 — 로컬 전용 검사 (CI 는 항상 이 경로)")
         offenders = []
         for name in sorted(PRODUCT_DOCS):
             path = os.path.join(PRIVATE, name)
