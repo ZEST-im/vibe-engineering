@@ -88,6 +88,10 @@ qq / cc commands     ← session-end rituals that close the loop
 
 The kanban board (localhost:4242) is the visible surface. The real value is the discipline layer underneath: phase files, scope locks, review gates, and session bookends.
 
+For work where the implementation path is intentionally left to the developer, use the
+[outcome-based engineering assignment guide](docs/OUTCOME_BASED_ENGINEERING_ASSIGNMENTS.md) to define evidence,
+accuracy targets, holdouts, and review gates without prescribing the solution.
+
 ---
 
 ## Features
