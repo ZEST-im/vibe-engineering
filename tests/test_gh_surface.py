@@ -1133,3 +1133,101 @@ class EmptyDenyFileIsNotSilentTest(unittest.TestCase):
                                gh_runner=_poison("주석뿐인 DENY.txt 인데 gh 를 불렀다"))
 
         self.assertEqual(1, code)
+
+
+class HygieneLayerVisibilityTest(unittest.TestCase):
+    """N1 — dry-run 은 두 층(구조 규칙 + 정확 금칙어) 모두 돌았다는 것과, 각각
+    몇 개로 검사했는지를 말해야 한다. 안 그러면 'RULES 가 텅 비어도 화면 모양은
+    깨끗한 실행과 똑같다'가 된다."""
+
+    def test_dry_run_prints_both_layer_counts(self):
+        repo, _bare = _repo_with_origin("feat: PMF50 완료 — 픽스처")
+        os.makedirs(os.path.join(repo, "private"))
+        with open(os.path.join(repo, "private", "DENY.txt"), "w", encoding="utf-8") as fh:
+            fh.write("ZQX-FIXTURE-ONE\nZQX-FIXTURE-TWO\n")
+        sha = _sha(repo, "PMF50 완료")
+        plan = [_plan_entry("phase/PMF50", sha, notes="깨끗한 노트")]
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_tag(plan, repo, apply=False)
+        out = buf.getvalue()
+
+        self.assertEqual(0, code)
+        self.assertIn("구조 규칙", out, "구조 규칙 층이 돌았다는 말이 dry-run 에 없다")
+        self.assertIn(f"{len(gh._structural_rules())}개", out,
+                      "구조 규칙 몇 개로 검사했는지가 dry-run 에 없다")
+        self.assertIn("금칙 문자열 2개", out, "정확 금칙어 개수가 dry-run 에 없다")
+
+
+class StructuralRulesEmptyIsNotSilentTest(unittest.TestCase):
+    """N1 — `RULES` 가 비어 있으면(잘렸거나 손상됐을 수 있다) `_structural_hit_count`
+    는 모든 노트에 조용히 0 을 돌려준다 — 그러면 R3 위반 노트로도 tag·push·release
+    가 그대로 생긴다. `deny_corrupted` 와 똑같이 다뤄야 한다."""
+
+    def setUp(self):
+        self._saved_rules = gh._STRUCTURAL_RULES
+
+    def tearDown(self):
+        gh._STRUCTURAL_RULES = self._saved_rules
+
+    def test_apply_refuses_when_structural_rules_are_empty(self):
+        gh._STRUCTURAL_RULES = ()  # 잘리거나 손상된 RULES 를 흉내낸다
+        repo, bare = _repo_with_origin("feat: PMF50 완료 — 픽스처")
+        sha = _sha(repo, "PMF50 완료")
+        # DENY.txt 도 없다 — 구조 규칙이 유일한 층인 상태에서 그 층마저 비었다.
+        plan = [_plan_entry("phase/PMF50", sha, notes="완전히 깨끗해 보이는 노트")]
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_tag(plan, repo, apply=True,
+                               gh_check=lambda: (True, "ok"),
+                               gh_runner=_poison("구조 규칙이 비었는데 gh 를 불렀다"))
+        out = buf.getvalue()
+
+        self.assertEqual(1, code, "구조 규칙이 0개인데 성공으로 끝났다 — 조용히 통과시켰다")
+        self.assertIn("구조 규칙", out)
+        self.assertEqual("", _git(repo, "tag", "-l").stdout.strip())
+        self.assertEqual("", _git(bare, "tag", "-l").stdout.strip())
+
+    def test_dry_run_still_shows_the_plan_when_structural_rules_are_empty(self):
+        """Important 1 과 같은 원칙 — 신뢰 못 하는 상태라도 dry-run 은 숨기지 않는다."""
+        gh._STRUCTURAL_RULES = ()
+        repo, _bare = _repo_with_origin("feat: PMF50 완료 — 픽스처")
+        sha = _sha(repo, "PMF50 완료")
+        plan = [_plan_entry("phase/PMF50", sha, notes="완전히 깨끗해 보이는 노트")]
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_tag(plan, repo, apply=False)
+        out = buf.getvalue()
+
+        self.assertEqual(0, code)
+        self.assertIn("phase/PMF50", out)
+        self.assertIn("[dry-run]", out)
+        self.assertIn("구조 규칙", out)
+
+    def test_a_real_r3_violation_is_missed_only_while_rules_are_forced_empty(self):
+        """비우기 전엔 잡히고, 비우면 놓친다는 것을 같은 노트로 대조한다."""
+        repo, _bare = _repo_with_origin("feat: PMF50 완료 — 픽스처")
+        sha = _sha(repo, "PMF50 완료")
+        notes = "테스트용 가짜 uid 98765432109876543 로 발급"  # public-ok
+
+        # 1) 정상 상태 — 구조 규칙이 잡아 차단해야 한다.
+        plan = [_plan_entry("phase/PMF50", sha, notes=notes)]
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code_normal = gh._run_tag(plan, repo, apply=True,
+                                      gh_check=lambda: (True, "ok"),
+                                      gh_runner=_poison("정상 상태인데 구조 규칙을 놓쳤다"))
+        self.assertEqual(1, code_normal, "정상 상태에서 R3 위반을 놓쳤다")
+
+        # 2) RULES 를 비우면 같은 노트가 그대로 통과해 버린다 — 이게 N1 의 구멍이다.
+        #    여기서는 그 구멍이 이제 막혔는지(하드 실패로) 를 같은 노트로 재확인한다.
+        gh._STRUCTURAL_RULES = ()
+        buf2 = io.StringIO()
+        with contextlib.redirect_stdout(buf2):
+            code_empty = gh._run_tag(plan, repo, apply=True,
+                                     gh_check=lambda: (True, "ok"),
+                                     gh_runner=_poison("구조 규칙이 비었는데 gh 를 불렀다"))
+        self.assertEqual(1, code_empty, "구조 규칙이 비었는데 통과시켰다")

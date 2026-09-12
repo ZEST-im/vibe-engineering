@@ -258,9 +258,11 @@ def _load_deny_terms(root):
     """
     path = os.path.join(root, "private", "DENY.txt")
     if not os.path.exists(path):
-        return None, ("private/DENY.txt 없음 — 정확 문자열 검사를 건너뛴다"
-                       "(구조 규칙은 tests/test_public_hygiene.py 가 이미 봤다; "
-                       "CI 와 다른 머신엔 이 파일이 없는 게 정상이다)")
+        return None, ("private/DENY.txt 없음 — 정확 문자열 검사만 건너뛴다 "
+                       "(구조 규칙 R1–R4 는 이 게이트가 노트에 직접 적용한다 — "
+                       "tests/test_public_hygiene.py 자신은 git 추적 파일만 보므로 "
+                       "gitignore 된 private/PHASES.md 에서 파생되는 이 노트들은 "
+                       "애초에 보지 못한다; CI 와 다른 머신엔 이 파일이 없는 게 정상이다)")
     with open(path, encoding="utf-8") as fh:
         terms = [t.strip() for t in fh if t.strip() and not t.startswith("#")]
     return terms, f"private/DENY.txt 로드 — 금칙 문자열 {len(terms)}개로 릴리스 노트를 검사한다"
@@ -362,6 +364,14 @@ def _run_tag(plan, root, apply=False, gh_check=None, gh_runner=None):
     # 자체가 비어 있었다"를 같은 것으로 두면 안 된다.
     deny_corrupted = deny_terms is not None and not deny_terms
 
+    # 구조 규칙(R1–R4)도 같은 함정이 있다 — `RULES` 가 빈 시퀀스면
+    # `_structural_hit_count` 는 모든 노트에 조용히 0 을 돌려준다. 그러면 "검사했더니
+    # 깨끗하다"와 "검사 자체가 비어 있었다"가 겉보기에 똑같아진다. `deny_corrupted`
+    # 와 같은 취급 — 몇 개인지 항상 말하고, 0개면 하드 실패한다.
+    structural_rules = _structural_rules()
+    structural_why = f"구조 규칙(R1–R4) 로드 — {len(structural_rules)}개로 릴리스 노트를 검사한다"
+    structural_corrupted = len(structural_rules) == 0
+
     hits_by_tag = {}
     for p in taggable:
         hits = _hygiene_hit_count(p["notes"], deny_terms)
@@ -378,10 +388,14 @@ def _run_tag(plan, root, apply=False, gh_check=None, gh_runner=None):
                 print(f"{p['tag']}  {p['sha']}  ({p['phase']})")
         else:
             print(f"{p['phase']}: 보류 — {p['skipped_reason']}")
-    print(f"\n{deny_why}")
+    print(f"\n{structural_why}")
+    if structural_corrupted:
+        print("  ⚠ 구조 규칙이 0개다 — R1–R4 가 비었거나 손상됐을 수 있어 이 층을 "
+              "신뢰할 수 없다(정확 금칙어 층과는 별개로 무력화된 상태다)")
+    print(deny_why)
     if deny_corrupted:
         print("  ⚠ 파일은 있지만 항목이 0개다 — 잘렸거나 손상됐을 수 있어 정확 문자열 "
-              "검사를 신뢰할 수 없다(구조 규칙은 그대로 적용된다)")
+              "검사를 신뢰할 수 없다(구조 규칙은 위 결과대로 별도로 적용된다)")
     held_back = len(skipped) + len(hits_by_tag)
     print(f"\n{len(plan)}개 Phase 중 {clean_count}개 태그 가능, {held_back}개 보류"
           + (f" (그중 {len(hits_by_tag)}건은 공개 노트 검사 적중)" if hits_by_tag else ""))
@@ -389,6 +403,11 @@ def _run_tag(plan, root, apply=False, gh_check=None, gh_runner=None):
     if not apply:
         print("[dry-run] 아무것도 만들지 않았다 — 실행하려면 --apply")
         return 0
+
+    if structural_corrupted:
+        print("\n구조 규칙(R1–R4)이 0개다 — 파일이 손상됐을 수 있어 아무것도 만들지 "
+              "않는다")
+        return 1
 
     if deny_corrupted:
         print("\nprivate/DENY.txt 가 있지만 비어 있다 — 파일을 확인하기 전엔 아무것도 "
