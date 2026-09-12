@@ -92,3 +92,11 @@ class GhAvailabilityTest(unittest.TestCase):
         ok, why = gh.gh_available(runner, need_scope="project")
         self.assertTrue(ok)
         self.assertTrue(why.strip())
+
+    def test_permission_denied_says_so(self):
+        """실행 권한이 없으면 다른 OSError 로 잡힌다."""
+        def runner(argv):
+            raise PermissionError("permission denied")
+        ok, why = gh.gh_available(runner)
+        self.assertFalse(ok)
+        self.assertIn("실행할 수 없다", why)
