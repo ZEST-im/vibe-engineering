@@ -125,6 +125,38 @@ class RepoShipsWhatItClaimsTest(unittest.TestCase):
         self.assertIn("coverage==", body,
                       "버전을 고정하지 않으면 도구가 바뀔 때 숫자가 흔들린다")
 
+    # 래칫의 실측값. **"정리"랍시고 지우거나 워크플로 값만 보고 계산하지 말 것** —
+    # 문턱을 올릴 때는 이 상수도 같이 올려야 한다. 그 이중 기록이 결함이 아니라
+    # 래칫 그 자체다: 한쪽만 고치면(워크플로만 내리고 여기를 그대로 두면) 이 테스트가
+    # 잡고, 양쪽을 같이 고치면 리뷰에 그 변경이 보인다. 지금 값 55 는
+    # `.github/workflows/tests.yml` 의 `--fail-under=55` 와 나란히 움직인다.
+    KNOWN_COVERAGE_FLOOR = 55
+
+    def test_coverage_floor_never_decreases(self):
+        """CONTRIBUTING.md 가 "커버리지 문턱은 오직 올라가기만 한다"고 적은 것의 실행판.
+
+        전에는 이 규칙이 워크플로 주석과 CONTRIBUTING.md 산문에만 있었다 — 둘 다 사람이
+        읽어야 막히는 문서였고, `--fail-under=` 를 40 으로 낮춰도 어떤 자동 검사도
+        걸리지 않았다(`test_ci_measures_coverage_with_a_floor` 는 문턱이 "있는지"만
+        보지 "내려갔는지"는 보지 않는다). 여기서는 그 값을 이 파일에 박아둔 하한과
+        비교해 내려갔으면 실패시킨다.
+        """
+        path = os.path.join(ROOT, ".github", "workflows", "tests.yml")
+        if not os.path.exists(path):
+            self.skipTest("워크플로 없음")
+        with open(path, encoding="utf-8") as fh:
+            body = fh.read()
+        match = re.search(r"--fail-under=(\d+)", body)
+        self.assertIsNotNone(match, "커버리지 문턱을 찾지 못했다")
+        floor = int(match.group(1))
+        self.assertGreaterEqual(
+            floor, self.KNOWN_COVERAGE_FLOOR,
+            "커버리지 문턱이 %d 에서 %d 로 내려갔다 — 이 레포는 래칫만 허용한다"
+            "(한 번 올리면 다시 안 내린다, 그래야 하한 조정이 의미가 있다). "
+            "실측이 정말 %d 아래로 떨어졌다면 문턱이 아니라 커버리지를 고치고, "
+            "하한을 다시 올릴 때는 이 파일의 KNOWN_COVERAGE_FLOOR 도 같이 올려라."
+            % (self.KNOWN_COVERAGE_FLOOR, floor, self.KNOWN_COVERAGE_FLOOR))
+
     def test_ci_workflow_is_tracked_by_git(self):
         workflow_dir = os.path.join(ROOT, ".github", "workflows")
         if not os.path.isdir(workflow_dir):

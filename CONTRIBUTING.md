@@ -15,4 +15,4 @@ what it could **not** check. Read that part.
   has not been shown to work.
 - Claims in Markdown are compared against the code (`tests/test_skill_claims.py`). If you
   document behaviour, make it true first.
-- Coverage floor only goes up.
+- Coverage floor only goes up (`tests/test_skills.py` fails if it drops).
