@@ -90,19 +90,32 @@ def boundary_candidates(log_lines, phase):
 
 
 def tag_plan(phases_body, log_lines):
-    """무엇을 태깅할지. **못 그은 것도 이유와 함께 목록에 남긴다.**"""
+    """무엇을 태깅할지. **못 그은 것도 이유와 함께 목록에 남긴다.**
+
+    보류 이유는 두 가지를 구분한다 — "후보가 아예 없다" 와 "후보는 있지만 강한
+    것이 없다"(약한 후보 수를 같이 적는다). 실측(PMF02·03·06·09·14)에서 보류 9건
+    중 5건이 후자였다 — 뭉뚱그리면 사람이 직접 들여다볼 가치가 있는지 판단할
+    신호가 사라진다.
+    """
     plan = []
     for phase, _sec in sorted(phase_sections(phases_body).items()):
         short = phase.replace("PHASE_", "")
-        cands = [c for c in boundary_candidates(log_lines, short)
-                 if c["confidence"] == "strong"]
-        top = cands[0] if cands else None
+        all_cands = boundary_candidates(log_lines, short)
+        strong = [c for c in all_cands if c["confidence"] == "strong"]
+        top = strong[0] if strong else None
+        if top:
+            reason = None
+        elif all_cands:
+            reason = (f"완료를 선언한 커밋은 없다 — 약한 후보 {len(all_cands)}건은 있다"
+                      "(추측하지 않는다)")
+        else:
+            reason = "완료를 선언한 커밋이 없다 — 추측하지 않는다"
         plan.append({
             "phase": phase,
             "tag": f"phase/{short}",
             "sha": top["sha"] if top else None,
             "notes": release_notes(phases_body, phase) if top else None,
-            "skipped_reason": None if top else "완료를 선언한 커밋이 없다 — 추측하지 않는다",
+            "skipped_reason": reason,
         })
     return plan
 
@@ -133,24 +146,85 @@ def _log_lines(root, runner=None):
     """`git log` 를 읽어 `tag_plan` 이 먹을 줄 목록으로 만든다.
 
     **CLI 층의 일이다** — `tag_plan` 은 파일도 git 도 건드리지 않는다(순수 유지).
-    로그를 못 읽으면(레포가 아니거나 git 이 없으면) 빈 목록을 돌려준다 — 경계를
-    지어내지 않는다는 원칙은 여기서도 같다: 후보가 없으면 그냥 없는 것이다.
+    `private/PHASES.md` 가 없을 때와 같은 태도다 — 못 읽으면 **크게 실패한다.**
+    조용히 빈 로그로 넘어가면 "경계 후보가 없음" 과 "레포를 못 읽음" 이 똑같아
+    보이고, 그러면 `--apply` 는 아무것도 못 만들고도 0 으로 끝나 깨끗한 실행과
+    구분이 안 된다.
     """
     runner = runner or _run
     try:
-        code, out, _err = runner(
+        code, out, err = runner(
             ["git", "-C", root, "log", "--format=%h %ad %s", "--date=short"])
-    except OSError:
-        return []
+    except OSError as exc:
+        raise SystemExit(
+            f"git log 를 실행하지 못했다 ({exc}) — {root} 를 git 레포로 읽을 수 있는지 "
+            "확인해야 한다. 조용히 빈 로그로 넘어가면 '경계 없음' 과 '못 읽음' 을 구분할 "
+            "수 없다."
+        ) from exc
     if code != 0:
-        return []
+        raise SystemExit(
+            f"git log 가 실패했다 (`{root}` 가 git 레포가 아닐 수 있다): "
+            f"{err.strip()[:200]}\n"
+            "  조용히 빈 로그로 넘어가면 '경계 없음' 과 '못 읽음' 을 구분할 수 없다.")
     return [line for line in out.splitlines() if line.strip()]
 
 
+def _tag_exists_locally(root, tag, runner=None):
+    """이 이름의 태그가 로컬에 이미 있는가."""
+    runner = runner or _run
+    code, out, _err = runner(["git", "-C", root, "tag", "-l", tag])
+    return code == 0 and out.strip() == tag
+
+
+def _resolve_full_sha(root, sha, runner=None):
+    """짧은 sha(`%h`)를 40자 전체 형태로 바꾼다.
+
+    **영구히 남는 것(태그 객체)에 쓰기 직전에만 부른다** — dry-run 출력과
+    `boundary_candidates` 픽스처는 짧은 sha(`%h`)에 맞춰져 있으니 그쪽은 그대로
+    둔다. 애매한 짧은 sha 를 공개 태그에 그대로 박아 넣지 않기 위한 것이다.
+    """
+    runner = runner or _run
+    code, out, _err = runner(["git", "-C", root, "rev-parse", f"{sha}^{{commit}}"])
+    if code != 0:
+        return None
+    return out.strip()
+
+
+def _repo_slug(root, runner=None):
+    """`gh` 호출을 이 레포에 고정하는 `-R` 값. `origin` 이 없으면 `None`.
+
+    `gh` 는 매 호출을 프로세스의 현재 디렉터리로 리포를 판단한다 — `-C root` 를
+    받는 git 호출과 달리 아무 근거 없이 다른 레포를 향할 수 있다.
+    """
+    runner = runner or _run
+    code, out, _err = runner(["git", "-C", root, "remote", "get-url", "origin"])
+    if code != 0:
+        return None
+    return out.strip()
+
+
+def _release_exists(tag, repo_slug, gh_runner):
+    code, _out, _err = gh_runner(["gh", "release", "view", tag, "-R", repo_slug])
+    return code == 0
+
+
 def _run_tag(plan, root, apply=False, gh_check=None, gh_runner=None):
-    """계획을 출력하고, `apply` 일 때만 실제로 태그·릴리스를 만든다.
+    """계획을 출력하고, `apply` 일 때만 실제로 태그·push·릴리스를 만든다.
+
+    순서는 **annotated 태그 → `git push origin <tag>` → `gh release create
+    --verify-tag`** 다. `gh release create` 는 태그가 없을 때 API 로 lightweight
+    태그를 만들어 버리는데, 그러면 로컬의(노트를 담은) annotated 태그와 원격이
+    어긋나 이후 `git push --tags` 가 non-fast-forward 로 막힌다. 태그를 먼저
+    push 해 두고 `--verify-tag` 로 존재만 확인시키면 이 어긋남이 생기지 않는다.
+
+    idempotency 는 **릴리스 존재 여부**로 판단한다 — 로컬 태그만 보면 "태그는
+    있는데 릴리스가 없다"(정확히 복구가 필요한 상태)를 "이미 끝남"으로 잘못
+    읽는다. 로컬 태그가 이미 있는데 릴리스가 없으면 이전 실행이 릴리스 단계
+    (또는 push 단계)에서 실패했던 것 — 태그 재생성은 건너뛰고 push·릴리스만
+    다시 시도한다.
 
     `gh_check`/`gh_runner` 는 테스트 주입용 — 기본은 각각 `gh_available`, `_run`.
+    git 호출은 로컬 전용(태그·push)이라 실제 `_run` 을 그대로 쓴다.
     """
     gh_check = gh_check or gh_available
     gh_runner = gh_runner or _run
@@ -174,34 +248,62 @@ def _run_tag(plan, root, apply=False, gh_check=None, gh_runner=None):
         print(f"\n{why}")
         return 1
 
+    repo_slug = _repo_slug(root)
+    if not repo_slug:
+        print("\norigin 리모트를 확인하지 못했다 — gh 호출을 이 레포에 고정할 수 없어 "
+              "아무것도 만들지 않고 멈춘다")
+        return 1
+
     created = existed = failed = 0
+    recovered = []  # 이전 실행이 태그만 만들고 릴리스에서 실패해, 이번에 복구를 시도한 것들
     for p in taggable:
-        code, out, _err = _run(["git", "-C", root, "tag", "-l", p["tag"]])
-        if code == 0 and out.strip() == p["tag"]:
-            print(f"{p['tag']}: 이미 있다 — 건너뛴다")
+        tag, sha = p["tag"], p["sha"]
+
+        if _release_exists(tag, repo_slug, gh_runner):
+            print(f"{tag}: 이미 있다 — 건너뛴다")
             existed += 1
             continue
 
-        message = f"{p['tag']}\n\n{p['notes']}"
-        code, _out, err = _run(
-            ["git", "-C", root, "tag", "-a", p["tag"], p["sha"], "-m", message])
+        if _tag_exists_locally(root, tag):
+            recovered.append(tag)
+            print(f"{tag}: 태그는 있지만 릴리스가 없다 — 이전 --apply 가 push·릴리스 "
+                  "단계에서 실패했던 것으로 보인다. 태그를 다시 만들지 않고 복구를 시도한다")
+        else:
+            full_sha = _resolve_full_sha(root, sha)
+            if not full_sha:
+                print(f"{tag}: sha({sha}) 를 전체 형태로 확정하지 못해 건너뛴다")
+                failed += 1
+                continue
+            message = f"{tag}\n\n{p['notes']}"
+            code, _out, err = _run(
+                ["git", "-C", root, "tag", "-a", tag, full_sha, "-m", message])
+            if code != 0:
+                print(f"{tag}: 태그 생성 실패 ({err.strip()[:120]})")
+                failed += 1
+                continue
+
+        code, _out, err = _run(["git", "-C", root, "push", "origin", tag])
         if code != 0:
-            print(f"{p['tag']}: 태그 생성 실패 ({err.strip()[:120]})")
+            print(f"{tag}: 태그는 로컬에 있지만 push 에 실패했다 — orphan 상태다. "
+                  f"원인을 해결한 뒤 --apply 를 다시 실행하면 복구한다 ({err.strip()[:120]})")
             failed += 1
             continue
 
         code, _out, err = gh_runner(
-            ["gh", "release", "create", p["tag"], "--target", p["sha"],
-             "--title", p["tag"], "--notes", p["notes"]])
+            ["gh", "release", "create", tag, "--verify-tag",
+             "--title", tag, "--notes", p["notes"], "-R", repo_slug])
         if code != 0:
-            print(f"{p['tag']}: 릴리스 생성 실패 ({err.strip()[:120]})")
+            print(f"{tag}: 태그·push 는 됐지만 릴리스 생성에 실패했다 — orphan 상태다. "
+                  f"--apply 를 다시 실행하면 복구한다 ({err.strip()[:120]})")
             failed += 1
             continue
 
-        print(f"{p['tag']}: 태그 + 릴리스 생성 완료")
+        print(f"{tag}: 태그 + push + 릴리스 생성 완료")
         created += 1
 
     print(f"\n생성 {created}, 이미 있음 {existed}, 실패 {failed}")
+    if recovered:
+        print(f"복구를 시도한 orphan 태그: {', '.join(recovered)}")
     return 0 if failed == 0 else 1
 
 
