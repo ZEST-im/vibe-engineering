@@ -280,9 +280,17 @@ def _poison(msg):
     return _fn
 
 
-def _plan_entry(tag, sha, notes="노트"):
+def _plan_entry(tag, sha, notes="노트", summary=None):
+    """계획 항목 하나. **게이트와 두 공개 표면(태그 메시지, `gh release create
+    --notes`)이 실제로 보는 건 `summary` 뿐이다** — `notes`(전체 본문)는 더 이상
+    검사도 공개도 되지 않는다. `summary` 를 안 주면 `notes` 와 같은 값을 써서
+    대부분의(게이트와 무관한) 테스트가 그대로 동작하게 한다 — 게이트 동작 자체를
+    검증하는 테스트는 반드시 `summary=` 를 명시해야 그 값을 검사·게시하는지
+    증명하는 뜻이 있다."""
+    if summary is None:
+        summary = notes
     return {"phase": "PHASE_PMF50", "tag": tag, "sha": sha,
-            "notes": notes, "skipped_reason": None}
+            "notes": notes, "summary": summary, "skipped_reason": None}
 
 
 PHASES_FIXTURE = """# 픽스처
@@ -854,8 +862,11 @@ class ReleaseNotesDenyGateTest(unittest.TestCase):
     def test_a_hit_blocks_the_phase_creates_nothing_and_never_prints_the_string(self):
         repo, bare = self._repo_with_deny(self.FIXTURE_TERM)
         sha = _sha(repo, "PMF50 완료")
-        notes = f"이 노트엔 {self.FIXTURE_TERM} 이 섞여 있다"
-        plan = [_plan_entry("phase/PMF50", sha, notes=notes)]
+        # 게이트는 공개되는 `summary` 만 본다 — `notes`(전체 본문, 공개 안 됨)에는
+        # 일부러 안 넣는다.
+        summary = f"이 요약엔 {self.FIXTURE_TERM} 이 섞여 있다"
+        plan = [_plan_entry("phase/PMF50", sha, notes="내부 전체 기록 — 공개 안 됨",
+                            summary=summary)]
 
         # gh 를 한 번이라도 부르면 실패시킨다 — 차단된 Phase 는 gh 호출까지 가면 안 된다.
         buf = io.StringIO()
@@ -929,7 +940,9 @@ class DryRunShowsHygieneRefusalsTest(unittest.TestCase):
         with open(os.path.join(repo, "private", "DENY.txt"), "w", encoding="utf-8") as fh:
             fh.write(self.FIXTURE_TERM + "\n")
         sha = _sha(repo, "PMF50 완료")
-        plan = [_plan_entry("phase/PMF50", sha, notes=f"{self.FIXTURE_TERM} 섞임")]
+        # 게이트는 공개되는 `summary` 만 본다.
+        plan = [_plan_entry("phase/PMF50", sha, notes="내부 전체 기록 — 공개 안 됨",
+                            summary=f"{self.FIXTURE_TERM} 섞임")]
 
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
@@ -956,9 +969,11 @@ class DryRunShowsHygieneRefusalsTest(unittest.TestCase):
         sha50 = _sha(repo, "PMF50 완료")
         plan = [
             {"phase": "PHASE_PMF49", "tag": "phase/PMF49", "sha": sha49,
-             "notes": "깨끗한 노트", "skipped_reason": None},
+             "notes": "내부 전체 기록 — 공개 안 됨", "summary": "깨끗한 요약",
+             "skipped_reason": None},
             {"phase": "PHASE_PMF50", "tag": "phase/PMF50", "sha": sha50,
-             "notes": f"{self.FIXTURE_TERM} 포함", "skipped_reason": None},
+             "notes": "내부 전체 기록 — 공개 안 됨", "summary": f"{self.FIXTURE_TERM} 포함",
+             "skipped_reason": None},
         ]
 
         buf = io.StringIO()
@@ -991,9 +1006,11 @@ class WholePlanHygienePreflightTest(unittest.TestCase):
         # 그때그때 거부)이라면 PMF50 에 도달하기 전에 이미 태그·push 됐을 것이다.
         plan = [
             {"phase": "PHASE_PMF49", "tag": "phase/PMF49", "sha": sha49,
-             "notes": "완전히 깨끗한 노트", "skipped_reason": None},
+             "notes": "내부 전체 기록 — 공개 안 됨", "summary": "완전히 깨끗한 요약",
+             "skipped_reason": None},
             {"phase": "PHASE_PMF50", "tag": "phase/PMF50", "sha": sha50,
-             "notes": f"{self.FIXTURE_TERM} 포함", "skipped_reason": None},
+             "notes": "내부 전체 기록 — 공개 안 됨", "summary": f"{self.FIXTURE_TERM} 포함",
+             "skipped_reason": None},
         ]
 
         buf = io.StringIO()
@@ -1018,8 +1035,10 @@ class StructuralRulesReusedTest(unittest.TestCase):
         # private/ 자체가 없다 — DENY.txt 는 절대 없다.
         sha = _sha(repo, "PMF50 완료")
         # R3(17~20자리 숫자)와 같은 모양의 완전히 지어낸 자리수 — 실제 uid 아님.
-        notes = "테스트용 가짜 uid 12345678901234567 로 발급"  # public-ok
-        plan = [_plan_entry("phase/PMF50", sha, notes=notes)]
+        # 게이트는 공개되는 `summary` 만 본다.
+        summary = "테스트용 가짜 uid 12345678901234567 로 발급"  # public-ok
+        plan = [_plan_entry("phase/PMF50", sha, notes="내부 전체 기록 — 공개 안 됨",
+                            summary=summary)]
 
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
@@ -1208,13 +1227,15 @@ class StructuralRulesEmptyIsNotSilentTest(unittest.TestCase):
         self.assertIn("구조 규칙", out)
 
     def test_a_real_r3_violation_is_missed_only_while_rules_are_forced_empty(self):
-        """비우기 전엔 잡히고, 비우면 놓친다는 것을 같은 노트로 대조한다."""
+        """비우기 전엔 잡히고, 비우면 놓친다는 것을 같은 요약으로 대조한다."""
         repo, _bare = _repo_with_origin("feat: PMF50 완료 — 픽스처")
         sha = _sha(repo, "PMF50 완료")
-        notes = "테스트용 가짜 uid 98765432109876543 로 발급"  # public-ok
+        summary = "테스트용 가짜 uid 98765432109876543 로 발급"  # public-ok
 
-        # 1) 정상 상태 — 구조 규칙이 잡아 차단해야 한다.
-        plan = [_plan_entry("phase/PMF50", sha, notes=notes)]
+        # 1) 정상 상태 — 구조 규칙이 잡아 차단해야 한다. 게이트는 공개되는
+        #    `summary` 만 본다.
+        plan = [_plan_entry("phase/PMF50", sha, notes="내부 전체 기록 — 공개 안 됨",
+                            summary=summary)]
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
             code_normal = gh._run_tag(plan, repo, apply=True,
@@ -1231,3 +1252,141 @@ class StructuralRulesEmptyIsNotSilentTest(unittest.TestCase):
                                      gh_check=lambda: (True, "ok"),
                                      gh_runner=_poison("구조 규칙이 비었는데 gh 를 불렀다"))
         self.assertEqual(1, code_empty, "구조 규칙이 비었는데 통과시켰다")
+
+
+class ReleaseSummaryTest(unittest.TestCase):
+    """공개되는 것 — Phase 의 한 줄 요약. `release_notes()`(전체 본문, ~4KB)와
+    달리 이게 실제로 태그·릴리스에 실린다."""
+
+    def test_it_returns_the_one_line_title(self):
+        self.assertEqual("공개 표면 — 밖에서 들어오는 사람의 경로",
+                         gh.release_summary(PHASES, "PHASE_PMF14"))
+
+    def test_unknown_phase_returns_none_not_empty_string(self):
+        """`release_notes()` 와 같은 신호 — 빈 문자열이면 '요약 없는 릴리스'가
+        조용히 만들어진다."""
+        self.assertIsNone(gh.release_summary(PHASES, "PHASE_PMF99"))
+
+    def test_it_is_much_shorter_than_the_full_notes(self):
+        """실측: 태그 대상 6개 전부 21~32자, 본문은 ~4KB — 자릿수가 다르다."""
+        notes = gh.release_notes(PHASES, "PHASE_PMF14")
+        summary = gh.release_summary(PHASES, "PHASE_PMF14")
+        self.assertLess(len(summary), len(notes))
+
+
+class TagPlanCarriesASummaryTest(unittest.TestCase):
+    """`tag_plan` 의 각 taggable 항목은 `notes`(내부) 와 `summary`(공개) 를
+    모두 들고 있어야 한다 — 게이트·발행 둘 다 `summary` 를 봐야 하기 때문이다."""
+
+    def test_every_planned_tag_carries_a_summary(self):
+        for p in gh.tag_plan(PHASES, LOG):
+            if p["sha"]:
+                self.assertTrue(p["summary"], f"{p['phase']} 에 요약이 없다")
+
+    def test_the_summary_is_the_one_line_title_not_the_full_body(self):
+        # PHASE_PMF14 는 LOG 에 약한 후보만 있어 이 fixture 에서는 태깅 안 된다
+        # (TagPlanTest 참고) — 강한 후보가 있는 PMF13 으로 확인한다.
+        by = {p["phase"]: p for p in gh.tag_plan(PHASES, LOG)}
+        self.assertEqual("링크 엔지니어링", by["PHASE_PMF13"]["summary"])
+        self.assertNotIn("앞 Phase 의 후속이다", by["PHASE_PMF13"]["summary"],
+                         "요약에 본문 내용이 섞였다 — 더 이상 공개되면 안 되는 텍스트다")
+
+
+class GateChecksTheSummaryNotTheNotesTest(unittest.TestCase):
+    """게이트는 공개되는 `summary` 만 본다 — `notes`(전체 본문, 더 이상 공개되지
+    않음)를 검사하면 두 방향 다 틀린다: 아무도 안 볼 텍스트 때문에 거부하거나
+    (오탐), 실제로 나가는 텍스트를 놓친다(누락). 두 방향 다 증명한다."""
+
+    FIXTURE_TERM = "ZQX-FIXTURE-INTERNAL-CODE"
+
+    def _repo_with_deny(self):
+        repo, bare = _repo_with_origin("feat: PMF50 완료 — 픽스처")
+        os.makedirs(os.path.join(repo, "private"))
+        with open(os.path.join(repo, "private", "DENY.txt"), "w", encoding="utf-8") as fh:
+            fh.write(self.FIXTURE_TERM + "\n")
+        return repo, bare
+
+    def test_a_dirty_summary_refuses_even_with_clean_notes(self):
+        repo, bare = self._repo_with_deny()
+        sha = _sha(repo, "PMF50 완료")
+        plan = [_plan_entry("phase/PMF50", sha, notes="완전히 깨끗한 내부 기록",
+                            summary=f"{self.FIXTURE_TERM} 포함")]
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_tag(plan, repo, apply=True,
+                               gh_check=lambda: (True, "ok"),
+                               gh_runner=_poison("summary 가 걸렸는데 gh 를 불렀다"))
+
+        self.assertEqual(1, code, "summary 가 걸렸는데 통과시켰다")
+        self.assertEqual("", _git(repo, "tag", "-l").stdout.strip())
+        self.assertEqual("", _git(bare, "tag", "-l").stdout.strip())
+
+    def test_a_dirty_notes_does_not_refuse_when_the_summary_is_clean(self):
+        """`notes` 는 더 이상 공개되지 않는다 — 거기 금칙 문자열이 있어도 막을
+        이유가 없다. 막으면 아무도 안 볼 텍스트 때문에 거부하는 오탐이다."""
+        repo, bare = self._repo_with_deny()
+        sha = _sha(repo, "PMF50 완료")
+        plan = [_plan_entry(
+            "phase/PMF50", sha,
+            notes=f"내부 전체 기록에만 있다 — {self.FIXTURE_TERM}",
+            summary="완전히 깨끗한 공개 요약")]
+
+        def fake_gh(argv, **kwargs):
+            if argv[:3] == ["gh", "release", "view"]:
+                return 1, "", "not found"
+            return 0, "", ""
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_tag(plan, repo, apply=True,
+                               gh_check=lambda: (True, "ok"), gh_runner=fake_gh)
+
+        self.assertEqual(0, code, "notes 에만 있는 금칙 문자열 때문에 거부했다 — 오탐이다")
+        self.assertEqual("phase/PMF50",
+                         _git(bare, "tag", "-l", "phase/PMF50").stdout.strip())
+
+
+class PublishedTextIsTheSummaryTest(unittest.TestCase):
+    """부분 공개 결정의 핵심 — 태그 메시지와 `gh release create --notes` 모두
+    `summary`(한 줄)만 실어야 한다. 둘 중 하나라도 `notes`(전체 본문)로 되돌아가면
+    이 테스트가 실패해야 한다."""
+
+    def test_both_publish_sinks_carry_the_summary_not_the_full_notes(self):
+        repo, bare = _repo_with_origin("feat: PMF50 완료 — 픽스처")
+        sha = _sha(repo, "PMF50 완료")
+        # 서로 확실히 구분되는 표식 — 어느 쪽이 실렸는지 헷갈릴 여지가 없다.
+        notes_marker = "AAAA-내부-전체-본문-마커-공개되면-안됨-AAAA"
+        summary_marker = "BBBB-공개-요약-마커-BBBB"
+        plan = [_plan_entry("phase/PMF50", sha, notes=notes_marker, summary=summary_marker)]
+
+        calls = []
+
+        def fake_gh(argv, **kwargs):
+            calls.append(argv)
+            if argv[:3] == ["gh", "release", "view"]:
+                return 1, "", "not found"
+            return 0, "", ""
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_tag(plan, repo, apply=True,
+                               gh_check=lambda: (True, "ok"), gh_runner=fake_gh)
+        self.assertEqual(0, code)
+
+        # 싱크 1 — annotated 태그 메시지(push 되면 공개된다).
+        tag_message = _git(repo, "tag", "-l", "--format=%(contents)",
+                           "phase/PMF50").stdout
+        self.assertIn(summary_marker, tag_message, "태그 메시지에 summary 가 없다")
+        self.assertNotIn(notes_marker, tag_message,
+                         "태그 메시지에 전체 notes 가 실렸다 — 공개 결정을 어겼다")
+
+        # 싱크 2 — `gh release create --notes`.
+        create_calls = [c for c in calls if c[:3] == ["gh", "release", "create"]]
+        self.assertEqual(1, len(create_calls), "release create 를 정확히 한 번 불러야 한다")
+        argv = create_calls[0]
+        notes_arg = argv[argv.index("--notes") + 1]
+        self.assertEqual(summary_marker, notes_arg,
+                         "release --notes 에 summary 가 그대로 실리지 않았다")
+        self.assertNotIn(notes_marker, notes_arg,
+                         "release --notes 에 전체 notes 가 실렸다 — 공개 결정을 어겼다")

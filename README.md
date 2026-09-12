@@ -182,7 +182,7 @@ python3 ~/.claude/skills/vibe-harness/server.py register my_project "My Project"
 Tags are `phase/PMFxx`. Not every completed phase has one — a phase is tagged only
 when a single commit clearly closes it, so some completed phases, and everything
 before the tagging convention existed, have no tag. Where a tag exists, its release
-notes are that phase's own record: what closed, and how many tests it ended with.
+notes are that phase's one-line summary, not the full internal record.
 
 ---
 

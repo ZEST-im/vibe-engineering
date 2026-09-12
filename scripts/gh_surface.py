@@ -58,12 +58,33 @@ def phase_sections(body):
 
 
 def release_notes(body, phase):
-    """한 Phase 의 릴리스 노트. 없으면 **`None`** — 빈 문자열이면 빈 릴리스가 생긴다."""
+    """한 Phase 의 릴리스 노트(전체 본문). 없으면 **`None`** — 빈 문자열이면 빈 릴리스가
+    생긴다.
+
+    **더 이상 공개 표면이 아니다** — 태그·릴리스에는 `release_summary()` 가 뽑아내는
+    한 줄만 실린다. 이 함수는 그 요약이 나온 소스로 남아 있을 뿐이다(내부 기록용).
+    """
     sec = phase_sections(body).get(phase)
     if sec is None:
         return None
     head = f"## {sec['title']}" if sec["title"] else f"## {phase}"
     return f"{head}\n\n{sec['body']}\n"
+
+
+def release_summary(body, phase):
+    """한 Phase 의 **공개되는** 한 줄 요약 — 태그 메시지와 `gh release create --notes`
+    에 실제로 실리는 텍스트다. `release_notes()` 의 ~4KB 본문은 여기 실리지 않는다:
+    그 본문은 이 요약이 뽑혀 나온 소스일 뿐, 공개할 필요가 없었다(사용자가 어느
+    버전을 쓰는지 알려주는 데는 태그 + 한 줄이면 충분하다).
+
+    Phase 를 못 찾으면 `release_notes()` 와 같은 신호로 **`None`** — 빈 문자열이면
+    빈 게 생겼다는 뜻이 되어 버린다. 한 줄 요약이 없으면(`> ` 표시가 없던 절) Phase
+    이름 자체로 대체한다 — 빈 태그 메시지보다는 낫다.
+    """
+    sec = phase_sections(body).get(phase)
+    if sec is None:
+        return None
+    return sec["title"] or phase
 
 
 # 그 Phase 를 **주어로** 완료를 선언한 표현. 인계·개시 언급과 구별한다.
@@ -129,6 +150,7 @@ def tag_plan(phases_body, log_lines):
             "tag": f"phase/{short}",
             "sha": top["sha"] if top else None,
             "notes": release_notes(phases_body, phase) if top else None,
+            "summary": release_summary(phases_body, phase) if top else None,
             "skipped_reason": reason,
         })
     return plan
@@ -259,24 +281,25 @@ def _load_deny_terms(root):
     path = os.path.join(root, "private", "DENY.txt")
     if not os.path.exists(path):
         return None, ("private/DENY.txt 없음 — 정확 문자열 검사만 건너뛴다 "
-                       "(구조 규칙 R1–R4 는 이 게이트가 노트에 직접 적용한다 — "
-                       "tests/test_public_hygiene.py 자신은 git 추적 파일만 보므로 "
-                       "gitignore 된 private/PHASES.md 에서 파생되는 이 노트들은 "
+                       "(구조 규칙 R1–R4 는 이 게이트가 공개 요약에 직접 적용한다 — "
+                       "tests/test_public_hygiene.py 자신은 git 추적 파일만 보므로, "
+                       "gitignore 된 private/PHASES.md 에서 파생되는 이 요약은 "
                        "애초에 보지 못한다; CI 와 다른 머신엔 이 파일이 없는 게 정상이다)")
     with open(path, encoding="utf-8") as fh:
         terms = [t.strip() for t in fh if t.strip() and not t.startswith("#")]
-    return terms, f"private/DENY.txt 로드 — 금칙 문자열 {len(terms)}개로 릴리스 노트를 검사한다"
+    return terms, f"private/DENY.txt 로드 — 금칙 문자열 {len(terms)}개로 공개 요약을 검사한다"
 
 
-def _deny_hit_count(notes, terms):
-    """`notes` 안에 있는 금칙 문자열 적중 **수**. 문자열 자체는 절대 돌려주지 않는다 —
+def _deny_hit_count(text, terms):
+    """`text`(공개되는 텍스트) 안에 있는 금칙 문자열 적중 **수**. 문자열 자체는
+    절대 돌려주지 않는다 —
 
     세는 것과 드러내는 것은 다르다. 이 값을 로그·리포트에 찍는 건 안전하지만,
     적중한 문자열 자체를 찍으면 그 출력이 새 유출원이 된다.
     """
-    if not terms or not notes:
+    if not terms or not text:
         return 0
-    return sum(1 for t in terms if t in notes)
+    return sum(1 for t in terms if t in text)
 
 
 _STRUCTURAL_RULES = None
@@ -302,25 +325,28 @@ def _structural_rules():
     return _STRUCTURAL_RULES
 
 
-def _structural_hit_count(notes):
-    """R1–R4(값이 아니라 모양) 를 릴리스 노트에도 적용한다 — `private/DENY.txt`
-    유무와 무관하게 **항상** 돈다. 실제 사고 두 건 모두 이 규칙만으로 잡혔다
-    (`tests/test_public_hygiene.py` 의 기록) — `DENY.txt` 가 없는 머신(CI 포함)
-    에서도 이 층은 살아 있어야 `--apply` 가 "아무 내용 검사도 안 하고 공개"하는
-    구멍이 남지 않는다.
+def _structural_hit_count(text):
+    """R1–R4(값이 아니라 모양) 를 **공개되는 텍스트**(요약)에 적용한다 —
+    `private/DENY.txt` 유무와 무관하게 **항상** 돈다. 실제 사고 두 건 모두 이
+    규칙만으로 잡혔다(`tests/test_public_hygiene.py` 의 기록) — `DENY.txt` 가
+    없는 머신(CI 포함)에서도 이 층은 살아 있어야 `--apply` 가 "아무 내용 검사도
+    안 하고 공개"하는 구멍이 남지 않는다.
     """
-    if not notes:
+    if not text:
         return 0
-    lines = notes.splitlines()
+    lines = text.splitlines()
     return sum(1 for _name, pattern, _why in _structural_rules()
                for line in lines if pattern.search(line))
 
 
-def _hygiene_hit_count(notes, deny_terms):
-    """공개 릴리스 노트 검사 총합 — 구조 규칙(항상) + 정확 금칙어(파일 있을 때만).
-    문자열 자체는 어느 쪽도 돌려주지 않는다. 세는 것과 드러내는 것은 다르다.
+def _hygiene_hit_count(text, deny_terms):
+    """공개되는 텍스트 검사 총합 — 구조 규칙(항상) + 정확 금칙어(파일 있을 때만).
+    **게이트는 실제로 공개되는 텍스트(요약)만 본다** — 공개되지 않는 전체 노트를
+    검사하면 아무도 안 볼 텍스트 때문에 거부하거나, 반대로 실제로 나가는 텍스트를
+    안 보고 지나칠 수 있다. 문자열 자체는 어느 쪽도 돌려주지 않는다 — 세는 것과
+    드러내는 것은 다르다.
     """
-    return _structural_hit_count(notes) + _deny_hit_count(notes, deny_terms)
+    return _structural_hit_count(text) + _deny_hit_count(text, deny_terms)
 
 
 def _run_tag(plan, root, apply=False, gh_check=None, gh_runner=None):
@@ -328,7 +354,7 @@ def _run_tag(plan, root, apply=False, gh_check=None, gh_runner=None):
 
     순서는 **annotated 태그 → `git push origin <tag>` → `gh release create
     --verify-tag`** 다. `gh release create` 는 태그가 없을 때 API 로 lightweight
-    태그를 만들어 버리는데, 그러면 로컬의(노트를 담은) annotated 태그와 원격이
+    태그를 만들어 버리는데, 그러면 로컬의(요약을 담은) annotated 태그와 원격이
     어긋나 이후 `git push --tags` 가 non-fast-forward 로 막힌다. 태그를 먼저
     push 해 두고 `--verify-tag` 로 존재만 확인시키면 이 어긋남이 생기지 않는다.
 
@@ -338,14 +364,21 @@ def _run_tag(plan, root, apply=False, gh_check=None, gh_runner=None):
     (또는 push 단계)에서 실패했던 것 — 태그 재생성은 건너뛰고 push·릴리스만
     다시 시도한다.
 
-    공개 릴리스 노트 검사(구조 규칙 + `private/DENY.txt`)는 **dry-run 에서도**
-    돈다. dry-run 이 보여주는 "N개 태그 가능"은 사용자가 `--apply` 승인 근거로
-    보는 숫자다 — 여기서 걸릴 phase 를 숨기면 그 숫자가 거짓말이 된다(실측: dry-run
-    이 "N개" 라고 말하고 `--apply` 가 N−1개만 만드는 사고). 하나라도 걸리면
-    `--apply` 는 **아무것도 만들지 않고 전부 멈춘다** — `plan` 은 이름순이라, 걸린
-    phase 뒤로 판정을 미루면 그 앞의(멀쩡한) phase 들은 이미 태그·push·릴리스가
-    끝난 뒤에야 뒤쪽 phase 가 걸렸다는 걸 알게 된다. 한 번 공개되면 되돌릴 수 없는
-    작업이라 부분 실행보다 전체 거부가 안전하다.
+    **공개되는 텍스트는 `p["summary"]`(한 줄) 뿐이다** — `p["notes"]`(전체 본문,
+    ~4KB)는 그 요약이 나온 소스로 남을 뿐 태그 메시지에도 `gh release create
+    --notes` 에도 실리지 않는다. 게이트도 같은 것만 본다: `p["notes"]` 를 검사하면
+    아무도 안 볼 텍스트 때문에 phase 를 거부하거나(오탐), 반대로 실제로 나가는
+    한 줄은 검사하지 않고 지나칠 수 있다(누락) — 둘 다 "게이트가 실제 공개 표면과
+    어긋난" 상태다.
+
+    공개 텍스트 검사(구조 규칙 + `private/DENY.txt`, 요약에 적용)는 **dry-run
+    에서도** 돈다. dry-run 이 보여주는 "N개 태그 가능"은 사용자가 `--apply` 승인
+    근거로 보는 숫자다 — 여기서 걸릴 phase 를 숨기면 그 숫자가 거짓말이 된다(실측:
+    dry-run 이 "N개" 라고 말하고 `--apply` 가 N−1개만 만드는 사고). 하나라도
+    걸리면 `--apply` 는 **아무것도 만들지 않고 전부 멈춘다** — `plan` 은 이름순
+    이라, 걸린 phase 뒤로 판정을 미루면 그 앞의(멀쩡한) phase 들은 이미 태그·push·
+    릴리스가 끝난 뒤에야 뒤쪽 phase 가 걸렸다는 걸 알게 된다. 한 번 공개되면
+    되돌릴 수 없는 작업이라 부분 실행보다 전체 거부가 안전하다.
 
     `gh_check`/`gh_runner` 는 테스트 주입용 — 기본은 각각 `gh_available`, `_run`.
     git 호출은 로컬 전용(태그·push)이라 실제 `_run` 을 그대로 쓴다.
@@ -365,16 +398,18 @@ def _run_tag(plan, root, apply=False, gh_check=None, gh_runner=None):
     deny_corrupted = deny_terms is not None and not deny_terms
 
     # 구조 규칙(R1–R4)도 같은 함정이 있다 — `RULES` 가 빈 시퀀스면
-    # `_structural_hit_count` 는 모든 노트에 조용히 0 을 돌려준다. 그러면 "검사했더니
+    # `_structural_hit_count` 는 모든 텍스트에 조용히 0 을 돌려준다. 그러면 "검사했더니
     # 깨끗하다"와 "검사 자체가 비어 있었다"가 겉보기에 똑같아진다. `deny_corrupted`
     # 와 같은 취급 — 몇 개인지 항상 말하고, 0개면 하드 실패한다.
     structural_rules = _structural_rules()
-    structural_why = f"구조 규칙(R1–R4) 로드 — {len(structural_rules)}개로 릴리스 노트를 검사한다"
+    structural_why = f"구조 규칙(R1–R4) 로드 — {len(structural_rules)}개로 공개 요약을 검사한다"
     structural_corrupted = len(structural_rules) == 0
 
+    # 게이트는 `p["summary"]`(공개되는 한 줄)만 본다 — `p["notes"]`(전체 본문)는
+    # 더 이상 어디에도 실리지 않으므로 검사해도 실제 공개 표면과 무관하다.
     hits_by_tag = {}
     for p in taggable:
-        hits = _hygiene_hit_count(p["notes"], deny_terms)
+        hits = _hygiene_hit_count(p["summary"], deny_terms)
         if hits:
             hits_by_tag[p["tag"]] = hits
     clean_count = len(taggable) - len(hits_by_tag)
@@ -382,7 +417,7 @@ def _run_tag(plan, root, apply=False, gh_check=None, gh_runner=None):
     for p in plan:
         if p["sha"]:
             if p["tag"] in hits_by_tag:
-                print(f"{p['tag']}  {p['sha']}  ({p['phase']})  — 보류: 공개 노트 검사 적중 "
+                print(f"{p['tag']}  {p['sha']}  ({p['phase']})  — 보류: 공개 요약 검사 적중 "
                       f"{hits_by_tag[p['tag']]}건 (문자열은 출력하지 않는다)")
             else:
                 print(f"{p['tag']}  {p['sha']}  ({p['phase']})")
@@ -398,7 +433,7 @@ def _run_tag(plan, root, apply=False, gh_check=None, gh_runner=None):
               "검사를 신뢰할 수 없다(구조 규칙은 위 결과대로 별도로 적용된다)")
     held_back = len(skipped) + len(hits_by_tag)
     print(f"\n{len(plan)}개 Phase 중 {clean_count}개 태그 가능, {held_back}개 보류"
-          + (f" (그중 {len(hits_by_tag)}건은 공개 노트 검사 적중)" if hits_by_tag else ""))
+          + (f" (그중 {len(hits_by_tag)}건은 공개 요약 검사 적중)" if hits_by_tag else ""))
 
     if not apply:
         print("[dry-run] 아무것도 만들지 않았다 — 실행하려면 --apply")
@@ -415,7 +450,7 @@ def _run_tag(plan, root, apply=False, gh_check=None, gh_runner=None):
         return 1
 
     if hits_by_tag:
-        print(f"\n공개 노트 검사에 걸린 Phase가 {len(hits_by_tag)}개 있다 — "
+        print(f"\n공개 요약 검사에 걸린 Phase가 {len(hits_by_tag)}개 있다 — "
               f"{', '.join(sorted(hits_by_tag))}. 전부 고치기 전엔 아무것도 만들지 않는다 "
               "(한 번 공개되면 되돌릴 수 없어, 하나라도 걸리면 시작하지 않는다)")
         return 1
@@ -462,7 +497,11 @@ def _run_tag(plan, root, apply=False, gh_check=None, gh_runner=None):
             print(f"{tag}: 태그는 있지만 릴리스가 없다 — 이전 --apply 가 push·릴리스 "
                   "단계에서 실패했던 것으로 보인다. 태그를 다시 만들지 않고 복구를 시도한다")
         else:
-            message = f"{tag}\n\n{p['notes']}"
+            # 공개되는 건 요약 한 줄뿐이다 — `p["notes"]`(전체 본문)는 태그
+            # 메시지에 싣지 않는다. annotated 태그를 push 하면 이 메시지 그대로
+            # 공개되므로, "노트는 안 실린다"를 release create 보다 먼저 여기서
+            # 지켜야 한다.
+            message = f"{tag}\n\n{p['summary']}"
             code, _out, err = _run(
                 ["git", "-C", root, "tag", "-a", tag, full_sha, "-m", message])
             if code != 0:
@@ -492,7 +531,7 @@ def _run_tag(plan, root, apply=False, gh_check=None, gh_runner=None):
 
         code, _out, err = gh_runner(
             ["gh", "release", "create", tag, "--verify-tag",
-             "--title", tag, "--notes", p["notes"], "-R", repo_slug],
+             "--title", tag, "--notes", p["summary"], "-R", repo_slug],
             timeout=_GH_RELEASE_CREATE_TIMEOUT)
         if code != 0:
             print(f"{tag}: 태그·push 는 됐지만 릴리스 생성에 실패했다 — orphan 상태다. "
