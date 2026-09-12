@@ -19,6 +19,11 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+# `git push` 는 유일하게 네트워크로 나가는 git 호출이다 — 자격증명 프롬프트가 뜨면
+# 화면에 아무것도 안 보이는 채로 멈춘다. 무인(unattended) 실행에서 그건 "성공도
+# 실패도 아닌 채로 영원히 걸림" 이라 시간제한을 둔다.
+_PUSH_TIMEOUT = 30
+
 DONE_PHASE = re.compile(r"^##\s+(PHASE_\w+)\s+✅\s*DONE\s*\(([0-9-]+)\)\s*$", re.M)
 
 
@@ -120,8 +125,14 @@ def tag_plan(phases_body, log_lines):
     return plan
 
 
-def _run(argv):
-    done = subprocess.run(argv, capture_output=True, text=True)
+def _run(argv, env=None, timeout=None):
+    """`env`/`timeout` 은 기본 호출은 그대로 두고 필요한 곳(네트워크로 나가는 `git
+    push`)에만 적용하기 위한 것 — 나머지 로컬 전용 git 호출은 손대지 않는다.
+    """
+    try:
+        done = subprocess.run(argv, capture_output=True, text=True, env=env, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return 124, "", f"{timeout}초 동안 응답이 없어 중단했다"
     return done.returncode, done.stdout, done.stderr
 
 
@@ -176,15 +187,17 @@ def _tag_exists_locally(root, tag, runner=None):
     return code == 0 and out.strip() == tag
 
 
-def _resolve_full_sha(root, sha, runner=None):
-    """짧은 sha(`%h`)를 40자 전체 형태로 바꾼다.
+def _resolve_full_sha(root, ref, runner=None):
+    """짧은 sha(`%h`)든 태그 이름이든, 그게 가리키는 커밋을 40자 전체 형태로 돌려준다.
 
     **영구히 남는 것(태그 객체)에 쓰기 직전에만 부른다** — dry-run 출력과
     `boundary_candidates` 픽스처는 짧은 sha(`%h`)에 맞춰져 있으니 그쪽은 그대로
-    둔다. 애매한 짧은 sha 를 공개 태그에 그대로 박아 넣지 않기 위한 것이다.
+    둔다. 애매한 짧은 sha 를 공개 태그에 그대로 박아 넣지 않기 위한 것이고, 이미
+    있는 로컬 태그가 **계획과 같은 커밋을 가리키는지** 확인할 때도 같은 방식으로 쓴다
+    (이름만 같은 다른 커밋을 그대로 push 하면 안 된다).
     """
     runner = runner or _run
-    code, out, _err = runner(["git", "-C", root, "rev-parse", f"{sha}^{{commit}}"])
+    code, out, _err = runner(["git", "-C", root, "rev-parse", f"{ref}^{{commit}}"])
     if code != 0:
         return None
     return out.strip()
@@ -264,16 +277,27 @@ def _run_tag(plan, root, apply=False, gh_check=None, gh_runner=None):
             existed += 1
             continue
 
+        full_sha = _resolve_full_sha(root, sha)
+        if not full_sha:
+            print(f"{tag}: sha({sha}) 를 전체 형태로 확정하지 못해 건너뛴다")
+            failed += 1
+            continue
+
         if _tag_exists_locally(root, tag):
+            # 이름만 같은 다른 커밋을 가리킬 수 있다 — 그걸 그대로 push 하면 dry-run 이
+            # 보여준 sha 와 실제로 공개되는 커밋이 어긋난다. push 전에 반드시 맞춰본다.
+            existing_sha = _resolve_full_sha(root, tag)
+            if existing_sha != full_sha:
+                print(f"{tag}: 로컬에 이미 있는 태그가 계획과 **다른 커밋**을 가리킨다 — "
+                      f"push 하지 않는다. 계획: {full_sha}, 기존 태그: "
+                      f"{existing_sha or '확인 불가'}. 사람이 직접 태그를 확인해 정리해야 한다 "
+                      f"(`git tag -d {tag}` 로 지우고 재실행하거나 그대로 둘지 판단)")
+                failed += 1
+                continue
             recovered.append(tag)
             print(f"{tag}: 태그는 있지만 릴리스가 없다 — 이전 --apply 가 push·릴리스 "
                   "단계에서 실패했던 것으로 보인다. 태그를 다시 만들지 않고 복구를 시도한다")
         else:
-            full_sha = _resolve_full_sha(root, sha)
-            if not full_sha:
-                print(f"{tag}: sha({sha}) 를 전체 형태로 확정하지 못해 건너뛴다")
-                failed += 1
-                continue
             message = f"{tag}\n\n{p['notes']}"
             code, _out, err = _run(
                 ["git", "-C", root, "tag", "-a", tag, full_sha, "-m", message])
@@ -282,10 +306,23 @@ def _run_tag(plan, root, apply=False, gh_check=None, gh_runner=None):
                 failed += 1
                 continue
 
-        code, _out, err = _run(["git", "-C", root, "push", "origin", tag])
+        # 무인(unattended) 실행 중 자격증명 프롬프트가 뜨면 화면에 아무것도 안 보이는 채로
+        # 영원히 멈춘다 — 프롬프트를 끄고 시간제한을 둬서 "조용히 멈춤"을 막는다.
+        no_prompt_env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+        code, _out, err = _run(["git", "-C", root, "push", "origin", tag],
+                               env=no_prompt_env, timeout=_PUSH_TIMEOUT)
         if code != 0:
-            print(f"{tag}: 태그는 로컬에 있지만 push 에 실패했다 — orphan 상태다. "
-                  f"원인을 해결한 뒤 --apply 를 다시 실행하면 복구한다 ({err.strip()[:120]})")
+            if "[rejected]" in err and "already exists" in err:
+                # 원격에 이미 다른 커밋을 가리키는 같은 이름의 태그가 있다 — 재실행은
+                # 같은 거부를 반복할 뿐이다. 사람의 결정이 필요하다고 명시한다.
+                print(f"{tag}: push 가 거부됐다 — 원격에 이미 다른 커밋을 가리키는 태그가 "
+                      f"있다. **재실행으로는 못 고친다.** `git push --delete origin {tag}` "
+                      f"로 원격 태그를 지우거나 사람이 직접 정리해야 한다 "
+                      f"({err.strip()[:160]})")
+            else:
+                print(f"{tag}: 태그는 로컬에 있지만 push 에 실패했다 — orphan 상태다. "
+                      f"원인을 해결한 뒤 --apply 를 다시 실행하면 복구한다 "
+                      f"({err.strip()[:160]})")
             failed += 1
             continue
 

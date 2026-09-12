@@ -3,7 +3,9 @@ import importlib.util
 import io
 import os
 import subprocess
+import sys
 import tempfile
+import time
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -415,9 +417,9 @@ class RunTagApplySuccessTest(unittest.TestCase):
         calls = []
         real_run = gh._run
 
-        def spy(argv):
+        def spy(argv, **kwargs):
             calls.append(argv)
-            return real_run(argv)
+            return real_run(argv, **kwargs)
 
         gh._run = spy
         try:
@@ -488,6 +490,140 @@ class RunTagIdempotencyTest(unittest.TestCase):
         # 것 자체가 재생성을 시도하지 않았다는 증거다.
         self.assertEqual("phase/PMF50", _git(bare, "tag", "-l", "phase/PMF50").stdout.strip(),
                          "복구된 태그가 origin 에 push 되지 않았다")
+
+
+class RunTagShaMismatchTest(unittest.TestCase):
+    """2라운드 리뷰 — 복구 분기가 **이름만** 보고 push 해버리는 새 Important 결함.
+
+    `_tag_exists_locally` 는 이름만 본다. 로컬에 같은 이름의 태그가 '다른 커밋'을
+    가리키면 복구 분기가 그걸 그대로 push 해 버려서, dry-run 이 보여준 sha 와
+    실제로 공개되는 커밋이 어긋난다 — 그런데도 성공(exit 0)으로 보고된다."""
+
+    def test_a_locally_existing_tag_at_the_wrong_commit_is_not_pushed(self):
+        repo, bare = _repo_with_origin("feat: PMF50 완료 — 픽스처", "chore: 다른 커밋")
+        planned_sha = _sha(repo, "PMF50 완료")
+        wrong_sha = _sha(repo, "다른 커밋")
+        # 이름은 같지만 계획과 다른 커밋을 가리키는 태그가 로컬에 이미 있다.
+        _git(repo, "tag", "-a", "phase/PMF50", wrong_sha, "-m", "실수로 다른 커밋에")
+
+        plan = [_plan_entry("phase/PMF50", planned_sha)]
+
+        def gh_view_missing_only(argv):
+            if argv[:3] == ["gh", "release", "view"]:
+                return 1, "", "not found"
+            raise AssertionError(f"sha 가 어긋나는데 gh 를 불렀다: {argv}")
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_tag(plan, repo, apply=True,
+                               gh_check=lambda: (True, "ok"), gh_runner=gh_view_missing_only)
+        out = buf.getvalue()
+
+        self.assertEqual(1, code)
+        self.assertIn("다른 커밋", out)
+        full_planned = gh._resolve_full_sha(repo, planned_sha)
+        full_wrong = gh._resolve_full_sha(repo, wrong_sha)
+        self.assertIn(full_planned, out, "계획한(올바른) sha 를 메시지에 밝히지 않았다")
+        self.assertIn(full_wrong, out, "기존 태그가 실제로 가리키는 sha 를 밝히지 않았다")
+        # 가장 중요한 확인 — push 되지 않았다. origin(bare) 에 이 태그가 전혀 없어야 한다.
+        self.assertEqual("", _git(bare, "tag", "-l").stdout.strip(),
+                         "어긋난 태그를 그대로 push 해 버렸다")
+        # 로컬 태그도 우리가 건드리지 않았다 — 여전히(잘못된) wrong_sha 를 가리킨다.
+        self.assertEqual(full_wrong, gh._resolve_full_sha(repo, "phase/PMF50"))
+
+
+class RunTagPushRejectionTest(unittest.TestCase):
+    """Minor(스코프 포함) — non-fast-forward 거부를 '재실행하면 복구' 로 잘못 안내하면
+    안 된다. 재실행은 같은 거부를 반복할 뿐이다."""
+
+    def test_a_push_rejected_by_a_conflicting_remote_tag_says_rerun_wont_fix_it(self):
+        repo, bare = _repo_with_origin("feat: PMF50 완료 — 픽스처", "chore: 딴 데서 온 태그")
+        planned_sha = _sha(repo, "PMF50 완료")
+        decoy_sha = _sha(repo, "딴 데서 온 태그")
+
+        # 원격에 이미 '다른 커밋'을 가리키는 같은 이름의 태그가 있는 상태를 만든다 —
+        # 이 작업 레포는 그 사실을 (로컬 태그가 없으니) 전혀 모른다.
+        _git(repo, "tag", "-a", "phase/PMF50", decoy_sha, "-m", "딴 데서 만들어진 것")
+        _git(repo, "push", "-q", "origin", "phase/PMF50")
+        _git(repo, "tag", "-d", "phase/PMF50")  # 로컬에서는 지운다 — 원격에만 남는다
+        self.assertEqual("", _git(repo, "tag", "-l").stdout.strip())  # 픽스처 전제 확인
+
+        plan = [_plan_entry("phase/PMF50", planned_sha)]
+
+        def gh_view_missing_only(argv):
+            if argv[:3] == ["gh", "release", "view"]:
+                return 1, "", "not found"
+            raise AssertionError(f"push 가 거부됐는데 gh 를 더 불렀다: {argv}")
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_tag(plan, repo, apply=True,
+                               gh_check=lambda: (True, "ok"), gh_runner=gh_view_missing_only)
+        out = buf.getvalue()
+
+        self.assertEqual(1, code)
+        self.assertIn("재실행으로는 못 고친다", out)
+        self.assertIn("git push --delete", out)
+        self.assertNotIn("다시 실행하면 복구한다", out,
+                         "재실행으로 못 고치는데 재실행하라고 안내했다")
+        # 원격은 그대로다 — 여전히 decoy 를 가리킨다. 우리가 덮어쓰지 않았다.
+        self.assertEqual(gh._resolve_full_sha(repo, decoy_sha),
+                         gh._resolve_full_sha(bare, "phase/PMF50"))
+
+
+class PushSafetyTest(unittest.TestCase):
+    """Minor(스코프 포함) — 무인 실행 중 자격증명 프롬프트가 뜨면 화면에 아무것도 안
+    보이는 채로 영원히 멈춘다. `_run` 의 `env`/`timeout` 자체와, `_run_tag` 의 push 호출이
+    실제로 그걸 쓰는지 둘 다 확인한다."""
+
+    def test_run_passes_env_through_to_the_child_process(self):
+        code, out, _err = gh._run(
+            [sys.executable, "-c",
+             "import os, sys; sys.stdout.write(os.environ.get('GIT_TERMINAL_PROMPT', 'unset'))"],
+            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"})
+        self.assertEqual(0, code)
+        self.assertEqual("0", out)
+
+    def test_run_with_a_timeout_does_not_hang_and_reports_it(self):
+        start = time.monotonic()
+        code, _out, err = gh._run(
+            [sys.executable, "-c", "import time; time.sleep(5)"], timeout=1)
+        elapsed = time.monotonic() - start
+        self.assertEqual(124, code)
+        self.assertLess(elapsed, 4, "timeout 이 실제로는 걸리지 않고 5초를 기다렸다")
+        self.assertIn("초", err)
+
+    def test_the_push_call_disables_the_terminal_prompt_and_has_a_timeout(self):
+        """`_run_tag` 가 실제로 push 호출에 이 가드를 붙이는지 — 스파이로 가로챈다."""
+        repo, _bare = _repo_with_origin("feat: PMF50 완료 — 픽스처")
+        sha = _sha(repo, "PMF50 완료")
+        plan = [_plan_entry("phase/PMF50", sha)]
+
+        calls = []
+        real_run = gh._run
+
+        def spy(argv, **kwargs):
+            calls.append((argv, kwargs))
+            return real_run(argv, **kwargs)
+
+        gh._run = spy
+        try:
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                gh._run_tag(plan, repo, apply=True,
+                           gh_check=lambda: (True, "ok"),
+                           gh_runner=lambda argv: (
+                               (1, "", "not found") if argv[:3] == ["gh", "release", "view"]
+                               else (0, "", "")))
+        finally:
+            gh._run = real_run
+
+        push_calls = [(a, k) for a, k in calls if len(a) > 3 and a[3] == "push"]
+        self.assertEqual(1, len(push_calls), "push 호출을 못 찾음")
+        argv, kwargs = push_calls[0]
+        self.assertEqual("0", (kwargs.get("env") or {}).get("GIT_TERMINAL_PROMPT"),
+                         "GIT_TERMINAL_PROMPT=0 없이 push 했다")
+        self.assertEqual(gh._PUSH_TIMEOUT, kwargs.get("timeout"), "push 에 timeout 이 없다")
 
 
 class RunTagFailureBranchTest(unittest.TestCase):
