@@ -98,6 +98,11 @@ Two things this does **not** solve, both known:
     It is reported rather than enforced away.
   - An **unknown id** is reported but does *not* block. Waiting forever on something that
     does not exist is a silent stop; saying so is better than enforcing it.
+- **`share`** (optional, bool): promote this task to a GitHub issue. The board is the
+  record; GitHub is the public surface, and only what a person marks goes there. Absent
+  means not shared — the field is never written by tooling.
+- **`issue`** (optional, int): the issue number this task was promoted to. Present means
+  update, absent means create. Without it the same task becomes two issues.
 - **Concurrent edits**: atomicity alone is not enough. Two agents that each read, modify, and
   write will have the later one silently overwrite the earlier, and both may take the same
   `next_id` — that is how ids 409 and 410 ended up on two tasks each. Git makes it worse, not

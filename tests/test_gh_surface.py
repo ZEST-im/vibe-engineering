@@ -176,6 +176,32 @@ class TagPlanTest(unittest.TestCase):
         self.assertIn("1", reason)  # LOG 에서 PMF14 를 언급하는 약한 후보는 정확히 1건
 
 
+TASKS = [
+    {"id": "hgB99", "title": "A", "status": "done", "share": True, "issue": 12},
+    {"id": "hgB100", "title": "B", "status": "done", "share": True},
+    {"id": "hgB101", "title": "C", "status": "done"},
+    {"id": "hgB102", "title": "D", "status": "todo", "share": False},
+    # `share` 없이 `issue` 만 있는 경우 — updatable() 이 `issue` 존재만 보고
+    # `share` 를 안 봐도 통과할 수 있는 픽스처였다면 그 결함을 못 잡는다.
+    {"id": "hgB103", "title": "E", "status": "done", "issue": 7},
+]
+
+
+class PromotionSelectionTest(unittest.TestCase):
+    """전량 미러가 아니다 — 사람이 고른 것만 올라간다."""
+
+    def test_only_flagged_tasks_are_promotable(self):
+        self.assertEqual(["hgB100"], [t["id"] for t in gh.promotable(TASKS)])
+
+    def test_a_task_with_an_issue_is_updated_not_recreated(self):
+        """번호가 있는데 또 만들면 같은 태스크가 이슈 둘이 된다."""
+        self.assertEqual(["hgB99"], [t["id"] for t in gh.updatable(TASKS)])
+
+    def test_absent_field_means_not_shared(self):
+        """`depends_on` 과 같은 형태 — 없으면 없는 것이다."""
+        self.assertNotIn("hgB101", [t["id"] for t in gh.promotable(TASKS)])
+
+
 # ── 여기부터 CLI 층 — 실제 git 레포가 있어야 뜻이 있는 것만 임시 레포로 검사한다.
 # `gh` 는 절대 실제로 부르지 않는다: gate 를 통과하지 못하게 하거나(주입한
 # `gh_check`), 호출을 가로채는 fake `gh_runner` 를 준다. `git push` 는 로컬

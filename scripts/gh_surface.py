@@ -125,6 +125,16 @@ def tag_plan(phases_body, log_lines):
     return plan
 
 
+def promotable(tasks):
+    """올릴 것. **`share` 가 참이고 이슈 번호가 없는 것만.**"""
+    return [t for t in tasks or [] if t.get("share") and not t.get("issue")]
+
+
+def updatable(tasks):
+    """이미 올라간 것. 번호가 있으면 **갱신이지 생성이 아니다.**"""
+    return [t for t in tasks or [] if t.get("share") and t.get("issue")]
+
+
 def _run(argv, env=None, timeout=None):
     """`env`/`timeout` 은 기본 호출은 그대로 두고 필요한 곳(네트워크로 나가는 `git
     push`)에만 적용하기 위한 것 — 나머지 로컬 전용 git 호출은 손대지 않는다.
