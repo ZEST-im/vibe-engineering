@@ -46,6 +46,12 @@ def readme():
         return fh.read()
 
 
+def setup_reference_doc():
+    path = os.path.join(ROOT, "skills", "vibe-harness", "references", "setup.md")
+    with open(path, encoding="utf-8") as fh:
+        return fh.read()
+
+
 def section(title, text=None):
     """`## title` 부터 다음 같은 깊이 제목까지. 절 안에서만 확인해야 하는 주장이 있다.
 
@@ -149,6 +155,45 @@ class InstalledFilesAreDisclosedTest(unittest.TestCase):
         label = self.setup.PLIST_NAME[:-len(".plist")]
         self.assertIn(label, self.text,
                       "자동시작 에이전트 라벨(%s)이 README 에 없다" % label)
+
+
+class SetupReferenceDocMatchesRealityTest(unittest.TestCase):
+    """`skills/vibe-harness/references/setup.md` 는 README 의 무방비 쌍둥이다.
+
+    아무 테스트도 이 파일을 코드와 대조하지 않았다 — `test_check_entrypoint.py` 는 이
+    파일이 `scripts/check.py` 를 언급하는지만 본다. 그래서 README 를 고친 PMF14 이후에도
+    여기는 그대로 남았다:
+
+    > 1. Copy `server.py`, `kanban.html`, `SKILL.md`, `gh_surface.py` to ...   (11개 중 4개)
+    > 3. Register **a code review hook** in `~/.claude/settings.json`         (실제로는 5개)
+
+    README 와 같은 이유로 이름을 대조한다 — 숫자만 세면 훅이 늘 때 문서가 숫자만 고치고
+    목록은 그대로 둘 수 있다. 정본은 여기서도 `setup.py` 다.
+    """
+
+    def setUp(self):
+        self.setup = load_setup()
+        self.text = setup_reference_doc()
+
+    def test_every_runtime_file_is_documented(self):
+        missing = [f for f in self.setup.SKILL_RUNTIME_FILES if f not in self.text]
+        self.assertEqual(
+            [], missing,
+            "설치되는데 setup.md 가 말하지 않는 런타임 파일: " + ", ".join(missing))
+
+    def test_hook_count_claim_matches_reality(self):
+        """'a code review hook' 이 이 검사의 계기다 — 정본은 `setup.py` 의 HOOKS 목록."""
+        spelled = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five",
+                   6: "six", 7: "seven", 8: "eight"}
+        actual = len(self.setup.HOOKS)
+        claim = re.search(r"[Rr]egisters?\s+(\w+)\s+hooks?\b", self.text)
+        self.assertIsNotNone(
+            claim,
+            "setup.md 가 훅을 몇 개 등록하는지 말하지 않는다 (실제 %d개)" % actual)
+        self.assertEqual(
+            spelled.get(actual, str(actual)), claim.group(1).lower(),
+            "setup.md 는 훅을 '%s' 개라고 하는데 실제로는 %d 개다"
+            % (claim.group(1), actual))
 
 
 class UninstallIsHonestTest(unittest.TestCase):
