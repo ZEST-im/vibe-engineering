@@ -195,6 +195,24 @@ class SetupReferenceDocMatchesRealityTest(unittest.TestCase):
             "setup.md 는 훅을 '%s' 개라고 하는데 실제로는 %d 개다"
             % (claim.group(1), actual))
 
+    def test_helper_count_claim_matches_reality(self):
+        """'두 helper scripts' 도 정본에서 다시 센다 — 훅 개수를 고친 바로 그 문장 안의
+
+        절이다. `HOOK_HELPERS` 가 세 번째 스크립트를 얻으면, 이 문장은 아무 것도
+        깨지 않은 채 조용히 낡는다 — 이 검사가 없으면.
+        """
+        spelled = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five",
+                   6: "six", 7: "seven", 8: "eight"}
+        actual = len(self.setup.HOOK_HELPERS)
+        claim = re.search(r"[Cc]opy\s+(\w+)\s+helper\s+scripts?\b", self.text)
+        self.assertIsNotNone(
+            claim,
+            "setup.md 가 헬퍼 스크립트를 몇 개 복사하는지 말하지 않는다 (실제 %d개)" % actual)
+        self.assertEqual(
+            spelled.get(actual, str(actual)), claim.group(1).lower(),
+            "setup.md 는 헬퍼 스크립트를 '%s' 개라고 하는데 실제로는 %d 개다"
+            % (claim.group(1), actual))
+
 
 class UninstallIsHonestTest(unittest.TestCase):
     """제거가 무엇을 남기는지 말하는가.
