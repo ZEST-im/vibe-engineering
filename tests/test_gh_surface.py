@@ -914,3 +914,222 @@ class ReleaseNotesDenyGateTest(unittest.TestCase):
 
         self.assertEqual(0, code)
         self.assertIn("private/DENY.txt 없음", out)
+
+
+class DryRunShowsHygieneRefusalsTest(unittest.TestCase):
+    """Important 1 — dry-run 이 보여주는 'N개 태그 가능' 은 --apply 승인 근거다.
+    걸릴 phase 를 숨기면 그 숫자가 거짓말이 된다. 게이트는 apply 여부와 무관하게
+    돈다 — 실제 private/DENY.txt 는 절대 쓰지 않는다."""
+
+    FIXTURE_TERM = "ZQX-FIXTURE-INTERNAL-CODE"
+
+    def test_dry_run_marks_a_dirty_phase_and_corrects_the_taggable_count(self):
+        repo, _bare = _repo_with_origin("feat: PMF50 완료 — 픽스처")
+        os.makedirs(os.path.join(repo, "private"))
+        with open(os.path.join(repo, "private", "DENY.txt"), "w", encoding="utf-8") as fh:
+            fh.write(self.FIXTURE_TERM + "\n")
+        sha = _sha(repo, "PMF50 완료")
+        plan = [_plan_entry("phase/PMF50", sha, notes=f"{self.FIXTURE_TERM} 섞임")]
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_tag(plan, repo, apply=False)
+        out = buf.getvalue()
+
+        self.assertEqual(0, code, "dry-run 은 항상 0 이어야 한다 — 아무것도 안 만든다")
+        self.assertIn("[dry-run]", out)
+        self.assertIn("phase/PMF50", out)
+        self.assertIn("1건", out)
+        self.assertIn("1개 Phase 중 0개 태그 가능, 1개 보류", out,
+                      "금칙 검사 적중을 '태그 가능' 수에서 빼지 않았다 — dry-run 이 과장 보고한다")
+        self.assertNotIn(self.FIXTURE_TERM, out, "금칙 문자열 자체가 dry-run 출력에 찍혔다")
+        self.assertEqual("", _git(repo, "tag", "-l").stdout.strip(), "dry-run 인데 태그가 생겼다")
+
+    def test_a_clean_phase_still_counts_normally_next_to_a_dirty_one(self):
+        """적중 여부와 무관하게 각 phase 는 여전히 목록에 나온다 — 사라지면 안 된다."""
+        repo, _bare = _repo_with_origin(
+            "feat: PMF49 완료 — 픽스처", "feat: PMF50 완료 — 픽스처")
+        os.makedirs(os.path.join(repo, "private"))
+        with open(os.path.join(repo, "private", "DENY.txt"), "w", encoding="utf-8") as fh:
+            fh.write(self.FIXTURE_TERM + "\n")
+        sha49 = _sha(repo, "PMF49 완료")
+        sha50 = _sha(repo, "PMF50 완료")
+        plan = [
+            {"phase": "PHASE_PMF49", "tag": "phase/PMF49", "sha": sha49,
+             "notes": "깨끗한 노트", "skipped_reason": None},
+            {"phase": "PHASE_PMF50", "tag": "phase/PMF50", "sha": sha50,
+             "notes": f"{self.FIXTURE_TERM} 포함", "skipped_reason": None},
+        ]
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_tag(plan, repo, apply=False)
+        out = buf.getvalue()
+
+        self.assertEqual(0, code)
+        self.assertIn("phase/PMF49  ", out)
+        self.assertIn("phase/PMF50  ", out)
+        self.assertIn("2개 Phase 중 1개 태그 가능, 1개 보류", out)
+
+
+class WholePlanHygienePreflightTest(unittest.TestCase):
+    """Important 1 — 한 phase 라도 걸리면 **아무것도 시작하지 않는다.** plan 에서
+    깨끗한 phase 가 걸린 phase 보다 앞에 있어도(이름순이면 흔하다) 그것마저 만들면
+    안 된다 — 부분 공개보다 전체 거부가 안전하다."""
+
+    FIXTURE_TERM = "ZQX-FIXTURE-INTERNAL-CODE"
+
+    def test_a_dirty_phase_blocks_creation_for_a_clean_phase_listed_before_it(self):
+        repo, bare = _repo_with_origin(
+            "feat: PMF49 완료 — 픽스처", "feat: PMF50 완료 — 픽스처")
+        os.makedirs(os.path.join(repo, "private"))
+        with open(os.path.join(repo, "private", "DENY.txt"), "w", encoding="utf-8") as fh:
+            fh.write(self.FIXTURE_TERM + "\n")
+        sha49 = _sha(repo, "PMF49 완료")
+        sha50 = _sha(repo, "PMF50 완료")
+        # PMF49 는 깨끗하고 목록의 **앞**에 있다 — 예전 방식(phase 별 루프 안에서
+        # 그때그때 거부)이라면 PMF50 에 도달하기 전에 이미 태그·push 됐을 것이다.
+        plan = [
+            {"phase": "PHASE_PMF49", "tag": "phase/PMF49", "sha": sha49,
+             "notes": "완전히 깨끗한 노트", "skipped_reason": None},
+            {"phase": "PHASE_PMF50", "tag": "phase/PMF50", "sha": sha50,
+             "notes": f"{self.FIXTURE_TERM} 포함", "skipped_reason": None},
+        ]
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_tag(plan, repo, apply=True,
+                               gh_check=lambda: (True, "ok"),
+                               gh_runner=_poison("전체 사전 검사를 통과 못 했는데 gh 를 불렀다"))
+
+        self.assertEqual(1, code)
+        self.assertEqual("", _git(repo, "tag", "-l").stdout.strip(),
+                         "깨끗한 phase(PMF49)까지 태그가 생겼다 — 부분 실행됐다")
+        self.assertEqual("", _git(bare, "tag", "-l").stdout.strip())
+
+
+class StructuralRulesReusedTest(unittest.TestCase):
+    """Important 2 — R1–R4 는 `private/DENY.txt` 가 없어도 항상 돈다. 이 레포가 겪은
+    실제 사고 두 건 모두 이 층만으로 잡혔다(구조 규칙 파일의 기록) — 그 층을 그대로
+    불러 쓴다(사본 없음)."""
+
+    def test_a_structural_violation_blocks_even_without_a_deny_file(self):
+        repo, bare = _repo_with_origin("feat: PMF50 완료 — 픽스처")
+        # private/ 자체가 없다 — DENY.txt 는 절대 없다.
+        sha = _sha(repo, "PMF50 완료")
+        # R3(17~20자리 숫자)와 같은 모양의 완전히 지어낸 자리수 — 실제 uid 아님.
+        notes = "테스트용 가짜 uid 12345678901234567 로 발급"  # public-ok
+        plan = [_plan_entry("phase/PMF50", sha, notes=notes)]
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_tag(plan, repo, apply=True,
+                               gh_check=lambda: (True, "ok"),
+                               gh_runner=_poison("구조 규칙 적중인데 gh 를 불렀다"))
+        out = buf.getvalue()
+
+        self.assertEqual(1, code)
+        self.assertIn("phase/PMF50", out)
+        self.assertNotIn("12345678901234567", out, "구조 규칙 적중 문자열이 그대로 찍혔다")  # public-ok
+        self.assertEqual("", _git(repo, "tag", "-l").stdout.strip())
+        self.assertEqual("", _git(bare, "tag", "-l").stdout.strip())
+
+    def test_clean_notes_are_unaffected_by_the_structural_layer(self):
+        repo, bare = _repo_with_origin("feat: PMF50 완료 — 픽스처")
+        sha = _sha(repo, "PMF50 완료")
+        plan = [_plan_entry("phase/PMF50", sha, notes="완전히 평범한 공개 노트")]
+
+        def fake_gh(argv, **kwargs):
+            if argv[:3] == ["gh", "release", "view"]:
+                return 1, "", "not found"
+            return 0, "", ""
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_tag(plan, repo, apply=True,
+                               gh_check=lambda: (True, "ok"), gh_runner=fake_gh)
+
+        self.assertEqual(0, code)
+        self.assertEqual("phase/PMF50", _git(bare, "tag", "-l", "phase/PMF50").stdout.strip())
+
+
+class StructuralHitCountUnitTest(unittest.TestCase):
+    """`_structural_hit_count`/`_structural_rules` 자체 — 사본이 아니라 실제
+    `tests/test_public_hygiene.py` 의 RULES 를 가져오는지도 함께 본다."""
+
+    def test_reuses_the_same_rules_object_as_the_hygiene_test_file(self):
+        path = os.path.join(gh.ROOT, "tests", "test_public_hygiene.py")
+        spec = importlib.util.spec_from_file_location("_direct_hygiene_check", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        self.assertEqual(list(mod.RULES), list(gh._structural_rules()),
+                         "규칙 사본이 원본과 어긋났다 — 두 벌을 두면 반드시 벌어진다")
+
+    def test_a_clean_note_has_zero_structural_hits(self):
+        self.assertEqual(0, gh._structural_hit_count("완전히 평범한 문장"))
+
+    def test_an_r1_shaped_number_counts_as_a_hit(self):
+        self.assertEqual(1, gh._structural_hit_count("합계 1,234,567,890 토큰"))  # public-ok
+
+    def test_empty_notes_have_zero_hits(self):
+        self.assertEqual(0, gh._structural_hit_count(""))
+        self.assertEqual(0, gh._structural_hit_count(None))
+
+
+class EmptyDenyFileIsNotSilentTest(unittest.TestCase):
+    """Minor 4 — 파일은 있는데 항목이 0개면(잘렸거나 손상됐을 수 있다) 조용히
+    '검사했더니 깨끗했다'로 통과시키면 안 된다. `tests/test_public_hygiene.py` 의
+    `ExactDenyListTest` 도 이 경우를 하드 실패로 다룬다 — 여기서도 같게 다룬다."""
+
+    def _repo_with_empty_deny(self):
+        repo, bare = _repo_with_origin("feat: PMF50 완료 — 픽스처")
+        os.makedirs(os.path.join(repo, "private"))
+        open(os.path.join(repo, "private", "DENY.txt"), "w", encoding="utf-8").close()
+        return repo, bare
+
+    def test_apply_refuses_when_the_deny_file_is_present_but_empty(self):
+        repo, bare = self._repo_with_empty_deny()
+        sha = _sha(repo, "PMF50 완료")
+        plan = [_plan_entry("phase/PMF50", sha, notes="완전히 깨끗한 노트")]
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_tag(plan, repo, apply=True,
+                               gh_check=lambda: (True, "ok"),
+                               gh_runner=_poison("DENY.txt 가 비어 있는데 gh 를 불렀다"))
+
+        self.assertEqual(1, code, "DENY.txt 가 비어 있는데 성공으로 끝났다 — 조용히 통과시켰다")
+        self.assertEqual("", _git(repo, "tag", "-l").stdout.strip())
+        self.assertEqual("", _git(bare, "tag", "-l").stdout.strip())
+
+    def test_dry_run_still_shows_the_plan_when_the_deny_file_is_empty(self):
+        """Important 1 과 같은 원칙 — 신뢰 못 하는 상태라도 dry-run 은 숨기지 않는다."""
+        repo, _bare = self._repo_with_empty_deny()
+        sha = _sha(repo, "PMF50 완료")
+        plan = [_plan_entry("phase/PMF50", sha, notes="완전히 깨끗한 노트")]
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_tag(plan, repo, apply=False)
+        out = buf.getvalue()
+
+        self.assertEqual(0, code)
+        self.assertIn("phase/PMF50", out)
+        self.assertIn("[dry-run]", out)
+
+    def test_a_present_deny_file_with_only_comments_is_also_treated_as_empty(self):
+        """주석만 있는 파일은 `terms == []` 로 이어진다 — 같은 취급을 받아야 한다."""
+        repo, _bare = _repo_with_origin("feat: PMF50 완료 — 픽스처")
+        os.makedirs(os.path.join(repo, "private"))
+        with open(os.path.join(repo, "private", "DENY.txt"), "w", encoding="utf-8") as fh:
+            fh.write("# 이 줄만 있다\n")
+        sha = _sha(repo, "PMF50 완료")
+        plan = [_plan_entry("phase/PMF50", sha, notes="완전히 깨끗한 노트")]
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_tag(plan, repo, apply=True,
+                               gh_check=lambda: (True, "ok"),
+                               gh_runner=_poison("주석뿐인 DENY.txt 인데 gh 를 불렀다"))
+
+        self.assertEqual(1, code)

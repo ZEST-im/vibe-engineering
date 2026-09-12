@@ -12,6 +12,7 @@
 이슈·릴리스·프로젝트는 **만들면 남는다.** `--apply` 가 없으면 무엇을 할지 출력만 한다.
 """
 import argparse
+import importlib.util
 import os
 import re
 import subprocess
@@ -252,7 +253,8 @@ def _load_deny_terms(root):
     건너뛰지 않는다** — `tests/test_public_hygiene.py` 의 `ExactDenyListTest` 와
     같은 태도다: 없으면 이유를 말하고 건너뛴다("못 본 것"과 "깨끗한 것"은 다르다).
     `None` 은 "파일이 없어 검사 안 함", `[]` 는 "파일은 있지만 항목이 비어 있음"으로
-    서로 구분한다.
+    서로 구분한다 — **호출부가 이 둘을 다르게 다뤄야** 뜻이 있다(`_run_tag` 의
+    `deny_corrupted` 참고).
     """
     path = os.path.join(root, "private", "DENY.txt")
     if not os.path.exists(path):
@@ -275,6 +277,50 @@ def _deny_hit_count(notes, terms):
     return sum(1 for t in terms if t in notes)
 
 
+_STRUCTURAL_RULES = None
+
+
+def _structural_rules():
+    """`tests/test_public_hygiene.py` 의 R1–R4 를 그대로 불러 쓴다 — **사본을 새로
+    만들지 않는다.** 두 벌을 두면 반드시 어긋난다: 이 레포가 이미 두 번 겪은 실패이고,
+    그 파일 자신이 그 이유로 금칙어 목록을 자기 안에 두지 않는다고 적어 두었다.
+
+    `ROOT`(이 스크립트가 실제로 있는 레포)에서 읽는다 — `_run_tag` 의 `root` 인자
+    (태깅 **대상** 레포, 테스트에서는 임시 디렉터리)가 아니다. 이 규칙들은 도구
+    자신의 코드지 태깅 대상의 데이터가 아니라서, 대상이 무엇이든 항상 같은 곳에서
+    읽는다.
+    """
+    global _STRUCTURAL_RULES
+    if _STRUCTURAL_RULES is None:
+        path = os.path.join(ROOT, "tests", "test_public_hygiene.py")
+        spec = importlib.util.spec_from_file_location("_gh_surface_hygiene_rules", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _STRUCTURAL_RULES = mod.RULES
+    return _STRUCTURAL_RULES
+
+
+def _structural_hit_count(notes):
+    """R1–R4(값이 아니라 모양) 를 릴리스 노트에도 적용한다 — `private/DENY.txt`
+    유무와 무관하게 **항상** 돈다. 실제 사고 두 건 모두 이 규칙만으로 잡혔다
+    (`tests/test_public_hygiene.py` 의 기록) — `DENY.txt` 가 없는 머신(CI 포함)
+    에서도 이 층은 살아 있어야 `--apply` 가 "아무 내용 검사도 안 하고 공개"하는
+    구멍이 남지 않는다.
+    """
+    if not notes:
+        return 0
+    lines = notes.splitlines()
+    return sum(1 for _name, pattern, _why in _structural_rules()
+               for line in lines if pattern.search(line))
+
+
+def _hygiene_hit_count(notes, deny_terms):
+    """공개 릴리스 노트 검사 총합 — 구조 규칙(항상) + 정확 금칙어(파일 있을 때만).
+    문자열 자체는 어느 쪽도 돌려주지 않는다. 세는 것과 드러내는 것은 다르다.
+    """
+    return _structural_hit_count(notes) + _deny_hit_count(notes, deny_terms)
+
+
 def _run_tag(plan, root, apply=False, gh_check=None, gh_runner=None):
     """계획을 출력하고, `apply` 일 때만 실제로 태그·push·릴리스를 만든다.
 
@@ -290,6 +336,15 @@ def _run_tag(plan, root, apply=False, gh_check=None, gh_runner=None):
     (또는 push 단계)에서 실패했던 것 — 태그 재생성은 건너뛰고 push·릴리스만
     다시 시도한다.
 
+    공개 릴리스 노트 검사(구조 규칙 + `private/DENY.txt`)는 **dry-run 에서도**
+    돈다. dry-run 이 보여주는 "N개 태그 가능"은 사용자가 `--apply` 승인 근거로
+    보는 숫자다 — 여기서 걸릴 phase 를 숨기면 그 숫자가 거짓말이 된다(실측: dry-run
+    이 "N개" 라고 말하고 `--apply` 가 N−1개만 만드는 사고). 하나라도 걸리면
+    `--apply` 는 **아무것도 만들지 않고 전부 멈춘다** — `plan` 은 이름순이라, 걸린
+    phase 뒤로 판정을 미루면 그 앞의(멀쩡한) phase 들은 이미 태그·push·릴리스가
+    끝난 뒤에야 뒤쪽 phase 가 걸렸다는 걸 알게 된다. 한 번 공개되면 되돌릴 수 없는
+    작업이라 부분 실행보다 전체 거부가 안전하다.
+
     `gh_check`/`gh_runner` 는 테스트 주입용 — 기본은 각각 `gh_available`, `_run`.
     git 호출은 로컬 전용(태그·push)이라 실제 `_run` 을 그대로 쓴다.
     """
@@ -299,16 +354,52 @@ def _run_tag(plan, root, apply=False, gh_check=None, gh_runner=None):
     taggable = [p for p in plan if p["sha"]]
     skipped = [p for p in plan if not p["sha"]]
 
+    # dry-run 에서도 봐야 하므로 `if not apply` 보다 앞에 있다.
+    deny_terms, deny_why = _load_deny_terms(root)
+    # 파일은 있는데 항목이 없다 — 잘렸거나 손상됐을 수 있다. `None`(파일 없음)과는
+    # 다르게 다룬다: `tests/test_public_hygiene.py` 의 `ExactDenyListTest` 도 이
+    # 경우를 스킵이 아니라 **하드 실패**로 다룬다. "검사했는데 깨끗하다"와 "검사
+    # 자체가 비어 있었다"를 같은 것으로 두면 안 된다.
+    deny_corrupted = deny_terms is not None and not deny_terms
+
+    hits_by_tag = {}
+    for p in taggable:
+        hits = _hygiene_hit_count(p["notes"], deny_terms)
+        if hits:
+            hits_by_tag[p["tag"]] = hits
+    clean_count = len(taggable) - len(hits_by_tag)
+
     for p in plan:
         if p["sha"]:
-            print(f"{p['tag']}  {p['sha']}  ({p['phase']})")
+            if p["tag"] in hits_by_tag:
+                print(f"{p['tag']}  {p['sha']}  ({p['phase']})  — 보류: 공개 노트 검사 적중 "
+                      f"{hits_by_tag[p['tag']]}건 (문자열은 출력하지 않는다)")
+            else:
+                print(f"{p['tag']}  {p['sha']}  ({p['phase']})")
         else:
             print(f"{p['phase']}: 보류 — {p['skipped_reason']}")
-    print(f"\n{len(plan)}개 Phase 중 {len(taggable)}개 태그 가능, {len(skipped)}개 보류")
+    print(f"\n{deny_why}")
+    if deny_corrupted:
+        print("  ⚠ 파일은 있지만 항목이 0개다 — 잘렸거나 손상됐을 수 있어 정확 문자열 "
+              "검사를 신뢰할 수 없다(구조 규칙은 그대로 적용된다)")
+    held_back = len(skipped) + len(hits_by_tag)
+    print(f"\n{len(plan)}개 Phase 중 {clean_count}개 태그 가능, {held_back}개 보류"
+          + (f" (그중 {len(hits_by_tag)}건은 공개 노트 검사 적중)" if hits_by_tag else ""))
 
     if not apply:
         print("[dry-run] 아무것도 만들지 않았다 — 실행하려면 --apply")
         return 0
+
+    if deny_corrupted:
+        print("\nprivate/DENY.txt 가 있지만 비어 있다 — 파일을 확인하기 전엔 아무것도 "
+              "만들지 않는다")
+        return 1
+
+    if hits_by_tag:
+        print(f"\n공개 노트 검사에 걸린 Phase가 {len(hits_by_tag)}개 있다 — "
+              f"{', '.join(sorted(hits_by_tag))}. 전부 고치기 전엔 아무것도 만들지 않는다 "
+              "(한 번 공개되면 되돌릴 수 없어, 하나라도 걸리면 시작하지 않는다)")
+        return 1
 
     ok, why = gh_check()
     if not ok:
@@ -321,27 +412,10 @@ def _run_tag(plan, root, apply=False, gh_check=None, gh_runner=None):
               "아무것도 만들지 않고 멈춘다")
         return 1
 
-    # 공개 릴리스 노트는 검사되지 않은 공개 표면이다 — `private/PHASES.md` 에서
-    # 파생되는데 그 파일은 gitignore 대상이라 `tests/test_public_hygiene.py` 의
-    # 추적 파일 검사가 닿지 못한다. `--apply` 가 뭔가를 만들기 **직전**에 여기서
-    # 막는다 — dry-run(위)은 이 검사를 타지 않으므로 무엇을 태깅할지 보여주는 데는
-    # 영향이 없다.
-    deny_terms, deny_why = _load_deny_terms(root)
-    print(f"\n{deny_why}")
-
     created = existed = failed = 0
     recovered = []  # 이전 실행이 태그만 만들고 릴리스에서 실패해, 이번에 복구를 시도한 것들
     for p in taggable:
         tag, sha = p["tag"], p["sha"]
-
-        hits = _deny_hit_count(p["notes"], deny_terms)
-        if hits:
-            # 적중한 문자열 자체는 절대 찍지 않는다 — 몇 건인지만 말한다.
-            print(f"{tag}: 보류 — 릴리스 노트에 private/DENY.txt 금칙 문자열 {hits}건 검출. "
-                  "태그·push·릴리스 중 아무것도 만들지 않는다. 노트에서 해당 내용을 지운 뒤 "
-                  "다시 --apply 하면 이 Phase 부터 다시 시도한다")
-            failed += 1
-            continue
 
         if _release_exists(tag, repo_slug, gh_runner):
             print(f"{tag}: 이미 있다 — 건너뛴다")

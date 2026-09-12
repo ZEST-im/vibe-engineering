@@ -21,9 +21,10 @@ _spec = importlib.util.spec_from_file_location(
 gh_surface = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(gh_surface)
 
-# `gh_surface.gh_available` 의 기본 경로(`runner=None`)는 `_run(argv, timeout=None)` 로
-# 끝난다 — 무제한 대기다. `gh_available` 은 러너를 받으므로, `scripts/gh_surface.py` 는
-# 건드리지 않고 여기서만 모든 호출에 시간제한을 강제한다.
+# `gh_surface.gh_available` 의 기본 경로(`runner=None`)는 이제 `_GH_AUTH_TIMEOUT`(15초)을
+# 물고 `_run` 을 부른다 — 더 이상 무제한 대기가 아니다. 이 파일은 그와 별개로 **주입한
+# 러너**에도 항상 시간제한을 강제해서, 운영 경로의 값이 바뀌더라도 이 테스트 파일
+# 자체의 시간 상한은 여기서 명시적으로 통제한다.
 _GH_AVAILABLE_TIMEOUT = 20
 
 
@@ -115,10 +116,11 @@ class LiveRepoStateTest(unittest.TestCase):
 class AvailabilityGateTimeoutTest(unittest.TestCase):
     """`gh_available` 에 넘기는 러너가 실제로 시간제한을 무는지 확인한다.
 
-    `gh_surface.gh_available` 의 기본 경로는 `runner(["gh", "auth", "status"])` 를
-    `timeout` 없이 부른다 — gh 가 설치돼 있는데 네트워크만 멈추면 무한 대기다.
-    이 파일은 항상 `_bounded_availability_runner` 를 넘기므로, 그게 실제로 시간
-    제한을 붙이는지와, 정말 멈춘 호출을 끊어내는지를 직접 확인한다.
+    `gh_surface.gh_available` 의 기본 경로(`runner=None`)는 이제 `_GH_AUTH_TIMEOUT`
+    (15초)을 물고 `_run` 을 부른다 — 더 이상 무제한 대기가 아니다. 이 파일은 항상
+    `_bounded_availability_runner` 를 넘기므로, **주입한 러너**에도 실제로 시간
+    제한이 붙는지와, 정말 멈춘 호출을 끊어내는지를 직접 확인한다(운영 경로의 기본값과
+    별개로, 이 테스트 파일 자체의 시간 상한을 스스로 통제하기 위함이다).
     """
 
     def test_gh_available_calls_the_runner_with_a_timeout(self):

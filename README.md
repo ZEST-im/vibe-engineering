@@ -179,9 +179,10 @@ python3 ~/.claude/skills/vibe-harness/server.py register my_project "My Project"
 
     git -C <your clone> describe --tags --always
 
-Tags are `phase/PMFxx` — one per completed phase. Release notes are that phase's own
-record: what closed, and how many tests it ended with. Phases before the tagging
-convention have no tag.
+Tags are `phase/PMFxx`. Not every completed phase has one — a phase is tagged only
+when a single commit clearly closes it, so some completed phases, and everything
+before the tagging convention existed, have no tag. Where a tag exists, its release
+notes are that phase's own record: what closed, and how many tests it ended with.
 
 ---
 
