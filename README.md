@@ -136,8 +136,8 @@ Four steps, in this order:
 
 1. **Copies the runtime** → `~/.claude/skills/vibe-harness/` — `server.py`,
    `vibe_runtime.py`, `worker.py`, `kanban.html`, `reconcile_runs.py`, `kanban_edit.py`,
-   `search.py`, `review_sync.py`, `enroll.py`, `setup.py` — plus four skill directories
-   under `~/.claude/skills/`: `vibe-harness`, `vibe-planning`, `vibe-design`, `vibe-review`.
+   `search.py`, `review_sync.py`, `enroll.py`, `gh_surface.py`, `setup.py` — plus four skill
+   directories under `~/.claude/skills/`: `vibe-harness`, `vibe-planning`, `vibe-design`, `vibe-review`.
 2. **Migrates the old project registry**, if you are upgrading from a prior version.
 3. **Installs an auto-start agent** — a macOS LaunchAgent labelled
    `com.vibe-harness.server`, so the server comes up on login at port 4242.

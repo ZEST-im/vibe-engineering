@@ -302,6 +302,7 @@ SKILL_CODE_FILES = (
     ("scripts/search.py", "search.py"),
     ("scripts/review_sync.py", "review_sync.py"),
     ("scripts/enroll.py", "enroll.py"),
+    ("scripts/gh_surface.py", "gh_surface.py"),
     ("skills/vibe-harness/SKILL.md", "SKILL.md"),
 )
 

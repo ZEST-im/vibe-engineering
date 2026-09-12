@@ -37,6 +37,7 @@ SKILL_RUNTIME_FILES = (
     "search.py",
     "review_sync.py",
     "enroll.py",
+    "gh_surface.py",
     "setup.py",
 )
 
