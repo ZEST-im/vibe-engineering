@@ -1,0 +1,23 @@
+name: Bug report
+description: Something the harness does that it should not
+labels: ["bug"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "Output of `git -C <clone> describe --tags --always`"
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect
+    validations:
+      required: true
+  - type: textarea
+    id: check
+    attributes:
+      label: "Output of `python3 scripts/check.py`"
+      description: It prints what it could not verify — that part matters too.
+      render: shell
