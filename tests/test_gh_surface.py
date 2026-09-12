@@ -100,3 +100,36 @@ class GhAvailabilityTest(unittest.TestCase):
         ok, why = gh.gh_available(runner)
         self.assertFalse(ok)
         self.assertIn("실행할 수 없다", why)
+
+
+LOG = [
+    "e315ab6 2026-09-08 feat: PMF13 완료 — 계획이 실측에 세 번 반박당한 Phase",
+    "bccd5da 2026-09-08 docs(progress): PMF14 개시 + PMF13 마무리 뒤 후속 5건 기록",
+    "68c818d 2026-08-29 docs: PMF08 종료 정리 — 근본 원인 태스크를 PMF09 로 넘긴다",
+    "fc23f71 2026-09-06 feat: PMF11 완료 — 눈먼 곳 6/6",
+    "5c62957 2026-09-06 chore(kanban): PMF11 이전 완료 태스크 아카이브",
+]
+
+
+class BoundaryCandidatesTest(unittest.TestCase):
+    """기계적으로 뽑으면 틀린다 — 예비 조사에서 셋이 어긋났다."""
+
+    def test_the_completion_commit_outranks_a_later_chore(self):
+        got = gh.boundary_candidates(LOG, "PMF11")
+        self.assertEqual("fc23f71", got[0]["sha"])
+        self.assertEqual("strong", got[0]["confidence"])
+
+    def test_a_handoff_mention_is_not_a_completion(self):
+        """`PMF08 종료 … PMF09 로 넘긴다` 는 PMF09 의 경계가 아니다."""
+        got = gh.boundary_candidates(LOG, "PMF09")
+        self.assertTrue(all(c["confidence"] != "strong" for c in got),
+                        "인계 언급을 완료로 읽었다")
+
+    def test_the_next_phase_opening_is_not_this_phase_closing(self):
+        """`PMF14 개시 + PMF13 마무리 뒤` 는 PMF13 의 경계가 아니다."""
+        got = gh.boundary_candidates(LOG, "PMF13")
+        self.assertEqual("e315ab6", got[0]["sha"])
+
+    def test_a_phase_with_no_commit_returns_empty_not_a_guess(self):
+        """지어낸 경계는 없는 것보다 나쁘다."""
+        self.assertEqual([], gh.boundary_candidates(LOG, "PMF04"))

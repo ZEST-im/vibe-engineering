@@ -47,6 +47,43 @@ def release_notes(body, phase):
     return f"{head}\n\n{sec['body']}\n"
 
 
+# 그 Phase 를 **주어로** 완료를 선언한 표현. 인계·개시 언급과 구별한다.
+_CLOSING = ("완료", "종료", "마무리", "완결")
+# 이 말이 Phase 이름 **앞이나 뒤** 가까이 있으면 그 Phase 의 경계가 아니다 (인계·개시).
+# 예: "PMF14 개시 + PMF13 마무리 뒤" — "개시" 는 PMF13 보다 앞에 있지만 이 커밋을
+# "다음 Phase 를 열며 지난 Phase 마무리를 언급"으로 만든다. 뒤쪽 근접("PMF11 이전
+# 완료")도 같은 이유로 걸러야 해서 앞·뒤 창을 모두 본다.
+_NOT_CLOSING = ("개시", "넘긴다", "넘김", "이전", "선행")
+
+_WINDOW = 12
+
+
+def boundary_candidates(log_lines, phase):
+    """`<sha> <date> <subject>` 줄에서 그 Phase 의 경계 후보를 고른다.
+
+    **추측하지 않는다.** 후보가 없으면 빈 목록이고, 그때는 태깅하지 않는다.
+    """
+    out = []
+    pat = re.compile(r"(?<![A-Z0-9])" + re.escape(phase) + r"(?![0-9])")
+    for line in log_lines:
+        parts = line.split(" ", 2)
+        if len(parts) < 3:
+            continue
+        sha, date, subject = parts
+        m = pat.search(subject)
+        if not m:
+            continue
+        before = subject[max(0, m.start() - _WINDOW):m.start()]
+        after = subject[m.end():m.end() + _WINDOW]
+        strong = (any(w in after for w in _CLOSING)
+                  and not any(w in before for w in _NOT_CLOSING)
+                  and not any(w in after for w in _NOT_CLOSING))
+        out.append({"sha": sha, "date": date, "subject": subject,
+                    "confidence": "strong" if strong else "weak"})
+    out.sort(key=lambda c: 0 if c["confidence"] == "strong" else 1)
+    return out
+
+
 def _run(argv):
     done = subprocess.run(argv, capture_output=True, text=True)
     return done.returncode, done.stdout, done.stderr
