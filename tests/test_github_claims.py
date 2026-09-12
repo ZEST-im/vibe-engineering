@@ -10,6 +10,8 @@ import importlib.util
 import json
 import os
 import subprocess
+import sys
+import time
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -18,6 +20,21 @@ _spec = importlib.util.spec_from_file_location(
     "gh_surface", os.path.join(ROOT, "scripts", "gh_surface.py"))
 gh_surface = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(gh_surface)
+
+# `gh_surface.gh_available` 의 기본 경로(`runner=None`)는 `_run(argv, timeout=None)` 로
+# 끝난다 — 무제한 대기다. `gh_available` 은 러너를 받으므로, `scripts/gh_surface.py` 는
+# 건드리지 않고 여기서만 모든 호출에 시간제한을 강제한다.
+_GH_AVAILABLE_TIMEOUT = 20
+
+
+def _make_bounded_runner(timeout):
+    """`gh_available` 에 넘길 러너를 만든다 — 호출마다 `timeout` 을 강제한다."""
+    def runner(argv):
+        return gh_surface._run(argv, timeout=timeout)
+    return runner
+
+
+_bounded_availability_runner = _make_bounded_runner(_GH_AVAILABLE_TIMEOUT)
 
 
 def read(name):
@@ -64,18 +81,27 @@ class DocumentedFilesExistTest(unittest.TestCase):
 
 
 class LiveRepoStateTest(unittest.TestCase):
-    """실제 레포 상태. **gh 를 쓸 수 없으면 skip 한다 — 실패가 아니다.**"""
+    """실제 레포 상태. **gh 를 쓸 수 없으면 skip 한다 — 실패가 아니다.**
+
+    `setUp` 은 딱 하나만 판정한다 — gh 를 쓸 수 있는가. 그 뒤로는 각 테스트가
+    자기 쿼리를 스스로 던지고, 그 쿼리가 실패하면 (필드명 오타, gh 출력 형식
+    변경 등 네트워크와 무관한 이유라도) skip 이 아니라 assert 로 드러낸다 —
+    두 테스트가 서로 다른 쿼리를 쓰는데 한쪽 쿼리 실패로 다른 쪽까지 뭉뚱그려
+    skip 하지 않도록, 쿼리를 setUp 에 공유해두지 않는다.
+    """
 
     def setUp(self):
-        ok, reason = gh_surface.gh_available()
+        ok, reason = gh_surface.gh_available(runner=_bounded_availability_runner)
         if not ok:
             self.skipTest(f"{reason} — CI 는 이 경로 (네트워크·인증 없음)")
-        self.repo = gh_json(["repo", "view", "--json", "hasIssuesEnabled"])
-        if self.repo is None:
-            self.skipTest("gh 인증은 있지만 레포 상태를 읽지 못했다 — 일시적 네트워크 문제로 skip")
 
     def test_issues_are_enabled_because_templates_assume_it(self):
-        self.assertTrue(self.repo["hasIssuesEnabled"],
+        repo = gh_json(["repo", "view", "--json", "hasIssuesEnabled"])
+        self.assertIsNotNone(
+            repo,
+            "gh 인증은 있는데 repo view 쿼리가 실패했다 — --json 필드명이나 gh 출력 형식을 확인해라"
+            " (네트워크 문제가 아니라 진짜 실패다)")
+        self.assertTrue(repo["hasIssuesEnabled"],
                         "이슈 템플릿이 있는데 이슈가 꺼져 있다")
 
     def test_a_release_exists_once_readme_tells_you_to_check_a_version(self):
@@ -84,6 +110,47 @@ class LiveRepoStateTest(unittest.TestCase):
             self.skipTest("README 가 아직 버전 확인을 안내하지 않는다 (아직 이 주장이 없다)")
         rel = gh_json(["release", "list", "--limit", "1", "--json", "tagName"])
         self.assertTrue(rel, "README 가 버전을 확인하라는데 릴리스가 하나도 없다")
+
+
+class AvailabilityGateTimeoutTest(unittest.TestCase):
+    """`gh_available` 에 넘기는 러너가 실제로 시간제한을 무는지 확인한다.
+
+    `gh_surface.gh_available` 의 기본 경로는 `runner(["gh", "auth", "status"])` 를
+    `timeout` 없이 부른다 — gh 가 설치돼 있는데 네트워크만 멈추면 무한 대기다.
+    이 파일은 항상 `_bounded_availability_runner` 를 넘기므로, 그게 실제로 시간
+    제한을 붙이는지와, 정말 멈춘 호출을 끊어내는지를 직접 확인한다.
+    """
+
+    def test_gh_available_calls_the_runner_with_a_timeout(self):
+        calls = []
+        real_run = gh_surface._run
+
+        def spy(argv, **kwargs):
+            calls.append((argv, kwargs))
+            return real_run(argv, **kwargs)
+
+        gh_surface._run = spy
+        try:
+            gh_surface.gh_available(runner=_bounded_availability_runner)
+        finally:
+            gh_surface._run = real_run
+
+        self.assertEqual(1, len(calls), "gh_available 이 러너를 정확히 한 번 불러야 한다")
+        argv, kwargs = calls[0]
+        self.assertEqual(["gh", "auth", "status"], argv)
+        self.assertEqual(
+            _GH_AVAILABLE_TIMEOUT, kwargs.get("timeout"),
+            "이 파일의 러너가 timeout 없이 _run 을 불렀다 — gh_available 기본 경로와 같아졌다")
+
+    def test_a_hanging_command_through_the_bound_runner_is_terminated_not_blocked(self):
+        short_runner = _make_bounded_runner(1)
+        start = time.monotonic()
+        code, _out, err = short_runner(
+            [sys.executable, "-c", "import time; time.sleep(5)"])
+        elapsed = time.monotonic() - start
+        self.assertEqual(124, code)
+        self.assertLess(elapsed, 4, "timeout 이 실제로는 안 걸리고 5초를 기다렸다")
+        self.assertIn("초", err)
 
 
 if __name__ == "__main__":
