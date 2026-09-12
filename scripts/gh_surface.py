@@ -12,6 +12,7 @@
 이슈·릴리스·프로젝트는 **만들면 남는다.** `--apply` 가 없으면 무엇을 할지 출력만 한다.
 """
 import re
+import subprocess
 
 DONE_PHASE = re.compile(r"^##\s+(PHASE_\w+)\s+✅\s*DONE\s*\(([0-9-]+)\)\s*$", re.M)
 
@@ -44,3 +45,25 @@ def release_notes(body, phase):
         return None
     head = f"## {sec['title']}" if sec["title"] else f"## {phase}"
     return f"{head}\n\n{sec['body']}\n"
+
+
+def _run(argv):
+    done = subprocess.run(argv, capture_output=True, text=True)
+    return done.returncode, done.stdout, done.stderr
+
+
+def gh_available(runner=None, need_scope=None):
+    """`gh` 를 쓸 수 있는가. **없다고 실패시키지 않는다 — 이유를 돌려준다.**"""
+    runner = runner or _run
+    try:
+        code, out, err = runner(["gh", "auth", "status"])
+    except FileNotFoundError:
+        return False, "gh 가 설치돼 있지 않다 — GitHub 표면 작업을 건너뛴다"
+    except OSError as exc:
+        return False, f"gh 를 실행할 수 없다 ({exc}) — 건너뛴다"
+    if code != 0:
+        return False, f"gh 인증이 없다 — `gh auth login` 이 필요하다 ({err.strip()[:80]})"
+    if need_scope and f"'{need_scope}'" not in out:
+        return False, (f"토큰에 `{need_scope}` 스코프가 없다 — "
+                       f"`gh auth refresh -s {need_scope}` 로 추가한다")
+    return True, "gh 사용 가능" + (f" ({need_scope} 스코프 확인됨)" if need_scope else "")

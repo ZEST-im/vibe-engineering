@@ -58,3 +58,37 @@ class ReleaseNotesTest(unittest.TestCase):
     def test_unknown_phase_returns_none_not_empty_string(self):
         """빈 문자열을 돌려주면 '노트가 없는 릴리스'가 조용히 만들어진다."""
         self.assertIsNone(gh.release_notes(PHASES, "PHASE_PMF99"))
+
+
+class GhAvailabilityTest(unittest.TestCase):
+    """조용히 건너뛰면 '못 본 것'과 '깨끗한 것'이 같아 보인다."""
+
+    def test_missing_binary_is_not_an_error(self):
+        def runner(argv):
+            raise FileNotFoundError("gh")
+        ok, why = gh.gh_available(runner)
+        self.assertFalse(ok)
+        self.assertIn("gh", why)
+
+    def test_unauthenticated_says_so(self):
+        def runner(argv):
+            return 1, "", "You are not logged into any GitHub hosts"
+        ok, why = gh.gh_available(runner)
+        self.assertFalse(ok)
+        self.assertIn("인증", why)
+
+    def test_missing_project_scope_is_named(self):
+        """project 스코프는 2026-09-12 에 추가됐다. 다른 머신엔 없을 수 있다."""
+        def runner(argv):
+            return 0, "Token scopes: 'repo', 'workflow'", ""
+        ok, why = gh.gh_available(runner, need_scope="project")
+        self.assertFalse(ok)
+        self.assertIn("project", why)
+
+    def test_available_reports_why_too(self):
+        """가능할 때도 이유를 채운다 — 빈 문자열이면 호출부가 조용해진다."""
+        def runner(argv):
+            return 0, "Token scopes: 'repo', 'project', 'workflow'", ""
+        ok, why = gh.gh_available(runner, need_scope="project")
+        self.assertTrue(ok)
+        self.assertTrue(why.strip())
