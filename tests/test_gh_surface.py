@@ -103,11 +103,13 @@ class GhAvailabilityTest(unittest.TestCase):
 
 
 LOG = [
-    "e315ab6 2026-09-08 feat: PMF13 완료 — 계획이 실측에 세 번 반박당한 Phase",
+    # 디코이가 진짜 완료 커밋보다 **앞**에 온다 — 안정 정렬이 순서만으로
+    # 답을 맞히지 못하게 한다. 오직 strong/weak 분류만으로 맞아야 한다.
     "bccd5da 2026-09-08 docs(progress): PMF14 개시 + PMF13 마무리 뒤 후속 5건 기록",
+    "e315ab6 2026-09-08 feat: PMF13 완료 — 계획이 실측에 세 번 반박당한 Phase",
     "68c818d 2026-08-29 docs: PMF08 종료 정리 — 근본 원인 태스크를 PMF09 로 넘긴다",
-    "fc23f71 2026-09-06 feat: PMF11 완료 — 눈먼 곳 6/6",
     "5c62957 2026-09-06 chore(kanban): PMF11 이전 완료 태스크 아카이브",
+    "fc23f71 2026-09-06 feat: PMF11 완료 — 눈먼 곳 6/6",
 ]
 
 
