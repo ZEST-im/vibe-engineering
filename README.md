@@ -175,6 +175,14 @@ python3 ~/.claude/skills/vibe-harness/server.py register my_project "My Project"
 
 [http://localhost:4242/kanban](http://localhost:4242/kanban)
 
+### Which version do I have
+
+    git -C <your clone> describe --tags --always
+
+Tags are `phase/PMFxx` — one per completed phase. Release notes are that phase's own
+record: what closed, and how many tests it ended with. Phases before the tagging
+convention have no tag.
+
 ---
 
 ## Update

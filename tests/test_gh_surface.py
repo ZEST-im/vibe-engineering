@@ -108,6 +108,32 @@ class GhAvailabilityTest(unittest.TestCase):
         self.assertIn("실행할 수 없다", why)
 
 
+class GhAvailabilityDefaultTimeoutTest(unittest.TestCase):
+    """`runner` 를 안 넘긴 실제 운영 경로 — `gh auth status` 도 무한 대기하면 안 된다.
+
+    `_run` 을 스파이로 가로채, `gh_available()` 이 기본 경로에서 실제로 `timeout` 을
+    실어 부르는지만 본다. `gh auth status` 는 조회일 뿐이라 실행돼도 안전하다.
+    """
+
+    def test_the_default_path_passes_a_timeout_to_run(self):
+        calls = []
+        real_run = gh._run
+
+        def spy(argv, **kwargs):
+            calls.append(kwargs)
+            return real_run(argv, **kwargs)
+
+        gh._run = spy
+        try:
+            gh.gh_available()
+        finally:
+            gh._run = real_run
+
+        self.assertEqual(1, len(calls), "기본 경로가 _run 을 정확히 한 번 불러야 한다")
+        self.assertEqual(gh._GH_AUTH_TIMEOUT, calls[0].get("timeout"),
+                         "gh auth status 기본 호출에 timeout 이 없다 — 무한 대기 경로가 남아 있다")
+
+
 LOG = [
     # 디코이가 진짜 완료 커밋보다 **앞**에 온다 — 안정 정렬이 순서만으로
     # 답을 맞히지 못하게 한다. 오직 strong/weak 분류만으로 맞아야 한다.
@@ -249,7 +275,7 @@ def _sha(repo, subject_substr):
 
 def _poison(msg):
     """이 경로로는 절대 오면 안 된다는 뜻의 fake runner — 오면 테스트를 실패시킨다."""
-    def _fn(argv):
+    def _fn(argv, **_kw):
         raise AssertionError(f"{msg}: {argv}")
     return _fn
 
@@ -375,7 +401,7 @@ class RunTagApplyGateTest(unittest.TestCase):
         plan = [_plan_entry("phase/PMF50", sha)]
         calls = []
 
-        def fake_gh(argv):
+        def fake_gh(argv, **_kw):
             calls.append(argv)
             if argv[:3] == ["gh", "release", "view"]:
                 return 1, "", "not found"
@@ -400,7 +426,7 @@ class RunTagApplySuccessTest(unittest.TestCase):
         sha = _sha(repo, "PMF50 완료")
         calls = []
 
-        def fake_gh(argv):
+        def fake_gh(argv, **_kw):
             calls.append(argv)
             if argv[:3] == ["gh", "release", "view"]:
                 return 1, "", "not found"  # 아직 릴리스 없음 → 만들어야 한다
@@ -453,7 +479,7 @@ class RunTagApplySuccessTest(unittest.TestCase):
             with contextlib.redirect_stdout(buf):
                 gh._run_tag(plan, repo, apply=True,
                            gh_check=lambda: (True, "ok"),
-                           gh_runner=lambda argv: (
+                           gh_runner=lambda argv, **_kw: (
                                (1, "", "not found") if argv[:3] == ["gh", "release", "view"]
                                else (0, "", "")))
         finally:
@@ -475,7 +501,7 @@ class RunTagIdempotencyTest(unittest.TestCase):
         sha = _sha(repo, "PMF50 완료")
         plan = [_plan_entry("phase/PMF50", sha)]
 
-        def gh_release_exists(argv):
+        def gh_release_exists(argv, **_kw):
             if argv[:3] == ["gh", "release", "view"]:
                 return 0, "", ""
             raise AssertionError(f"릴리스가 있다는데 다른 gh 호출을 했다: {argv}")
@@ -498,7 +524,7 @@ class RunTagIdempotencyTest(unittest.TestCase):
 
         plan = [_plan_entry("phase/PMF50", sha)]
 
-        def fake_gh(argv):
+        def fake_gh(argv, **_kw):
             if argv[:3] == ["gh", "release", "view"]:
                 return 1, "", "not found"
             return 0, "", ""
@@ -534,7 +560,7 @@ class RunTagShaMismatchTest(unittest.TestCase):
 
         plan = [_plan_entry("phase/PMF50", planned_sha)]
 
-        def gh_view_missing_only(argv):
+        def gh_view_missing_only(argv, **_kw):
             if argv[:3] == ["gh", "release", "view"]:
                 return 1, "", "not found"
             raise AssertionError(f"sha 가 어긋나는데 gh 를 불렀다: {argv}")
@@ -576,7 +602,7 @@ class RunTagPushRejectionTest(unittest.TestCase):
 
         plan = [_plan_entry("phase/PMF50", planned_sha)]
 
-        def gh_view_missing_only(argv):
+        def gh_view_missing_only(argv, **_kw):
             if argv[:3] == ["gh", "release", "view"]:
                 return 1, "", "not found"
             raise AssertionError(f"push 가 거부됐는데 gh 를 더 불렀다: {argv}")
@@ -638,7 +664,7 @@ class PushSafetyTest(unittest.TestCase):
             with contextlib.redirect_stdout(buf):
                 gh._run_tag(plan, repo, apply=True,
                            gh_check=lambda: (True, "ok"),
-                           gh_runner=lambda argv: (
+                           gh_runner=lambda argv, **_kw: (
                                (1, "", "not found") if argv[:3] == ["gh", "release", "view"]
                                else (0, "", "")))
         finally:
@@ -661,7 +687,7 @@ class RunTagFailureBranchTest(unittest.TestCase):
         # "?" 는 git 태그 이름에 못 쓰는 문자 — `git tag -a` 가 반드시 실패한다.
         plan = [_plan_entry("phase/PMF?50", sha)]
 
-        def gh_view_missing_only(argv):
+        def gh_view_missing_only(argv, **_kw):
             if argv[:3] == ["gh", "release", "view"]:
                 return 1, "", "not found"
             raise AssertionError(f"태그 생성이 실패했는데 gh 를 더 불렀다: {argv}")
@@ -681,7 +707,7 @@ class RunTagFailureBranchTest(unittest.TestCase):
         sha = _sha(repo, "PMF50 완료")
         plan = [_plan_entry("phase/PMF50", sha)]
 
-        def gh_view_missing_only(argv):
+        def gh_view_missing_only(argv, **_kw):
             if argv[:3] == ["gh", "release", "view"]:
                 return 1, "", "not found"
             raise AssertionError(f"push 가 실패했는데 gh 를 더 불렀다: {argv}")
@@ -702,7 +728,7 @@ class RunTagFailureBranchTest(unittest.TestCase):
         sha = _sha(repo, "PMF50 완료")
         plan = [_plan_entry("phase/PMF50", sha)]
 
-        def gh_view_missing_then_create_fails(argv):
+        def gh_view_missing_then_create_fails(argv, **_kw):
             if argv[:3] == ["gh", "release", "view"]:
                 return 1, "", "not found"
             if argv[:3] == ["gh", "release", "create"]:
@@ -740,3 +766,151 @@ class LogLinesTest(unittest.TestCase):
             raise FileNotFoundError("git")
         with self.assertRaises(SystemExit):
             gh._log_lines("/whatever", runner=runner)
+
+
+class GhCallTimeoutTest(unittest.TestCase):
+    """`gh release view`/`gh release create` 도 `push` 처럼 시간제한이 있어야 한다 —
+    없으면 태그는 이미 공개된 채로 화면에 아무것도 안 보이는 채로 영원히 멈춘다.
+    실제 `gh` 는 절대 안 부른다 — fake gh_runner 로 넘어온 kwargs 만 본다."""
+
+    def test_release_view_and_release_create_both_carry_a_timeout(self):
+        repo, _bare = _repo_with_origin("feat: PMF50 완료 — 픽스처")
+        sha = _sha(repo, "PMF50 완료")
+        plan = [_plan_entry("phase/PMF50", sha)]
+
+        calls = []
+
+        def fake_gh(argv, **kwargs):
+            calls.append((argv, kwargs))
+            if argv[:3] == ["gh", "release", "view"]:
+                return 1, "", "not found"
+            return 0, "", ""
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            gh._run_tag(plan, repo, apply=True,
+                       gh_check=lambda: (True, "ok"), gh_runner=fake_gh)
+
+        view_calls = [(a, k) for a, k in calls if a[:3] == ["gh", "release", "view"]]
+        create_calls = [(a, k) for a, k in calls if a[:3] == ["gh", "release", "create"]]
+        self.assertEqual(1, len(view_calls), "gh release view 를 정확히 한 번 불러야 한다")
+        self.assertEqual(1, len(create_calls), "gh release create 를 정확히 한 번 불러야 한다")
+        self.assertEqual(gh._GH_RELEASE_VIEW_TIMEOUT, view_calls[0][1].get("timeout"),
+                         "gh release view 에 timeout 이 없다")
+        self.assertEqual(gh._GH_RELEASE_CREATE_TIMEOUT, create_calls[0][1].get("timeout"),
+                         "gh release create 에 timeout 이 없다")
+
+
+class DenyGateUnitTest(unittest.TestCase):
+    """`_load_deny_terms`/`_deny_hit_count` — 순수 함수 층. 진짜 private/DENY.txt 는
+    절대 읽지 않는다 — 임시 디렉터리에 우리만의 가짜 금칙어를 심는다."""
+
+    def test_absent_file_returns_none_and_says_so(self):
+        terms, why = gh._load_deny_terms(tempfile.mkdtemp())
+        self.assertIsNone(terms)
+        self.assertIn("없음", why)
+
+    def test_present_file_returns_terms_and_names_the_count(self):
+        d = tempfile.mkdtemp()
+        os.makedirs(os.path.join(d, "private"))
+        with open(os.path.join(d, "private", "DENY.txt"), "w", encoding="utf-8") as fh:
+            fh.write("ZQX-FIXTURE-ONE\n# 주석은 건너뛴다\nZQX-FIXTURE-TWO\n")
+        terms, why = gh._load_deny_terms(d)
+        self.assertEqual(["ZQX-FIXTURE-ONE", "ZQX-FIXTURE-TWO"], terms)
+        self.assertIn("2", why)
+
+    def test_hit_count_counts_without_ever_returning_the_string(self):
+        self.assertEqual(1, gh._deny_hit_count(
+            "노트 안에 ZQX-FIXTURE-ONE 이 섞였다", ["ZQX-FIXTURE-ONE", "ZQX-FIXTURE-TWO"]))
+        self.assertEqual(2, gh._deny_hit_count(
+            "ZQX-FIXTURE-ONE 그리고 ZQX-FIXTURE-TWO 둘 다",
+            ["ZQX-FIXTURE-ONE", "ZQX-FIXTURE-TWO"]))
+        self.assertEqual(0, gh._deny_hit_count("완전히 깨끗하다", ["ZQX-FIXTURE-ONE"]))
+
+    def test_no_terms_means_no_hits(self):
+        """`None`(파일 없음)이든 `[]`(파일은 있지만 항목 없음)이든 적중은 0건이다."""
+        self.assertEqual(0, gh._deny_hit_count("아무 내용", None))
+        self.assertEqual(0, gh._deny_hit_count("아무 내용", []))
+
+
+class ReleaseNotesDenyGateTest(unittest.TestCase):
+    """릴리스 노트는 검사되지 않은 공개 표면이었다 — `private/PHASES.md` 에서 파생되는데
+    그 파일은 gitignore 대상이라 `tests/test_public_hygiene.py` 의 추적 파일 검사가
+    닿지 못한다. `--apply` 가 뭔가 만들기 **직전**에 `private/DENY.txt` 로 막는다.
+
+    **실제 `private/DENY.txt` 는 절대 쓰지 않는다** — 우리만의 가짜 금칙어로 주입해서
+    증명한다.
+    """
+
+    FIXTURE_TERM = "ZQX-FIXTURE-INTERNAL-CODE"
+
+    def _repo_with_deny(self, *terms):
+        repo, bare = _repo_with_origin("feat: PMF50 완료 — 픽스처")
+        os.makedirs(os.path.join(repo, "private"))
+        with open(os.path.join(repo, "private", "DENY.txt"), "w", encoding="utf-8") as fh:
+            fh.write("\n".join(terms) + "\n")
+        return repo, bare
+
+    def test_a_hit_blocks_the_phase_creates_nothing_and_never_prints_the_string(self):
+        repo, bare = self._repo_with_deny(self.FIXTURE_TERM)
+        sha = _sha(repo, "PMF50 완료")
+        notes = f"이 노트엔 {self.FIXTURE_TERM} 이 섞여 있다"
+        plan = [_plan_entry("phase/PMF50", sha, notes=notes)]
+
+        # gh 를 한 번이라도 부르면 실패시킨다 — 차단된 Phase 는 gh 호출까지 가면 안 된다.
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_tag(plan, repo, apply=True,
+                               gh_check=lambda: (True, "ok"),
+                               gh_runner=_poison("금칙 문자열이 있는데 gh 를 불렀다"))
+        out = buf.getvalue()
+
+        self.assertEqual(1, code, "금칙 문자열 적중인데 성공으로 끝났다")
+        self.assertIn("phase/PMF50", out)
+        self.assertIn("1건", out)
+        self.assertNotIn(self.FIXTURE_TERM, out, "금칙 문자열 자체가 출력에 그대로 찍혔다")
+        self.assertEqual("", _git(repo, "tag", "-l").stdout.strip(),
+                         "차단됐는데 로컬에 태그가 생겼다")
+        self.assertEqual("", _git(bare, "tag", "-l").stdout.strip(),
+                         "차단됐는데 원격에 태그가 생겼다")
+
+    def test_clean_notes_proceed_past_the_gate(self):
+        repo, bare = self._repo_with_deny(self.FIXTURE_TERM)
+        sha = _sha(repo, "PMF50 완료")
+        plan = [_plan_entry("phase/PMF50", sha, notes="완전히 깨끗한 공개 노트")]
+
+        def fake_gh(argv, **kwargs):
+            if argv[:3] == ["gh", "release", "view"]:
+                return 1, "", "not found"
+            return 0, "", ""
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_tag(plan, repo, apply=True,
+                               gh_check=lambda: (True, "ok"), gh_runner=fake_gh)
+        out = buf.getvalue()
+
+        self.assertEqual(0, code, "깨끗한 노트인데 차단됐다")
+        self.assertIn("생성 1", out)
+        self.assertEqual("phase/PMF50", _git(bare, "tag", "-l", "phase/PMF50").stdout.strip())
+
+    def test_missing_deny_file_is_reported_not_silent(self):
+        """`private/DENY.txt` 가 없는 환경(CI, 다른 머신)이 정상 경로다 — 조용히
+        넘어가지 않고 그 사실을 출력에 남긴다."""
+        repo, _bare = _repo_with_origin("feat: PMF50 완료 — 픽스처")  # private/ 자체가 없다
+        sha = _sha(repo, "PMF50 완료")
+        plan = [_plan_entry("phase/PMF50", sha, notes="깨끗한 노트")]
+
+        def fake_gh(argv, **kwargs):
+            if argv[:3] == ["gh", "release", "view"]:
+                return 1, "", "not found"
+            return 0, "", ""
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_tag(plan, repo, apply=True,
+                               gh_check=lambda: (True, "ok"), gh_runner=fake_gh)
+        out = buf.getvalue()
+
+        self.assertEqual(0, code)
+        self.assertIn("private/DENY.txt 없음", out)

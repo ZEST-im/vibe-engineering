@@ -24,6 +24,14 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # 실패도 아닌 채로 영원히 걸림" 이라 시간제한을 둔다.
 _PUSH_TIMEOUT = 30
 
+# `gh` 호출 셋도 같은 이유로 시간제한이 필요하다 — 특히 `gh release create` 는
+# **태그가 이미 push 된 뒤**에 불린다. 이게 멈추면 태그는 이미 공개돼 있는데 화면엔
+# 아무것도 안 보이는 채로 영원히 걸린다 — push 가 실패하는 것보다 나쁘다(실패는
+# 최소한 보인다).
+_GH_AUTH_TIMEOUT = 15       # `gh auth status` — 로컬 토큰 확인, 가볍다
+_GH_RELEASE_VIEW_TIMEOUT = 20   # `gh release view` — 조회 1건
+_GH_RELEASE_CREATE_TIMEOUT = 60  # `gh release create` — 쓰기 + 노트 업로드, 느린 회선을 감안해 여유를 둔다
+
 DONE_PHASE = re.compile(r"^##\s+(PHASE_\w+)\s+✅\s*DONE\s*\(([0-9-]+)\)\s*$", re.M)
 
 
@@ -147,8 +155,13 @@ def _run(argv, env=None, timeout=None):
 
 
 def gh_available(runner=None, need_scope=None):
-    """`gh` 를 쓸 수 있는가. **없다고 실패시키지 않는다 — 이유를 돌려준다.**"""
-    runner = runner or _run
+    """`gh` 를 쓸 수 있는가. **없다고 실패시키지 않는다 — 이유를 돌려준다.**
+
+    `runner` 를 안 넘기면(실제 운영 경로) `_run` 을 시간제한과 함께 부른다. 주입된
+    `runner`(테스트) 는 그대로 한 인자만 받고 불린다 — 신호(호출 계약)를 바꾸지
+    않는다.
+    """
+    runner = runner or (lambda argv: _run(argv, timeout=_GH_AUTH_TIMEOUT))
     try:
         code, out, err = runner(["gh", "auth", "status"])
     except FileNotFoundError:
@@ -227,8 +240,39 @@ def _repo_slug(root, runner=None):
 
 
 def _release_exists(tag, repo_slug, gh_runner):
-    code, _out, _err = gh_runner(["gh", "release", "view", tag, "-R", repo_slug])
+    code, _out, _err = gh_runner(
+        ["gh", "release", "view", tag, "-R", repo_slug], timeout=_GH_RELEASE_VIEW_TIMEOUT)
     return code == 0
+
+
+def _load_deny_terms(root):
+    """`private/DENY.txt` 에서 정확 금칙 문자열을 읽는다.
+
+    이 파일은 gitignore 대상이라 CI 와 다른 머신에는 없다. **없다고 조용히 검사를
+    건너뛰지 않는다** — `tests/test_public_hygiene.py` 의 `ExactDenyListTest` 와
+    같은 태도다: 없으면 이유를 말하고 건너뛴다("못 본 것"과 "깨끗한 것"은 다르다).
+    `None` 은 "파일이 없어 검사 안 함", `[]` 는 "파일은 있지만 항목이 비어 있음"으로
+    서로 구분한다.
+    """
+    path = os.path.join(root, "private", "DENY.txt")
+    if not os.path.exists(path):
+        return None, ("private/DENY.txt 없음 — 정확 문자열 검사를 건너뛴다"
+                       "(구조 규칙은 tests/test_public_hygiene.py 가 이미 봤다; "
+                       "CI 와 다른 머신엔 이 파일이 없는 게 정상이다)")
+    with open(path, encoding="utf-8") as fh:
+        terms = [t.strip() for t in fh if t.strip() and not t.startswith("#")]
+    return terms, f"private/DENY.txt 로드 — 금칙 문자열 {len(terms)}개로 릴리스 노트를 검사한다"
+
+
+def _deny_hit_count(notes, terms):
+    """`notes` 안에 있는 금칙 문자열 적중 **수**. 문자열 자체는 절대 돌려주지 않는다 —
+
+    세는 것과 드러내는 것은 다르다. 이 값을 로그·리포트에 찍는 건 안전하지만,
+    적중한 문자열 자체를 찍으면 그 출력이 새 유출원이 된다.
+    """
+    if not terms or not notes:
+        return 0
+    return sum(1 for t in terms if t in notes)
 
 
 def _run_tag(plan, root, apply=False, gh_check=None, gh_runner=None):
@@ -277,10 +321,27 @@ def _run_tag(plan, root, apply=False, gh_check=None, gh_runner=None):
               "아무것도 만들지 않고 멈춘다")
         return 1
 
+    # 공개 릴리스 노트는 검사되지 않은 공개 표면이다 — `private/PHASES.md` 에서
+    # 파생되는데 그 파일은 gitignore 대상이라 `tests/test_public_hygiene.py` 의
+    # 추적 파일 검사가 닿지 못한다. `--apply` 가 뭔가를 만들기 **직전**에 여기서
+    # 막는다 — dry-run(위)은 이 검사를 타지 않으므로 무엇을 태깅할지 보여주는 데는
+    # 영향이 없다.
+    deny_terms, deny_why = _load_deny_terms(root)
+    print(f"\n{deny_why}")
+
     created = existed = failed = 0
     recovered = []  # 이전 실행이 태그만 만들고 릴리스에서 실패해, 이번에 복구를 시도한 것들
     for p in taggable:
         tag, sha = p["tag"], p["sha"]
+
+        hits = _deny_hit_count(p["notes"], deny_terms)
+        if hits:
+            # 적중한 문자열 자체는 절대 찍지 않는다 — 몇 건인지만 말한다.
+            print(f"{tag}: 보류 — 릴리스 노트에 private/DENY.txt 금칙 문자열 {hits}건 검출. "
+                  "태그·push·릴리스 중 아무것도 만들지 않는다. 노트에서 해당 내용을 지운 뒤 "
+                  "다시 --apply 하면 이 Phase 부터 다시 시도한다")
+            failed += 1
+            continue
 
         if _release_exists(tag, repo_slug, gh_runner):
             print(f"{tag}: 이미 있다 — 건너뛴다")
@@ -338,7 +399,8 @@ def _run_tag(plan, root, apply=False, gh_check=None, gh_runner=None):
 
         code, _out, err = gh_runner(
             ["gh", "release", "create", tag, "--verify-tag",
-             "--title", tag, "--notes", p["notes"], "-R", repo_slug])
+             "--title", tag, "--notes", p["notes"], "-R", repo_slug],
+            timeout=_GH_RELEASE_CREATE_TIMEOUT)
         if code != 0:
             print(f"{tag}: 태그·push 는 됐지만 릴리스 생성에 실패했다 — orphan 상태다. "
                   f"--apply 를 다시 실행하면 복구한다 ({err.strip()[:120]})")
