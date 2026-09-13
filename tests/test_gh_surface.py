@@ -1,6 +1,7 @@
 import contextlib
 import importlib.util
 import io
+import json
 import os
 import subprocess
 import sys
@@ -1390,3 +1391,576 @@ class PublishedTextIsTheSummaryTest(unittest.TestCase):
                          "release --notes 에 summary 가 그대로 실리지 않았다")
         self.assertNotIn(notes_marker, notes_arg,
                          "release --notes 에 전체 notes 가 실렸다 — 공개 결정을 어겼다")
+
+
+# ── promote — 칸반 태스크를 이슈로. 여기부터가 Task 10 Step 1 이다.
+# `gh` 는 여기서도 절대 실제로 부르지 않는다. 그리고 **실제 kanban.json 은 절대
+# 건드리지 않는다** — 임시 디렉터리의 픽스처 보드만 쓴다.
+
+# 내부 작업 보고서(`details`)에만 있는 표식. 공개 텍스트에 이게 나타나면 어제
+# 릴리스 노트에서 잡힌 사고가 그대로 재현된 것이다.
+DETAILS_MARKER = "AAAA-내부-작업-보고서-공개되면-안됨-AAAA"
+
+PROMOTE_TASKS = [
+    {"id": "hgB200", "title": "승격 대상 — 표시만 있고 번호는 없다", "status": "review",
+     "category": "infra", "phase": "PHASE_PMF15", "share": True,
+     "details": DETAILS_MARKER},
+    {"id": "hgB201", "title": "이미 올라간 것 — 번호가 있다", "status": "done",
+     "category": "docs", "share": True, "issue": 42, "details": DETAILS_MARKER},
+    {"id": "hgB202", "title": "표시 없음 — 올라가지 않는다", "status": "todo",
+     "category": "qa", "details": DETAILS_MARKER},
+]
+
+
+def _board(repo, tasks):
+    """`<repo>/vibe-harness/kanban.json` 픽스처. 실제 보드는 절대 쓰지 않는다."""
+    kdir = os.path.join(repo, "vibe-harness")
+    os.makedirs(kdir, exist_ok=True)
+    with open(os.path.join(kdir, "kanban.json"), "w", encoding="utf-8") as fh:
+        json.dump({"version": 1, "next_id": 1, "tasks": tasks}, fh, ensure_ascii=False)
+    return kdir
+
+
+def _deny(repo, *terms):
+    os.makedirs(os.path.join(repo, "private"), exist_ok=True)
+    with open(os.path.join(repo, "private", "DENY.txt"), "w", encoding="utf-8") as fh:
+        fh.write("\n".join(terms) + "\n")
+
+
+def _poison_check(msg):
+    """가용성 확인조차 하면 안 되는 자리(dry-run)를 위한 것 — `_poison` 은 `argv` 를
+    받는 모양이라 인자 없이 불리는 `gh_check` 자리에서는 TypeError 로 흐려진다."""
+    def _fn():
+        raise AssertionError(msg)
+    return _fn
+
+
+def _recording_writer(calls):
+    """칸반 쓰기를 가로채 기록만 한다. 호출되면 안 되는 자리에서는 `calls` 가 비어
+    있는지로 확인한다 — 여기서 `AssertionError` 를 던지면 orphan 분기의
+    `except Exception` 이 그걸 삼켜 테스트 실패가 '보고서 한 줄'로 둔갑한다."""
+    def _fn(task_id, number):
+        calls.append((task_id, number))
+    return _fn
+
+
+def _fake_issue_gh(calls, number=777, code=0):
+    """`gh issue create` 가 URL 을 찍는 실제 동작을 흉내낸다."""
+    def _fn(argv, **kwargs):
+        calls.append((argv, kwargs))
+        if argv[:3] == ["gh", "issue", "create"]:
+            return code, f"https://github.com/o/r/issues/{number}\n", ""
+        return code, "", ""
+    return _fn
+
+
+class IssuePayloadTest(unittest.TestCase):
+    """공개될 텍스트는 태스크 하나에서 **파생된다** — 순수 층이라 고정 입력으로
+    검사할 수 있다. 여기서 정해진 것이 그대로 GitHub 에 올라가므로, `details`
+    (내부 작업 보고서)가 섞이면 어제 릴리스 노트에서 잡힌 사고가 재현된다."""
+
+    def test_the_title_is_the_task_title(self):
+        got = gh.issue_payload(PROMOTE_TASKS[0])
+        self.assertEqual("승격 대상 — 표시만 있고 번호는 없다", got["title"])
+
+    def test_the_body_never_carries_details(self):
+        """`details` 는 내부 작업 보고서다 — 공개 표면이 아니다."""
+        got = gh.issue_payload(PROMOTE_TASKS[0])
+        self.assertNotIn(DETAILS_MARKER, got["body"])
+        self.assertNotIn(DETAILS_MARKER, got["title"])
+
+    def test_the_body_names_the_board_id_so_it_can_be_traced_back(self):
+        """칸반이 정본이다 — 이슈만 보고 어느 태스크인지 못 찾으면 단방향 승격이
+        추적 불가능해진다."""
+        self.assertIn("hgB200", gh.issue_payload(PROMOTE_TASKS[0])["body"])
+
+    def test_a_task_without_a_title_still_gets_a_nonempty_title(self):
+        """빈 제목으로 이슈를 만들면 `gh` 가 거부하거나 제목 없는 이슈가 남는다."""
+        got = gh.issue_payload({"id": "hgB299", "title": "   "})
+        self.assertTrue(got["title"].strip(), "빈 제목을 그대로 내보냈다")
+        self.assertIn("hgB299", got["title"])
+
+    def test_it_does_not_mutate_the_task(self):
+        """순수해야 한다 — 파생 층이 정본을 건드리면 두 층의 경계가 무너진다."""
+        task = dict(PROMOTE_TASKS[0])
+        before = dict(task)
+        gh.issue_payload(task)
+        self.assertEqual(before, task)
+
+
+class PromoteDryRunTest(unittest.TestCase):
+    """dry-run 이 기본이다. 사용자는 **여기 찍힌 텍스트를 읽고** 승인 여부를
+    정하므로, 실제로 공개될 제목·본문이 글자 그대로 나와야 한다."""
+
+    def test_dry_run_prints_the_exact_published_text_and_calls_nothing(self):
+        repo, _bare = _repo_with_origin("chore: 초기화")
+        kdir = _board(repo, PROMOTE_TASKS)
+        writes = []
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_promote(PROMOTE_TASKS, repo, apply=False, kanban_dir=kdir,
+                                   gh_check=_poison_check("dry-run 인데 gh 가용성을 물었다"),
+                                   gh_runner=_poison("dry-run 인데 gh 를 불렀다"),
+                                   kanban_writer=_recording_writer(writes))
+        out = buf.getvalue()
+
+        self.assertEqual(0, code)
+        payload = gh.issue_payload(PROMOTE_TASKS[0])
+        self.assertIn(payload["title"], out, "공개될 제목이 dry-run 에 없다")
+        self.assertIn(payload["body"], out, "공개될 본문이 글자 그대로 dry-run 에 없다")
+        self.assertIn("[dry-run]", out)
+        self.assertEqual([], writes, "dry-run 인데 칸반에 썼다")
+
+    def test_dry_run_separates_creates_from_updates(self):
+        repo, _bare = _repo_with_origin("chore: 초기화")
+        kdir = _board(repo, PROMOTE_TASKS)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            gh._run_promote(PROMOTE_TASKS, repo, apply=False, kanban_dir=kdir)
+        out = buf.getvalue()
+        self.assertIn("hgB200", out)
+        self.assertIn("hgB201", out)
+        self.assertIn("#42", out, "이미 번호가 있는 태스크는 갱신 대상임을 밝혀야 한다")
+        self.assertNotIn("hgB202", out, "표시가 없는 태스크가 대상에 섞였다")
+
+    def test_dry_run_prints_both_hygiene_layer_counts(self):
+        """N1 과 같은 이유 — 층이 텅 비어도 화면 모양이 깨끗한 실행과 같으면 안 된다."""
+        repo, _bare = _repo_with_origin("chore: 초기화")
+        kdir = _board(repo, PROMOTE_TASKS)
+        _deny(repo, "ZQX-FIXTURE-ONE", "ZQX-FIXTURE-TWO")
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            gh._run_promote(PROMOTE_TASKS, repo, apply=False, kanban_dir=kdir)
+        out = buf.getvalue()
+
+        self.assertIn("구조 규칙", out, "구조 규칙 층이 돌았다는 말이 없다")
+        self.assertIn(f"{len(gh._structural_rules())}개", out,
+                      "구조 규칙 몇 개로 검사했는지가 없다")
+        self.assertIn("금칙 문자열 2개", out, "정확 금칙어 개수가 없다")
+
+
+class PromoteHygieneGateTest(unittest.TestCase):
+    """핵심 위험 — 칸반 텍스트를 검사 없이 공개하는 것. `_run_tag` 와 같은
+    **전체 사전 검사**다: 하나라도 걸리면 깨끗한 것도 만들지 않는다."""
+
+    FIXTURE_TERM = "ZQX-FIXTURE-INTERNAL-CODE"
+
+    def test_a_denied_string_blocks_the_whole_run_and_creates_nothing(self):
+        repo, _bare = _repo_with_origin("chore: 초기화")
+        _deny(repo, self.FIXTURE_TERM)
+        # 깨끗한 태스크가 **앞**에 있다 — 태스크별로 그때그때 거부하는 방식이었다면
+        # 뒤의 더러운 태스크에 닿기 전에 앞의 이슈가 이미 만들어졌을 것이다.
+        tasks = [
+            {"id": "hgB210", "title": "완전히 깨끗한 제목", "share": True},
+            {"id": "hgB211", "title": f"{self.FIXTURE_TERM} 섞인 제목", "share": True},
+        ]
+        kdir = _board(repo, tasks)
+        writes = []
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_promote(tasks, repo, apply=True, kanban_dir=kdir,
+                                   gh_check=lambda: (True, "ok"),
+                                   gh_runner=_poison("금칙 문자열이 있는데 gh 를 불렀다"),
+                                   kanban_writer=_recording_writer(writes))
+        out = buf.getvalue()
+
+        self.assertEqual(1, code, "금칙 문자열 적중인데 성공으로 끝났다")
+        self.assertIn("hgB211", out)
+        self.assertIn("1건", out)
+        self.assertNotIn(self.FIXTURE_TERM, out, "금칙 문자열 자체가 출력에 찍혔다")
+        self.assertEqual([], writes)
+
+    def test_the_gate_sees_the_body_not_only_the_title(self):
+        """제목만 검사하면 본문으로 새는 경로가 그대로 남는다."""
+        repo, _bare = _repo_with_origin("chore: 초기화")
+        _deny(repo, self.FIXTURE_TERM)
+        tasks = [{"id": "hgB212", "title": "깨끗한 제목", "share": True,
+                  "phase": f"PHASE_{self.FIXTURE_TERM}"}]
+        kdir = _board(repo, tasks)
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_promote(tasks, repo, apply=True, kanban_dir=kdir,
+                                   gh_check=lambda: (True, "ok"),
+                                   gh_runner=_poison("본문이 걸렸는데 gh 를 불렀다"))
+        self.assertEqual(1, code, "본문에 있는 금칙 문자열을 놓쳤다")
+
+    def test_a_structural_violation_blocks_even_without_a_deny_file(self):
+        """R1–R4 는 `private/DENY.txt` 가 없는 머신(CI 포함)에서도 항상 돈다."""
+        repo, _bare = _repo_with_origin("chore: 초기화")  # private/ 자체가 없다
+        tasks = [{"id": "hgB213", "share": True,
+                  # R3(17~20자리) 모양의 완전히 지어낸 자리수 — 실제 uid 아님.
+                  "title": "테스트용 가짜 uid 12345678901234567 로 발급"}]  # public-ok
+        kdir = _board(repo, tasks)
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_promote(tasks, repo, apply=True, kanban_dir=kdir,
+                                   gh_check=lambda: (True, "ok"),
+                                   gh_runner=_poison("구조 규칙 적중인데 gh 를 불렀다"))
+        out = buf.getvalue()
+
+        self.assertEqual(1, code)
+        self.assertIn("hgB213", out)
+        self.assertNotIn("12345678901234567", out, "적중 문자열이 그대로 찍혔다")  # public-ok
+
+    def test_an_empty_deny_file_refuses_instead_of_passing_silently(self):
+        """파일은 있는데 항목이 0개 — '검사했더니 깨끗했다'와 '검사가 비었다'는 다르다."""
+        repo, _bare = _repo_with_origin("chore: 초기화")
+        os.makedirs(os.path.join(repo, "private"))
+        open(os.path.join(repo, "private", "DENY.txt"), "w", encoding="utf-8").close()
+        kdir = _board(repo, PROMOTE_TASKS)
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_promote(PROMOTE_TASKS, repo, apply=True, kanban_dir=kdir,
+                                   gh_check=lambda: (True, "ok"),
+                                   gh_runner=_poison("DENY.txt 가 비었는데 gh 를 불렀다"))
+        self.assertEqual(1, code)
+
+    def test_clean_payloads_proceed_past_the_gate(self):
+        """막기만 하고 통과는 못 하면 게이트가 아니라 벽이다."""
+        repo, _bare = _repo_with_origin("chore: 초기화")
+        _deny(repo, self.FIXTURE_TERM)
+        tasks = [{"id": "hgB214", "title": "완전히 깨끗한 제목", "share": True}]
+        kdir = _board(repo, tasks)
+        calls, writes = [], []
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_promote(tasks, repo, apply=True, kanban_dir=kdir,
+                                   gh_check=lambda: (True, "ok"),
+                                   gh_runner=_fake_issue_gh(calls),
+                                   kanban_writer=_recording_writer(writes))
+        self.assertEqual(0, code, "깨끗한데 차단됐다")
+        self.assertEqual([("hgB214", 777)], writes)
+
+
+class PromoteStructuralRulesEmptyTest(unittest.TestCase):
+    """N1 과 같은 함정 — `RULES` 가 비면 `_structural_hit_count` 는 모든 텍스트에
+    조용히 0 을 돌려준다. 그러면 '검사했더니 깨끗하다'와 '검사가 비었다'가
+    화면에서 구분되지 않는다."""
+
+    def setUp(self):
+        self._saved_rules = gh._STRUCTURAL_RULES
+
+    def tearDown(self):
+        gh._STRUCTURAL_RULES = self._saved_rules
+
+    def test_apply_refuses_and_says_the_layer_is_empty(self):
+        gh._STRUCTURAL_RULES = ()
+        repo, _bare = _repo_with_origin("chore: 초기화")
+        tasks = [{"id": "hgB215", "title": "깨끗해 보이는 제목", "share": True}]
+        kdir = _board(repo, tasks)
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_promote(tasks, repo, apply=True, kanban_dir=kdir,
+                                   gh_check=lambda: (True, "ok"),
+                                   gh_runner=_poison("구조 규칙이 비었는데 gh 를 불렀다"))
+        out = buf.getvalue()
+
+        self.assertEqual(1, code, "구조 규칙이 0개인데 성공으로 끝났다")
+        self.assertIn("구조 규칙", out)
+        self.assertIn("0개", out, "층이 비었다는 사실이 출력에 드러나지 않는다")
+
+    def test_dry_run_still_shows_the_plan_and_the_empty_layer(self):
+        gh._STRUCTURAL_RULES = ()
+        repo, _bare = _repo_with_origin("chore: 초기화")
+        tasks = [{"id": "hgB216", "title": "깨끗해 보이는 제목", "share": True}]
+        kdir = _board(repo, tasks)
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_promote(tasks, repo, apply=False, kanban_dir=kdir)
+        out = buf.getvalue()
+
+        self.assertEqual(0, code)
+        self.assertIn("[dry-run]", out)
+        self.assertIn("0개", out)
+
+
+class PromoteApplyTest(unittest.TestCase):
+    """생성은 `gh issue create`, 갱신은 `gh issue edit` — 번호가 있는 것을 또
+    만들면 같은 태스크가 이슈 둘이 된다."""
+
+    def test_create_is_pinned_with_dash_r_and_carries_the_payload(self):
+        repo, _bare = _repo_with_origin("chore: 초기화")
+        kdir = _board(repo, PROMOTE_TASKS)
+        slug = _git(repo, "remote", "get-url", "origin").stdout.strip()
+        calls, writes = [], []
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_promote(PROMOTE_TASKS, repo, apply=True, kanban_dir=kdir,
+                                   gh_check=lambda: (True, "ok"),
+                                   gh_runner=_fake_issue_gh(calls),
+                                   kanban_writer=_recording_writer(writes))
+        self.assertEqual(0, code, buf.getvalue())
+
+        creates = [a for a, _k in calls if a[:3] == ["gh", "issue", "create"]]
+        self.assertEqual(1, len(creates), "생성 호출이 정확히 한 번이 아니다")
+        argv = creates[0]
+        payload = gh.issue_payload(PROMOTE_TASKS[0])
+        # I1 과 같은 이유 — title/body 가 서로 바뀌어도 assertIn 으론 못 잡는다.
+        self.assertEqual(payload["title"], argv[argv.index("--title") + 1])
+        self.assertEqual(payload["body"], argv[argv.index("--body") + 1])
+        self.assertEqual(slug, argv[argv.index("-R") + 1])
+        self.assertNotIn(DETAILS_MARKER, " ".join(argv), "내부 보고서가 gh 로 갔다")
+
+    def test_a_task_with_an_issue_number_is_edited_never_created(self):
+        repo, _bare = _repo_with_origin("chore: 초기화")
+        kdir = _board(repo, PROMOTE_TASKS)
+        calls, writes = [], []
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            gh._run_promote(PROMOTE_TASKS, repo, apply=True, kanban_dir=kdir,
+                            gh_check=lambda: (True, "ok"),
+                            gh_runner=_fake_issue_gh(calls),
+                            kanban_writer=_recording_writer(writes))
+
+        edits = [a for a, _k in calls if a[:3] == ["gh", "issue", "edit"]]
+        self.assertEqual(1, len(edits), "갱신 호출이 정확히 한 번이 아니다")
+        self.assertEqual("42", edits[0][3], "갱신 대상 이슈 번호가 틀렸다")
+        creates = [a for a, _k in calls if a[:3] == ["gh", "issue", "create"]]
+        self.assertEqual(1, len(creates), "번호가 있는 태스크로 이슈를 또 만들었다")
+        self.assertEqual([("hgB200", 777)], writes,
+                         "갱신 대상까지 칸반에 다시 썼다 — 생성된 것만 써야 한다")
+
+    def test_every_gh_call_carries_a_timeout(self):
+        """무인 실행에서 멈추면 이슈는 이미 공개된 채 화면엔 아무것도 안 보인다."""
+        repo, _bare = _repo_with_origin("chore: 초기화")
+        kdir = _board(repo, PROMOTE_TASKS)
+        calls = []
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            gh._run_promote(PROMOTE_TASKS, repo, apply=True, kanban_dir=kdir,
+                            gh_check=lambda: (True, "ok"),
+                            gh_runner=_fake_issue_gh(calls),
+                            kanban_writer=_recording_writer([]))
+        self.assertTrue(calls, "gh 를 한 번도 안 불렀다")
+        for argv, kwargs in calls:
+            self.assertTrue(kwargs.get("timeout"), f"timeout 없는 gh 호출: {argv}")
+
+    def test_apply_stops_without_an_origin_remote(self):
+        """`-R` 을 고정할 근거가 없으면 `gh` 가 프로세스 cwd 로 엉뚱한 레포를 고른다."""
+        repo = _repo("chore: 초기화")  # origin 없음
+        kdir = _board(repo, PROMOTE_TASKS)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_promote(PROMOTE_TASKS, repo, apply=True, kanban_dir=kdir,
+                                   gh_check=lambda: (True, "ok"),
+                                   gh_runner=_poison("origin 이 없는데 gh 를 불렀다"))
+        self.assertEqual(1, code)
+
+
+class PromoteGhGateTest(unittest.TestCase):
+    """`gh` 가 없는 환경(CI)은 정상 경로다 — 이유를 말하고 건너뛴다."""
+
+    def test_apply_without_gh_says_why_and_creates_nothing(self):
+        repo, _bare = _repo_with_origin("chore: 초기화")
+        kdir = _board(repo, PROMOTE_TASKS)
+        writes = []
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_promote(PROMOTE_TASKS, repo, apply=True, kanban_dir=kdir,
+                                   gh_check=lambda: (False, "gh 인증 없음 — 테스트"),
+                                   gh_runner=_poison("게이트가 막혔는데 gh 를 불렀다"),
+                                   kanban_writer=_recording_writer(writes))
+        self.assertIn("gh 인증 없음 — 테스트", buf.getvalue())
+        self.assertEqual([], writes)
+        self.assertNotEqual(0, code, "아무것도 못 했는데 성공으로 보고했다")
+
+
+class PromoteOrphanIssueTest(unittest.TestCase):
+    """가장 위험한 상태 — 이슈는 만들어졌는데 칸반에 번호를 못 적었다. 그 번호가
+    중복 생성을 막는 **유일한** 장치라, 다음 실행이 같은 태스크로 이슈를 하나 더
+    만든다. `_run_tag` 의 orphan 태그와 같은 태도로 크게 보고한다."""
+
+    def test_a_failed_kanban_write_is_reported_with_the_number_and_the_url(self):
+        repo, _bare = _repo_with_origin("chore: 초기화")
+        kdir = _board(repo, PROMOTE_TASKS)
+        calls = []
+
+        def exploding_writer(task_id, number):
+            raise OSError("디스크가 꽉 찼다 — 픽스처")
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_promote(PROMOTE_TASKS, repo, apply=True, kanban_dir=kdir,
+                                   gh_check=lambda: (True, "ok"),
+                                   gh_runner=_fake_issue_gh(calls, number=901),
+                                   kanban_writer=exploding_writer)
+        out = buf.getvalue()
+
+        self.assertNotEqual(0, code, "orphan 이슈가 남았는데 성공으로 끝났다")
+        self.assertIn("901", out, "orphan 이슈 번호를 밝히지 않았다")
+        self.assertIn("https://github.com/o/r/issues/901", out, "orphan 이슈 URL 이 없다")
+        self.assertIn("hgB200", out, "어느 태스크인지 밝히지 않았다")
+
+    def test_an_unparseable_issue_number_is_also_an_orphan(self):
+        """`gh` 가 URL 을 안 찍으면 번호를 모른다 — 이슈는 이미 생겼는데 칸반에
+        적을 수가 없으니 조용히 성공으로 끝내면 안 된다."""
+        repo, _bare = _repo_with_origin("chore: 초기화")
+        kdir = _board(repo, PROMOTE_TASKS)
+        writes = []
+
+        def gh_without_a_url(argv, **_kw):
+            if argv[:3] == ["gh", "issue", "create"]:
+                return 0, "만들어짐(번호 없음)\n", ""
+            return 0, "", ""
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_promote(PROMOTE_TASKS, repo, apply=True, kanban_dir=kdir,
+                                   gh_check=lambda: (True, "ok"),
+                                   gh_runner=gh_without_a_url,
+                                   kanban_writer=_recording_writer(writes))
+        self.assertNotEqual(0, code)
+        self.assertEqual([], writes, "번호를 모르는데 칸반에 뭔가 썼다")
+
+    def test_a_failed_create_is_not_written_back_to_the_kanban(self):
+        """만들어지지도 않은 이슈 번호를 칸반에 적으면 다음 실행이 영영 갱신만 한다."""
+        repo, _bare = _repo_with_origin("chore: 초기화")
+        kdir = _board(repo, PROMOTE_TASKS)
+        writes = []
+
+        def failing_create(argv, **_kw):
+            if argv[:3] == ["gh", "issue", "create"]:
+                return 1, "", "422 Unprocessable Entity"
+            return 0, "", ""
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_promote(PROMOTE_TASKS, repo, apply=True, kanban_dir=kdir,
+                                   gh_check=lambda: (True, "ok"),
+                                   gh_runner=failing_create,
+                                   kanban_writer=_recording_writer(writes))
+        self.assertNotEqual(0, code)
+        self.assertEqual([], writes)
+
+
+class PromoteKanbanWriteBackTest(unittest.TestCase):
+    """기본 경로는 `scripts/kanban_edit.py` 의 `set_task` 를 쓴다 — 직접
+    `json.dump` 하면 읽는 쪽이 반쪽 파일을 본다(원자성). 주입을 빼고 실제로
+    파일에 번호가 박히는지 본다. **임시 보드만 쓴다.**"""
+
+    def setUp(self):
+        # 실제 sync 설정이 있는 머신에서 임시 보드가 원격으로 동기화되지 않게 한다.
+        self._old = os.environ.get("VIBE_HARNESS_SYNC_CONFIG")
+        os.environ["VIBE_HARNESS_SYNC_CONFIG"] = os.path.join(
+            tempfile.gettempdir(), "vibe-harness-tests-no-sync.json")
+
+    def tearDown(self):
+        if self._old is None:
+            os.environ.pop("VIBE_HARNESS_SYNC_CONFIG", None)
+        else:
+            os.environ["VIBE_HARNESS_SYNC_CONFIG"] = self._old
+
+    def test_the_default_writer_puts_the_issue_number_into_kanban_json(self):
+        repo, _bare = _repo_with_origin("chore: 초기화")
+        tasks = [{"id": "hgB220", "title": "번호가 적혀야 한다", "status": "review",
+                  "category": "infra", "share": True}]
+        kdir = _board(repo, tasks)
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_promote(tasks, repo, apply=True, kanban_dir=kdir,
+                                   gh_check=lambda: (True, "ok"),
+                                   gh_runner=_fake_issue_gh([], number=555))
+        self.assertEqual(0, code, buf.getvalue())
+
+        with open(os.path.join(kdir, "kanban.json"), encoding="utf-8") as fh:
+            saved = json.load(fh)
+        self.assertEqual(555, saved["tasks"][0].get("issue"),
+                         "이슈 번호가 칸반에 남지 않았다 — 다음 실행이 중복 생성한다")
+
+    def test_the_written_back_number_makes_the_task_no_longer_promotable(self):
+        """중복 방지가 실제로 성립하는지 — 같은 보드를 다시 읽으면 생성 대상이 아니다."""
+        repo, _bare = _repo_with_origin("chore: 초기화")
+        tasks = [{"id": "hgB221", "title": "두 번 올라가면 안 된다", "share": True}]
+        kdir = _board(repo, tasks)
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            gh._run_promote(tasks, repo, apply=True, kanban_dir=kdir,
+                            gh_check=lambda: (True, "ok"),
+                            gh_runner=_fake_issue_gh([], number=556))
+
+        with open(os.path.join(kdir, "kanban.json"), encoding="utf-8") as fh:
+            saved = json.load(fh)
+        self.assertEqual([], gh.promotable(saved["tasks"]),
+                         "번호를 적었는데도 여전히 생성 대상이다")
+        self.assertEqual(["hgB221"], [t["id"] for t in gh.updatable(saved["tasks"])])
+
+
+class PromoteCliTest(unittest.TestCase):
+    """`main(["promote"])` — 기본이 dry-run 이고, 보드를 못 찾으면 멈춘다."""
+
+    def test_promote_defaults_to_dry_run_and_reads_the_board_under_root(self):
+        repo, _bare = _repo_with_origin("chore: 초기화")
+        _board(repo, PROMOTE_TASKS)
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh.main(["promote"], root=repo)
+        out = buf.getvalue()
+
+        self.assertEqual(0, code)
+        self.assertIn("[dry-run]", out)
+        self.assertIn("hgB200", out)
+
+    def test_a_missing_board_stops_instead_of_an_empty_plan(self):
+        """조용히 '대상 0건' 으로 끝나면 '못 찾음'과 '올릴 게 없음'이 같아 보인다."""
+        repo, _bare = _repo_with_origin("chore: 초기화")  # vibe-harness/ 자체가 없다
+        with self.assertRaises(SystemExit) as cm:
+            gh.main(["promote"], root=repo)
+        self.assertIn("kanban.json", str(cm.exception.code))
+
+    def test_an_explicit_kanban_dir_is_honoured(self):
+        repo, _bare = _repo_with_origin("chore: 초기화")
+        other = os.path.join(tempfile.mkdtemp(), "board")
+        os.makedirs(other)
+        with open(os.path.join(other, "kanban.json"), "w", encoding="utf-8") as fh:
+            json.dump({"version": 1, "next_id": 1,
+                       "tasks": [{"id": "hgB230", "title": "다른 보드", "share": True}]},
+                      fh, ensure_ascii=False)
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh.main(["promote", "--kanban-dir", other], root=repo)
+        self.assertEqual(0, code)
+        self.assertIn("hgB230", buf.getvalue())
+
+
+class PromoteDuplicateIdTest(unittest.TestCase):
+    """id 가 겹친 보드에서도 **검사한 것과 올라가는 것이 같아야** 한다. 이 레포는
+    같은 id 를 가진 태스크 두 개(409·410)를 실제로 겪었다 — payload 를 id 로 묶으면
+    뒤엣것이 앞엣것을 덮어, 더러운 텍스트가 검사만 통과한 깨끗한 자리로 들어간다."""
+
+    FIXTURE_TERM = "ZQX-FIXTURE-INTERNAL-CODE"
+
+    def test_two_tasks_sharing_an_id_do_not_lose_a_payload(self):
+        repo, _bare = _repo_with_origin("chore: 초기화")
+        _deny(repo, self.FIXTURE_TERM)
+        tasks = [
+            {"id": "dup", "title": "완전히 깨끗한 제목", "share": True},
+            {"id": "dup", "title": f"{self.FIXTURE_TERM} 섞인 제목", "share": True},
+        ]
+        kdir = _board(repo, tasks)
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_promote(tasks, repo, apply=True, kanban_dir=kdir,
+                                   gh_check=lambda: (True, "ok"),
+                                   gh_runner=_poison("id 가 겹치는데 gh 를 불렀다"))
+        out = buf.getvalue()
+
+        self.assertEqual(1, code, "겹친 id 때문에 더러운 payload 를 놓쳤다")
+        self.assertIn("2개 대상 중", out, "겹친 id 하나가 목록에서 사라졌다")
+        self.assertNotIn(self.FIXTURE_TERM, out)

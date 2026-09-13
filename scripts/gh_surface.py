@@ -13,6 +13,7 @@
 """
 import argparse
 import importlib.util
+import json
 import os
 import re
 import subprocess
@@ -32,6 +33,8 @@ _PUSH_TIMEOUT = 30
 _GH_AUTH_TIMEOUT = 15       # `gh auth status` — 로컬 토큰 확인, 가볍다
 _GH_RELEASE_VIEW_TIMEOUT = 20   # `gh release view` — 조회 1건
 _GH_RELEASE_CREATE_TIMEOUT = 60  # `gh release create` — 쓰기 + 노트 업로드, 느린 회선을 감안해 여유를 둔다
+_GH_ISSUE_CREATE_TIMEOUT = 60   # `gh issue create` — 쓰기. 멈추면 번호를 못 읽어 orphan 이 된다
+_GH_ISSUE_EDIT_TIMEOUT = 60     # `gh issue edit` — 쓰기(갱신)
 
 DONE_PHASE = re.compile(r"^##\s+(PHASE_\w+)\s+✅\s*DONE\s*\(([0-9-]+)\)\s*$", re.M)
 
@@ -166,6 +169,36 @@ def updatable(tasks):
     return [t for t in tasks or [] if t.get("share") and t.get("issue")]
 
 
+# 승격된 이슈 본문의 마지막 줄. 이슈만 보고 어디가 정본인지 알 수 있어야 한다 —
+# 승격은 단방향이라, GitHub 쪽에 적은 진행은 보드로 돌아오지 않는다.
+_PROMOTE_FOOTER = ("이 이슈는 vibe-harness 보드에서 승격됐다. 진행 기록의 정본은 보드이고, "
+                   "승격은 단방향이다.")
+
+
+def issue_payload(task):
+    """태스크 하나에서 **실제로 공개될 텍스트**를 만든다. 순수 — 파일도 네트워크도
+    건드리지 않아 고정 입력으로 검사할 수 있다.
+
+    **`details` 는 싣지 않는다.** 그 필드는 내부 작업 보고서다(변경한 파일, 기술 결정,
+    후속 메모). 릴리스 노트에서 이미 같은 실수를 잡았다 — 내부 본문 ~4KB 를 공개
+    표면에 그대로 실으려다 한 줄 요약으로 잘라냈다(`release_summary` 참고). 여기서도
+    같은 결정을 한다: 공개되는 건 **사람이 제목으로 쓴 한 줄 + 보드에서 파생되는
+    분류 몇 개**뿐이다.
+
+    제목이 비면 `gh` 가 거부하거나 제목 없는 이슈가 남는다 — 보드 id 로 대체한다
+    (`release_summary` 가 요약 없는 절을 Phase 이름으로 대체하는 것과 같은 태도).
+    """
+    task = task or {}
+    tid = str(task.get("id") or "?")
+    title = (task.get("title") or "").strip() or f"(제목 없음) {tid}"
+    lines = [f"- 보드 id: {tid}"]
+    for label, key in (("Phase", "phase"), ("분류", "category"), ("상태", "status")):
+        value = str(task.get(key) or "").strip()
+        if value:
+            lines.append(f"- {label}: {value}")
+    return {"title": title, "body": "\n".join(lines) + "\n\n" + _PROMOTE_FOOTER}
+
+
 def _run(argv, env=None, timeout=None):
     """`env`/`timeout` 은 기본 호출은 그대로 두고 필요한 곳(네트워크로 나가는 `git
     push`)에만 적용하기 위한 것 — 나머지 로컬 전용 git 호출은 손대지 않는다.
@@ -287,7 +320,10 @@ def _load_deny_terms(root):
                        "애초에 보지 못한다; CI 와 다른 머신엔 이 파일이 없는 게 정상이다)")
     with open(path, encoding="utf-8") as fh:
         terms = [t.strip() for t in fh if t.strip() and not t.startswith("#")]
-    return terms, f"private/DENY.txt 로드 — 금칙 문자열 {len(terms)}개로 공개 요약을 검사한다"
+    # 호출부가 둘이다(`_run_tag` 의 요약, `_run_promote` 의 제목+본문) — 어느 쪽에도
+    # 맞는 말로 적는다. 여기서 "요약"이라고 단정하면 promote 출력이 "제목만 봤다"는
+    # 뜻으로 읽혀, 사람이 승인 근거로 읽는 문장이 실제 검사 범위와 어긋난다.
+    return terms, f"private/DENY.txt 로드 — 금칙 문자열 {len(terms)}개로 공개 텍스트를 검사한다"
 
 
 def _deny_hit_count(text, terms):
@@ -548,8 +584,212 @@ def _run_tag(plan, root, apply=False, gh_check=None, gh_runner=None):
     return 0 if failed == 0 else 1
 
 
+# `gh issue create` 는 만들어진 이슈의 URL 을 stdout 에 찍는다. 그 URL 이 번호를
+# 알 수 있는 유일한 근거이고, 번호는 **중복 생성을 막는 유일한 장치**다.
+_ISSUE_URL = re.compile(r"https?://\S*?/issues/([0-9]+)\b")
+
+
+def _issue_ref(text):
+    """`gh issue create` 출력에서 (번호, URL). 못 읽으면 `(None, None)` —
+    빈 값이나 0 으로 때우지 않는다. 못 읽었다는 건 **이슈는 이미 만들어졌는데 칸반에
+    적을 번호가 없다**는 뜻이라, 조용히 넘어가면 다음 실행이 같은 태스크로 이슈를
+    하나 더 만든다.
+    """
+    last = None
+    for m in _ISSUE_URL.finditer(text or ""):
+        last = m
+    if last is None:
+        return None, None
+    return int(last.group(1)), last.group(0)
+
+
+def _kanban_issue_writer(kanban_dir):
+    """칸반 쓰기는 `scripts/kanban_edit.py` 의 `set_task` 로만 한다.
+
+    직접 `json.dump` 하면 truncate-then-write 라 **읽는 쪽이 반쪽짜리 파일을 본다**
+    (실측: 109,409B 에서 파싱 실패). 읽기-수정-쓰기 전 구간의 잠금도 그 안에 있다 —
+    여기서 다시 구현하면 두 경로가 조용히 갈라진다.
+    """
+    path = os.path.join(ROOT, "scripts", "kanban_edit.py")
+    spec = importlib.util.spec_from_file_location("_gh_surface_kanban_edit", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    def write(task_id, number):
+        mod.set_task(kanban_dir, task_id, {"issue": number})
+    return write
+
+
+def _run_promote(tasks, root, apply=False, kanban_dir=None,
+                 gh_check=None, gh_runner=None, kanban_writer=None):
+    """공유 표시가 달린 태스크를 이슈로. 기본은 dry-run.
+
+    **dry-run 이 찍는 텍스트가 곧 공개될 텍스트다.** 사용자는 이 출력을 읽고
+    `--apply` 승인 여부를 정하므로 제목·본문을 글자 그대로 보여준다 — 요약하거나
+    줄여 보여주면 승인 근거가 실제 공개물과 달라진다.
+
+    **위생 게이트는 `_run_tag` 와 같은 전체 사전 검사다.** 하나라도 걸리면 아무것도
+    만들지 않는다 — 깨끗한 것부터 만들고 가다 중간에 멈추면, 앞의 것은 이미 공개된
+    뒤에 뒤의 것이 걸렸다는 걸 알게 된다. 이슈도 태그처럼 한 번 만들면 남는다.
+    검사 대상은 **공개되는 텍스트 전체**(제목 + 본문)다 — 제목만 보면 본문으로
+    새는 경로가 그대로 남는다. 적중 문자열 자체는 어디에도 찍지 않는다(세는 것과
+    드러내는 것은 다르다).
+
+    생성 성공 뒤 **칸반에 번호를 적는 것이 중복 생성을 막는 유일한 장치**다. 그
+    쓰기가 실패하면 orphan 이슈다 — `_run_tag` 의 orphan 태그와 같은 태도로 번호와
+    URL 을 크게 보고하고, 실행을 성공으로 끝내지 않는다.
+    """
+    creates = promotable(tasks)
+    updates = updatable(tasks)
+    items = [("create", t) for t in creates] + [("update", t) for t in updates]
+
+    # dry-run 에서도 봐야 하므로 `if not apply` 보다 앞에 있다 — `_run_tag` 와 같다.
+    deny_terms, deny_why = _load_deny_terms(root)
+    deny_corrupted = deny_terms is not None and not deny_terms
+    structural_rules = _structural_rules()
+    structural_why = (f"구조 규칙(R1–R4) 로드 — {len(structural_rules)}개로 "
+                      "공개 텍스트를 검사한다")
+    structural_corrupted = len(structural_rules) == 0
+
+    # `(kind, task, payload, hits)` 를 **자리 순서로** 들고 간다. id 로 사전을 만들면
+    # id 가 겹친 보드에서(이 레포가 실제로 겪은 사고다 — 409·410) 뒤엣것이 앞엣것의
+    # 텍스트를 덮어, 검사한 것과 올라가는 것이 달라진다.
+    entries = [(kind, t, issue_payload(t)) for kind, t in items]
+    entries = [(kind, t, payload,
+                _hygiene_hit_count(payload["title"] + "\n" + payload["body"], deny_terms))
+               for kind, t, payload in entries]
+    blocked = [e for e in entries if e[3]]
+
+    for kind, t, payload, hits in entries:
+        tid = str(t.get("id"))
+        head = "생성" if kind == "create" else f"갱신 #{t.get('issue')}"
+        if hits:
+            # 걸린 것은 텍스트를 찍지 않는다 — 여기서 찍으면 출력 자체가 새 유출원이다.
+            print(f"[보류] {tid} ({head}) — 공개 텍스트 검사 적중 {hits}건 "
+                  "(문자열은 출력하지 않는다)")
+            continue
+        print(f"[{head}] {tid} — 아래 텍스트가 그대로 올라간다")
+        print("--- title ---")
+        print(payload["title"])
+        print("--- body ---")
+        print(payload["body"])
+        print("--- end ---")
+
+    print(f"\n{structural_why}")
+    if structural_corrupted:
+        print("  ⚠ 구조 규칙이 0개다 — R1–R4 가 비었거나 손상됐을 수 있어 이 층을 "
+              "신뢰할 수 없다(정확 금칙어 층과는 별개로 무력화된 상태다)")
+    print(deny_why)
+    if deny_corrupted:
+        print("  ⚠ 파일은 있지만 항목이 0개다 — 잘렸거나 손상됐을 수 있어 정확 문자열 "
+              "검사를 신뢰할 수 없다(구조 규칙은 위 결과대로 별도로 적용된다)")
+
+    clean_creates = sum(1 for kind, _t, _p, hits in entries if kind == "create" and not hits)
+    clean_updates = sum(1 for kind, _t, _p, hits in entries if kind == "update" and not hits)
+    print(f"\n{len(entries)}개 대상 중 생성 {clean_creates}건, "
+          f"갱신 {clean_updates}건, 보류 {len(blocked)}건"
+          + (" (공개 텍스트 검사 적중)" if blocked else ""))
+
+    if not apply:
+        print("[dry-run] 아무것도 만들지 않았다 — 실행하려면 --apply")
+        return 0
+
+    if structural_corrupted:
+        print("\n구조 규칙(R1–R4)이 0개다 — 파일이 손상됐을 수 있어 아무것도 만들지 "
+              "않는다")
+        return 1
+
+    if deny_corrupted:
+        print("\nprivate/DENY.txt 가 있지만 비어 있다 — 파일을 확인하기 전엔 아무것도 "
+              "만들지 않는다")
+        return 1
+
+    if blocked:
+        print(f"\n공개 텍스트 검사에 걸린 태스크가 {len(blocked)}개 있다 — "
+              f"{', '.join(sorted(str(t.get('id')) for _k, t, _p, _h in blocked))}. "
+              "전부 고치기 전엔 아무것도 만들지 않는다 "
+              "(한 번 공개되면 되돌릴 수 없어, 하나라도 걸리면 시작하지 않는다)")
+        return 1
+
+    gh_check = gh_check or gh_available
+    ok, why = gh_check()
+    if not ok:
+        print(f"\n{why}")
+        return 1
+
+    repo_slug = _repo_slug(root)
+    if not repo_slug:
+        print("\norigin 리모트를 확인하지 못했다 — gh 호출을 이 레포에 고정할 수 없어 "
+              "아무것도 만들지 않고 멈춘다")
+        return 1
+
+    gh_runner = gh_runner or _run
+    if kanban_writer is None:
+        kanban_writer = _kanban_issue_writer(kanban_dir or os.path.join(root, "vibe-harness"))
+
+    created = updated = failed = 0
+    orphans = []
+    for kind, t, payload, _hits in entries:
+        tid = str(t.get("id"))
+
+        if kind == "update":
+            number = t.get("issue")
+            code, _out, err = gh_runner(
+                ["gh", "issue", "edit", str(number), "--title", payload["title"],
+                 "--body", payload["body"], "-R", repo_slug],
+                timeout=_GH_ISSUE_EDIT_TIMEOUT)
+            if code != 0:
+                print(f"{tid}: 이슈 #{number} 갱신 실패 ({err.strip()[:120]})")
+                failed += 1
+                continue
+            print(f"{tid}: 이슈 #{number} 갱신 완료")
+            updated += 1
+            continue
+
+        code, out, err = gh_runner(
+            ["gh", "issue", "create", "--title", payload["title"],
+             "--body", payload["body"], "-R", repo_slug],
+            timeout=_GH_ISSUE_CREATE_TIMEOUT)
+        if code != 0:
+            # 만들어지지 않았으니 칸반은 그대로 둔다 — 여기서 번호를 적으면 있지도
+            # 않은 이슈를 영원히 갱신하려 든다.
+            print(f"{tid}: 이슈 생성 실패 — 칸반은 그대로 둔다 ({err.strip()[:120]})")
+            failed += 1
+            continue
+
+        number, url = _issue_ref(out)
+        if number is None:
+            orphans.append(tid)
+            print(f"{tid}: 이슈는 만들어졌는데 출력에서 번호를 읽지 못했다 — orphan 이슈다. "
+                  "칸반에 적을 번호가 없어 다음 실행이 같은 태스크로 이슈를 하나 더 만든다. "
+                  f"사람이 직접 확인해야 한다 (gh 출력: {(out or '').strip()[:160]})")
+            failed += 1
+            continue
+
+        try:
+            kanban_writer(tid, number)
+        except Exception as exc:      # 쓰기 실패의 종류는 다양하다 — 전부 orphan 이다
+            orphans.append(tid)
+            print(f"{tid}: 이슈 #{number} 는 만들어졌는데 칸반에 번호를 적지 못했다 — "
+                  "orphan 이슈다. 그 번호가 중복 생성을 막는 유일한 장치라, 이대로 다시 "
+                  f"실행하면 같은 태스크로 이슈가 하나 더 생긴다. 보드의 {tid} 에 "
+                  f"issue: {number} 를 직접 적거나 이슈를 닫아야 한다 — {url} "
+                  f"(원인: {type(exc).__name__}: {str(exc)[:120]})")
+            failed += 1
+            continue
+
+        print(f"{tid}: 이슈 #{number} 생성 + 칸반 기록 완료 — {url}")
+        created += 1
+
+    print(f"\n생성 {created}, 갱신 {updated}, 실패 {failed}")
+    if orphans:
+        print(f"orphan 이슈(칸반에 번호가 없다): {', '.join(orphans)} — 사람이 직접 "
+              "정리하기 전엔 다시 실행하면 중복 생성된다")
+    return 0 if failed == 0 else 1
+
+
 def main(argv=None, root=None):
-    """`gh_surface.py tag` — 기본은 dry-run.
+    """`gh_surface.py tag` / `promote` — 어느 쪽이든 기본은 dry-run.
 
     `root` 는 테스트가 임시 레포를 주입하기 위한 자리다. 기본은 이 파일이
     있는 레포의 루트(`ROOT`) — `private/PHASES.md` 도 그 기준으로 찾는다.
@@ -561,9 +801,29 @@ def main(argv=None, root=None):
     t.add_argument("--phases", default=None, help="PHASES.md 경로 (기본: private/PHASES.md)")
     t.add_argument("--apply", action="store_true",
                    help="실제로 만든다. 없으면 무엇을 할지 출력만 한다")
+
+    p = sub.add_parser("promote", help="공유 표시된 태스크를 이슈로. 기본은 dry-run")
+    p.add_argument("--kanban-dir", default=None,
+                   help="kanban.json 이 있는 디렉터리 (기본: <root>/vibe-harness)")
+    p.add_argument("--apply", action="store_true",
+                   help="실제로 만든다. 없으면 무엇이 올라갈지 출력만 한다")
     a = ap.parse_args(argv)
 
     base = root or ROOT
+
+    if a.cmd == "promote":
+        kanban_dir = a.kanban_dir or os.path.join(base, "vibe-harness")
+        kanban_path = os.path.join(kanban_dir, "kanban.json")
+        if not os.path.exists(kanban_path):
+            raise SystemExit(
+                f"kanban.json 을 찾지 못했다: {kanban_path}\n"
+                "  조용히 '올릴 것 없음' 으로 끝나면 '보드를 못 찾음' 과 '올릴 게 없음' 이 "
+                "똑같아 보인다 — 추측하지 않고 멈춘다.")
+        with open(kanban_path, encoding="utf-8") as fh:
+            board = json.load(fh)
+        return _run_promote(board.get("tasks") or [], base, apply=a.apply,
+                            kanban_dir=kanban_dir)
+
     phases_path = a.phases or os.path.join(base, "private", "PHASES.md")
     if not os.path.exists(phases_path):
         raise SystemExit(
