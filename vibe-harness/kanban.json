@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "next_id": 116,
+  "next_id": 117,
   "tasks": [
     {
       "id": "hg98",
@@ -485,6 +485,28 @@
       "review": "",
       "created_by": "hoarchi",
       "assigned_to": "hoarchi"
+    },
+    {
+      "id": "hgB116",
+      "title": "promote 리뷰 대응 — 쓰기 실패·중복 id·갱신 argv·설치 레이아웃",
+      "description": "",
+      "details": "리뷰 7건(Critical 2 · Important 2 · Minor 3) 대응. 아직 promote 로 만든 이슈가 0건이라 지금이 가장 싸다.\n\n## 고친 것 (scripts/gh_surface.py)\n\n- **C1 쓰기 실패 신호를 놓쳤다**: orphan 분기가 `except Exception` 이라, 기본 writer 인 `kanban_edit.set_task` 가 \"보드에 없다\"를 알리는 `SystemExit`(BaseException)을 못 잡았다. 이슈는 만들어졌는데 번호·URL·orphan 표시가 하나도 안 찍히고 남은 대상은 건너뛰고 다음 실행이 중복 생성. `except BaseException` 으로 바꾸고, 집계 출력을 `report()` 로 빼서 **어떻게 끝나든 반드시** 찍게 했다. Ctrl-C 는 보고 후 그대로 re-raise — 삼키지 않는다.\n- **C2 겹친 보드 id**: `set_task` 는 첫 태스크에만 적고 멈춘다 → 이슈 둘, 번호 하나, 나머지는 매 실행 재승격(무한 중복)인데 화면엔 \"실패 0\". `id_problems()` 로 **외부 호출 전에** 중복·id 없음을 판정하고 전체 거부(위생 게이트와 같은 모양), dry-run 에도 경고를 찍는다.\n- **I3 갱신 argv 무검사**: 기존 테스트가 생성만 걸러 봐서 `gh issue edit` 의 `--body` 를 `details`(내부 보고서)로 바꿔도 전 스위트가 초록이었다. 코드는 그대로 두고 **검사**를 고쳤다 — promote 가 내보내는 모든 gh 호출에 대해 -R 고정·제목·본문이 `issue_payload` 출력 그대로인지·details 부재를 확인한다.\n- **I4 설치본 레이아웃**: `~/.claude/skills/vibe-harness/` 에서는 ROOT 에 tests/ 도 scripts/ 도 없어 `FileNotFoundError` 트레이스백으로 죽었다. `MissingToolFile` 로 **닫힌 채** 실패 — 무엇이 없는지 + 아무것도 안 만들었다 + 0 아닌 코드. 쓰기 도구 확인은 gh 를 부르기 **전**으로 옮겼다(만든 뒤에 알면 그게 orphan).\n- **M5** DENY.txt 없음 문구가 tag 전용이었다(promote 는 kanban 에서 파생) → 양쪽에 맞게. **M6** 보드 id 파생을 `board_id()` 하나로(본문 `?` vs 로그 `None` 어긋남 제거). **M7** 거부된 실행이 성공처럼 읽히던 문구 → \"생성 가능 N건\", \"아직 만들지 않았다\".\n\n## 검사\n\n새/변경 체크 16건 전부 **주입해서 빨간 것 확인**(M1~M15). 주입 하네스에서 .pyc 캐시가 (mtime 초, 크기)로만 무효화돼 같은 초·같은 크기의 두 주입이 앞의 바이트코드를 읽는 함정을 만나 `-B`/PYTHONDONTWRITEBYTECODE 로 껐다 — 안 껐으면 M10·M15 를 \"초록이니 검사 없음\"으로 오판할 뻔했다.\n\n스위트 863 → 883 (+20), `python3 scripts/check.py` 전 단계 PASS, 실보드 dry-run 0건(아직 share 표시가 없다) 정상.\n\n## 남은 것\n\n- hgB110(share/issue 필드) 은 아직 todo — 기능 커밋은 들어갔으니 상태 정리 필요.\n- promote --apply 는 한 번도 안 돌렸다. 첫 실행은 share 표시 1건으로 시작할 것.",
+      "status": "review",
+      "priority": "medium",
+      "category": "backend",
+      "target_date": "",
+      "started_at": "",
+      "completed_at": "",
+      "lines_added": "619",
+      "lines_removed": "24",
+      "tokens_used": 0,
+      "created_at": "2026-09-13T22:43:26+09:00",
+      "updated_at": "2026-09-13T22:43:57+09:00",
+      "position": 0,
+      "phase": "PHASE_PMF15",
+      "review": "",
+      "created_by": "hogun",
+      "assigned_to": "hogun"
     }
   ]
 }

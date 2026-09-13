@@ -39,6 +39,20 @@ _GH_ISSUE_EDIT_TIMEOUT = 60     # `gh issue edit` — 쓰기(갱신)
 DONE_PHASE = re.compile(r"^##\s+(PHASE_\w+)\s+✅\s*DONE\s*\(([0-9-]+)\)\s*$", re.M)
 
 
+class MissingToolFile(RuntimeError):
+    """이 도구 **자신의** 파일이 지금 레이아웃에 없다.
+
+    `scripts/setup.py` 는 `gh_surface.py` 를 `~/.claude/skills/vibe-harness/` 에 평평하게
+    설치한다 — 거기서는 `ROOT` 가 `~/.claude/skills` 가 되어 `tests/` 도 `scripts/` 도
+    없다. 그 자리에서 실행하면 `FileNotFoundError` 트레이스백만 남았다: 무엇이 없는지도,
+    뭔가 만들어졌는지도 말해주지 않는 실패다.
+
+    **닫힌 채로 실패한다** — 무엇이 없는지와 "아무것도 만들지 않았다"를 말하고 0 이
+    아닌 코드로 끝낸다. 파일을 옮겨서 설치본에서도 돌게 만들지 않는다: 검사 규칙이
+    없는 채로 공개 표면에 쓰는 것이 이 도구가 막으려는 바로 그 일이다.
+    """
+
+
 def phase_sections(body):
     """`PHASES.md` 본문에서 완료 Phase 절을 뽑는다. **파일이 아니라 텍스트를 받는다.**"""
     out = {}
@@ -169,6 +183,42 @@ def updatable(tasks):
     return [t for t in tasks or [] if t.get("share") and t.get("issue")]
 
 
+# id 가 없을 때 쓰는 대체 문자열. 공개 본문과 로그가 **같은 문자열**을 써야 한다.
+_NO_ID = "?"
+
+
+def board_id(task):
+    """보드 id 하나의 **유일한** 파생. 공개되는 본문(`issue_payload`)과 화면 로그가
+    각자 다르게 유도하면(`str(t.get("id") or "?")` 대 `str(t.get("id"))`) id 없는
+    태스크에서 본문은 `보드 id: ?`, 로그는 `None: 이슈 #N ...` 이 되어 **올라간 이슈를
+    어느 태스크로도 되짚을 수 없다** — 승격이 단방향이라 그 추적이 전부다.
+    """
+    return str((task or {}).get("id") or _NO_ID)
+
+
+def id_problems(tasks):
+    """승격 대상의 **보드 id** 문제. 순수 — 네트워크로 나가기 전에 돈다.
+
+    생성 뒤 칸반에 번호를 되돌려 적는 것이 중복 생성을 막는 유일한 장치인데,
+    `kanban_edit.set_task` 는 id 로 **맨 처음 맞는 태스크 하나**를 찾아 거기 적고
+    멈춘다. 그래서 id 가 겹치면: 두 이슈가 만들어지고, 나중 번호가 앞 번호를 덮어
+    번호는 하나만 남고, 번호를 못 받은 쪽은 **매 실행마다 다시 승격된다** — 끝없는
+    중복 생성인데 화면에는 "실패 0" 으로 보인다. id 가 아예 없으면 적을 자리 자체가
+    없다(그 쓰기는 `SystemExit("태스크 ? 없음")` 으로 실패한다 — orphan 이슈다).
+
+    둘 다 **보드가 이미 깨져 있다는 뜻**이라 고르는 문제가 아니다. 위생 게이트와 같은
+    태도로 전체를 거부한다.
+    """
+    ids = [board_id(t) for t in tasks or []]
+    counts = {}
+    for i in ids:
+        counts[i] = counts.get(i, 0) + 1
+    return {
+        "duplicate": sorted(i for i, n in counts.items() if n > 1 and i != _NO_ID),
+        "missing": sum(1 for i in ids if i == _NO_ID),
+    }
+
+
 # 승격된 이슈 본문의 마지막 줄. 이슈만 보고 어디가 정본인지 알 수 있어야 한다 —
 # 승격은 단방향이라, GitHub 쪽에 적은 진행은 보드로 돌아오지 않는다.
 _PROMOTE_FOOTER = ("이 이슈는 vibe-harness 보드에서 승격됐다. 진행 기록의 정본은 보드이고, "
@@ -189,7 +239,7 @@ def issue_payload(task):
     (`release_summary` 가 요약 없는 절을 Phase 이름으로 대체하는 것과 같은 태도).
     """
     task = task or {}
-    tid = str(task.get("id") or "?")
+    tid = board_id(task)
     title = (task.get("title") or "").strip() or f"(제목 없음) {tid}"
     lines = [f"- 보드 id: {tid}"]
     for label, key in (("Phase", "phase"), ("분류", "category"), ("상태", "status")):
@@ -313,11 +363,16 @@ def _load_deny_terms(root):
     """
     path = os.path.join(root, "private", "DENY.txt")
     if not os.path.exists(path):
+        # 호출부가 둘이다 — `_run_tag`(private/PHASES.md 에서 파생되는 한 줄 요약)와
+        # `_run_promote`(kanban.json 에서 파생되는 제목+본문). 한쪽 말로 적으면
+        # 나머지 한쪽에서는 **검사 범위를 잘못 알려주는 문장**이 된다: "공개 요약" 이라고
+        # 단정하면 promote 출력이 "제목만 봤다"는 뜻으로 읽힌다. 이 줄은 DENY.txt 가
+        # 없는 모든 머신(CI 포함)에서 매번 찍히므로 양쪽에 맞는 말이어야 한다.
         return None, ("private/DENY.txt 없음 — 정확 문자열 검사만 건너뛴다 "
-                       "(구조 규칙 R1–R4 는 이 게이트가 공개 요약에 직접 적용한다 — "
-                       "tests/test_public_hygiene.py 자신은 git 추적 파일만 보므로, "
-                       "gitignore 된 private/PHASES.md 에서 파생되는 이 요약은 "
-                       "애초에 보지 못한다; CI 와 다른 머신엔 이 파일이 없는 게 정상이다)")
+                       "(구조 규칙 R1–R4 는 이 게이트가 공개되는 텍스트에 직접 적용한다 — "
+                       "tests/test_public_hygiene.py 는 커밋된 추적 파일을 훑을 뿐이라, "
+                       "지금 이 실행이 밖으로 내보낼 텍스트를 실제로 보는 건 이 게이트뿐이다; "
+                       "CI 와 다른 머신엔 이 파일이 없는 게 정상이다)")
     with open(path, encoding="utf-8") as fh:
         terms = [t.strip() for t in fh if t.strip() and not t.startswith("#")]
     # 호출부가 둘이다(`_run_tag` 의 요약, `_run_promote` 의 제목+본문) — 어느 쪽에도
@@ -350,10 +405,22 @@ def _structural_rules():
     (태깅 **대상** 레포, 테스트에서는 임시 디렉터리)가 아니다. 이 규칙들은 도구
     자신의 코드지 태깅 대상의 데이터가 아니라서, 대상이 무엇이든 항상 같은 곳에서
     읽는다.
+
+    **설치본에는 이 파일이 없다** — `setup.py` 는 이 스크립트를
+    `~/.claude/skills/vibe-harness/` 에 평평하게 복사하고, 거기서 `ROOT` 는
+    `~/.claude/skills` 다(`tests/` 가 없다). 그때는 `MissingToolFile` 로 닫힌 채
+    실패한다 — 트레이스백으로 죽지도, 검사 없이 공개하지도 않는다.
     """
     global _STRUCTURAL_RULES
     if _STRUCTURAL_RULES is None:
         path = os.path.join(ROOT, "tests", "test_public_hygiene.py")
+        if not os.path.exists(path):
+            raise MissingToolFile(
+                f"공개 텍스트 검사 규칙(R1–R4)을 찾지 못했다: {path}\n"
+                "  이 파일은 레포 체크아웃에만 있다 — 설치본"
+                "(~/.claude/skills/vibe-harness/)에는 tests/ 가 없다.\n"
+                "  검사 없이 공개하지 않는다: 아무것도 만들지 않고 멈춘다. "
+                "레포에서 `python3 scripts/gh_surface.py ...` 로 실행한다.")
         spec = importlib.util.spec_from_file_location("_gh_surface_hygiene_rules", path)
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
@@ -437,7 +504,12 @@ def _run_tag(plan, root, apply=False, gh_check=None, gh_runner=None):
     # `_structural_hit_count` 는 모든 텍스트에 조용히 0 을 돌려준다. 그러면 "검사했더니
     # 깨끗하다"와 "검사 자체가 비어 있었다"가 겉보기에 똑같아진다. `deny_corrupted`
     # 와 같은 취급 — 몇 개인지 항상 말하고, 0개면 하드 실패한다.
-    structural_rules = _structural_rules()
+    try:
+        structural_rules = _structural_rules()
+    except MissingToolFile as exc:
+        # 설치본 레이아웃 — 트레이스백 대신 무엇이 없는지 말하고 닫힌 채 끝낸다.
+        print(f"\n{exc}")
+        return 1
     structural_why = f"구조 규칙(R1–R4) 로드 — {len(structural_rules)}개로 공개 요약을 검사한다"
     structural_corrupted = len(structural_rules) == 0
 
@@ -609,8 +681,20 @@ def _kanban_issue_writer(kanban_dir):
     직접 `json.dump` 하면 truncate-then-write 라 **읽는 쪽이 반쪽짜리 파일을 본다**
     (실측: 109,409B 에서 파싱 실패). 읽기-수정-쓰기 전 구간의 잠금도 그 안에 있다 —
     여기서 다시 구현하면 두 경로가 조용히 갈라진다.
+
+    **설치본에는 이 파일이 `ROOT` 기준 경로에 없다**(`_structural_rules` 와 같은 이유).
+    그때는 `MissingToolFile` — 그리고 이 확인은 `gh` 를 부르기 **전에** 해야 한다:
+    이슈를 만든 뒤에야 쓰기 도구가 없다는 걸 알면 그게 바로 orphan 이슈다.
     """
     path = os.path.join(ROOT, "scripts", "kanban_edit.py")
+    if not os.path.exists(path):
+        raise MissingToolFile(
+            f"칸반 쓰기 도구를 찾지 못했다: {path}\n"
+            "  이 파일은 레포 체크아웃에만 있다 — 설치본"
+            "(~/.claude/skills/vibe-harness/)에는 scripts/ 가 없다.\n"
+            "  생성한 이슈 번호를 보드에 되돌려 적을 방법이 없으면 만드는 족족 "
+            "orphan 이다: 아무것도 만들지 않고 멈춘다. "
+            "레포에서 `python3 scripts/gh_surface.py ...` 로 실행한다.")
     spec = importlib.util.spec_from_file_location("_gh_surface_kanban_edit", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -637,7 +721,14 @@ def _run_promote(tasks, root, apply=False, kanban_dir=None,
 
     생성 성공 뒤 **칸반에 번호를 적는 것이 중복 생성을 막는 유일한 장치**다. 그
     쓰기가 실패하면 orphan 이슈다 — `_run_tag` 의 orphan 태그와 같은 태도로 번호와
-    URL 을 크게 보고하고, 실행을 성공으로 끝내지 않는다.
+    URL 을 크게 보고하고, 실행을 성공으로 끝내지 않는다. 그래서 보드 id 검사
+    (`id_problems`)도 위생 게이트와 같은 전체 사전 검사다: 되돌려 적을 자리가
+    없거나 겹치면 그 유일한 장치가 처음부터 없는 채로 공개하는 셈이다.
+
+    **출력은 아직 일어나지 않은 일을 완료처럼 말하지 않는다.** 목록과 집계는
+    거부 문구보다 **위**에 찍히므로(순서상 어쩔 수 없다), 거부된 실행이 성공한
+    실행처럼 읽히지 않으려면 그 줄들이 전부 "후보" 를 말해야 한다 — `_run_tag` 가
+    "태그 **가능**" 이라고 적는 것과 같은 이유다.
     """
     creates = promotable(tasks)
     updates = updatable(tasks)
@@ -646,10 +737,19 @@ def _run_promote(tasks, root, apply=False, kanban_dir=None,
     # dry-run 에서도 봐야 하므로 `if not apply` 보다 앞에 있다 — `_run_tag` 와 같다.
     deny_terms, deny_why = _load_deny_terms(root)
     deny_corrupted = deny_terms is not None and not deny_terms
-    structural_rules = _structural_rules()
+    try:
+        structural_rules = _structural_rules()
+    except MissingToolFile as exc:
+        # 설치본 레이아웃 — 트레이스백 대신 무엇이 없는지 말하고 닫힌 채 끝낸다.
+        print(f"\n{exc}")
+        return 1
     structural_why = (f"구조 규칙(R1–R4) 로드 — {len(structural_rules)}개로 "
                       "공개 텍스트를 검사한다")
     structural_corrupted = len(structural_rules) == 0
+
+    # 보드 id 검사도 **외부 호출 하나 나가기 전에** 끝낸다 — 겹친 id 로 만들어진
+    # 이슈는 번호를 적을 자리가 하나뿐이라 되돌릴 수 없는 중복이 무한히 쌓인다.
+    problems = id_problems([t for _kind, t in items])
 
     # `(kind, task, payload, hits)` 를 **자리 순서로** 들고 간다. id 로 사전을 만들면
     # id 가 겹친 보드에서(이 레포가 실제로 겪은 사고다 — 409·410) 뒤엣것이 앞엣것의
@@ -661,14 +761,17 @@ def _run_promote(tasks, root, apply=False, kanban_dir=None,
     blocked = [e for e in entries if e[3]]
 
     for kind, t, payload, hits in entries:
-        tid = str(t.get("id"))
-        head = "생성" if kind == "create" else f"갱신 #{t.get('issue')}"
+        tid = board_id(t)
+        head = "생성 대상" if kind == "create" else f"갱신 대상 #{t.get('issue')}"
         if hits:
             # 걸린 것은 텍스트를 찍지 않는다 — 여기서 찍으면 출력 자체가 새 유출원이다.
             print(f"[보류] {tid} ({head}) — 공개 텍스트 검사 적중 {hits}건 "
                   "(문자열은 출력하지 않는다)")
             continue
-        print(f"[{head}] {tid} — 아래 텍스트가 그대로 올라간다")
+        # **아직 아무것도 안 만들었다.** 이 줄은 거부 문구보다 위에 찍히므로 완료처럼
+        # 읽히면 거부된 실행이 성공한 실행과 구분되지 않는다.
+        print(f"[{head}] {tid} — 아직 만들지 않았다. 게이트를 통과하고 --apply 가 "
+              "있으면 아래 텍스트가 그대로 올라간다")
         print("--- title ---")
         print(payload["title"])
         print("--- body ---")
@@ -686,9 +789,20 @@ def _run_promote(tasks, root, apply=False, kanban_dir=None,
 
     clean_creates = sum(1 for kind, _t, _p, hits in entries if kind == "create" and not hits)
     clean_updates = sum(1 for kind, _t, _p, hits in entries if kind == "update" and not hits)
-    print(f"\n{len(entries)}개 대상 중 생성 {clean_creates}건, "
-          f"갱신 {clean_updates}건, 보류 {len(blocked)}건"
+    # "생성 N건" 이라고 적으면 거부된 실행이 N건을 만든 것처럼 읽힌다 — 이 줄은 아직
+    # 후보 수일 뿐이다(`_run_tag` 의 "태그 가능" 과 같다). 실제로 만든 수는 맨 아래
+    # 집계(`생성 N, 갱신 N, 실패 N`)에만 나온다.
+    print(f"\n{len(entries)}개 대상 중 생성 가능 {clean_creates}건, "
+          f"갱신 가능 {clean_updates}건, 보류 {len(blocked)}건"
           + (" (공개 텍스트 검사 적중)" if blocked else ""))
+
+    if problems["duplicate"]:
+        print(f"  ⚠ 보드 id 가 겹친 대상이 있다: {', '.join(problems['duplicate'])} — "
+              "번호를 되돌려 적을 자리가 하나뿐이라 올리면 매 실행마다 이슈가 하나씩 "
+              "더 생긴다(중복 방지 장치가 없는 상태다)")
+    if problems["missing"]:
+        print(f"  ⚠ 보드 id 가 없는 대상이 {problems['missing']}건 있다 — 번호를 "
+              "되돌려 적을 자리가 없어 만드는 족족 orphan 이슈가 된다")
 
     if not apply:
         print("[dry-run] 아무것도 만들지 않았다 — 실행하려면 --apply")
@@ -706,10 +820,36 @@ def _run_promote(tasks, root, apply=False, kanban_dir=None,
 
     if blocked:
         print(f"\n공개 텍스트 검사에 걸린 태스크가 {len(blocked)}개 있다 — "
-              f"{', '.join(sorted(str(t.get('id')) for _k, t, _p, _h in blocked))}. "
+              f"{', '.join(sorted(board_id(t) for _k, t, _p, _h in blocked))}. "
               "전부 고치기 전엔 아무것도 만들지 않는다 "
               "(한 번 공개되면 되돌릴 수 없어, 하나라도 걸리면 시작하지 않는다)")
         return 1
+
+    if problems["duplicate"] or problems["missing"]:
+        # 위생 게이트와 같은 모양 — 하나라도 걸리면 시작하지 않는다. 다만 이유가
+        # 다르다: 텍스트가 더러운 게 아니라 **보드가 이미 깨져 있다.** 그 상태로
+        # 올리면 되돌릴 수 없는 중복 이슈가 실행할 때마다 쌓이는데, 화면에는
+        # "실패 0" 으로 보인다.
+        why = []
+        if problems["duplicate"]:
+            why.append(f"겹친 id {', '.join(problems['duplicate'])}")
+        if problems["missing"]:
+            why.append(f"id 없는 태스크 {problems['missing']}건")
+        print(f"\n보드 id 가 성립하지 않는다 — {'; '.join(why)}. 아무것도 만들지 않는다 "
+              "(생성 뒤 번호를 되돌려 적는 것이 중복 생성을 막는 유일한 장치인데, "
+              "적을 자리가 겹치거나 없다. 보드를 먼저 고쳐야 한다)")
+        return 1
+
+    # **외부로 나가기 전에** 쓰기 도구부터 확인한다 — 이슈를 만든 뒤에 "칸반에 적을
+    # 방법이 없다"를 알게 되면 그게 곧 orphan 이슈다. 주입된 writer(테스트)는 이
+    # 확인을 건너뛴다.
+    if kanban_writer is None:
+        try:
+            kanban_writer = _kanban_issue_writer(
+                kanban_dir or os.path.join(root, "vibe-harness"))
+        except MissingToolFile as exc:
+            print(f"\n{exc}")
+            return 1
 
     gh_check = gh_check or gh_available
     ok, why = gh_check()
@@ -724,13 +864,21 @@ def _run_promote(tasks, root, apply=False, kanban_dir=None,
         return 1
 
     gh_runner = gh_runner or _run
-    if kanban_writer is None:
-        kanban_writer = _kanban_issue_writer(kanban_dir or os.path.join(root, "vibe-harness"))
 
     created = updated = failed = 0
     orphans = []
+
+    def report():
+        """집계와 orphan 목록. **루프가 어떻게 끝나든 반드시 찍는다** — 중간에
+        빠져나가면서 이걸 잃으면 '이슈는 공개됐는데 화면엔 아무 말도 없는' 상태가 된다.
+        """
+        print(f"\n생성 {created}, 갱신 {updated}, 실패 {failed}")
+        if orphans:
+            print(f"orphan 이슈(칸반에 번호가 없다): {', '.join(orphans)} — 사람이 직접 "
+                  "정리하기 전엔 다시 실행하면 중복 생성된다")
+
     for kind, t, payload, _hits in entries:
-        tid = str(t.get("id"))
+        tid = board_id(t)
 
         if kind == "update":
             number = t.get("issue")
@@ -768,23 +916,34 @@ def _run_promote(tasks, root, apply=False, kanban_dir=None,
 
         try:
             kanban_writer(tid, number)
-        except Exception as exc:      # 쓰기 실패의 종류는 다양하다 — 전부 orphan 이다
+        except BaseException as exc:
+            # **`except Exception` 은 이 경로의 유일한 실패 신호를 못 잡았다.** 기본
+            # writer 인 `kanban_edit.set_task` 는 "보드에 그 태스크가 없다"를
+            # `SystemExit` 으로 알리는데 그건 `BaseException` 이라 그대로 빠져나갔다 —
+            # 이슈는 이미 만들어졌는데 번호도 URL 도 orphan 표시도 못 찍고, 남은
+            # 태스크는 건너뛰고, 다음 실행이 같은 태스크로 하나 더 만든다. 게다가
+            # 흔한 경로다: `set_task` 는 자기 안에서 보드를 다시 읽으므로, 여기서
+            # 읽은 뒤 `gh issue create` 가 도는 몇 초 사이에 누가(아카이브 작업 등)
+            # 보드를 건드리기만 해도 난다.
+            #
+            # 그래서 **무엇이 오든 orphan 으로 보고한다.** 다만 진짜 인터럽트
+            # (Ctrl-C)는 삼키지 않는다 — 보고를 먼저 끝내고 그대로 올린다.
             orphans.append(tid)
+            failed += 1
             print(f"{tid}: 이슈 #{number} 는 만들어졌는데 칸반에 번호를 적지 못했다 — "
                   "orphan 이슈다. 그 번호가 중복 생성을 막는 유일한 장치라, 이대로 다시 "
                   f"실행하면 같은 태스크로 이슈가 하나 더 생긴다. 보드의 {tid} 에 "
                   f"issue: {number} 를 직접 적거나 이슈를 닫아야 한다 — {url} "
                   f"(원인: {type(exc).__name__}: {str(exc)[:120]})")
-            failed += 1
+            if isinstance(exc, KeyboardInterrupt):
+                report()
+                raise
             continue
 
         print(f"{tid}: 이슈 #{number} 생성 + 칸반 기록 완료 — {url}")
         created += 1
 
-    print(f"\n생성 {created}, 갱신 {updated}, 실패 {failed}")
-    if orphans:
-        print(f"orphan 이슈(칸반에 번호가 없다): {', '.join(orphans)} — 사람이 직접 "
-              "정리하기 전엔 다시 실행하면 중복 생성된다")
+    report()
     return 0 if failed == 0 else 1
 
 

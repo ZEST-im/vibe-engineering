@@ -1438,7 +1438,7 @@ def _poison_check(msg):
 def _recording_writer(calls):
     """칸반 쓰기를 가로채 기록만 한다. 호출되면 안 되는 자리에서는 `calls` 가 비어
     있는지로 확인한다 — 여기서 `AssertionError` 를 던지면 orphan 분기의
-    `except Exception` 이 그걸 삼켜 테스트 실패가 '보고서 한 줄'로 둔갑한다."""
+    `except BaseException` 이 그걸 삼켜 테스트 실패가 '보고서 한 줄'로 둔갑한다."""
     def _fn(task_id, number):
         calls.append((task_id, number))
     return _fn
@@ -1964,3 +1964,439 @@ class PromoteDuplicateIdTest(unittest.TestCase):
         self.assertEqual(1, code, "겹친 id 때문에 더러운 payload 를 놓쳤다")
         self.assertIn("2개 대상 중", out, "겹친 id 하나가 목록에서 사라졌다")
         self.assertNotIn(self.FIXTURE_TERM, out)
+
+
+class PromoteWriteFailureIsAlwaysAnOrphanTest(unittest.TestCase):
+    """Critical 1 — `except Exception` 은 **이 경로의 유일한 실패 신호를 못 잡았다.**
+
+    기본 writer 인 `kanban_edit.set_task` 는 "보드에 그 태스크가 없다"를
+    `SystemExit` 으로 알리는데 그건 `BaseException` 이라 그대로 빠져나간다: 이슈는
+    이미 만들어졌는데 번호도 URL 도 orphan 표시도 못 찍고, 남은 태스크는 건너뛰고,
+    다음 실행이 같은 태스크로 하나 더 만든다. 드문 경로도 아니다 — `set_task` 는
+    자기 안에서 보드를 다시 읽으므로 `gh issue create` 가 도는 몇 초 사이의 편집
+    하나로 난다.
+    """
+
+    def test_a_system_exit_from_the_writer_is_reported_as_an_orphan(self):
+        repo, _bare = _repo_with_origin("chore: 초기화")
+        kdir = _board(repo, PROMOTE_TASKS)
+        calls = []
+
+        def set_task_style_writer(task_id, number):
+            # `kanban_edit.set_task` 가 실제로 쓰는 신호 그대로.
+            raise SystemExit(f"태스크 {task_id} 없음")
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_promote(PROMOTE_TASKS, repo, apply=True, kanban_dir=kdir,
+                                   gh_check=lambda: (True, "ok"),
+                                   gh_runner=_fake_issue_gh(calls, number=902),
+                                   kanban_writer=set_task_style_writer)
+        out = buf.getvalue()
+
+        self.assertNotEqual(0, code, "orphan 이슈가 남았는데 성공으로 끝났다")
+        self.assertIn("902", out, "orphan 이슈 번호를 밝히지 않았다")
+        self.assertIn("https://github.com/o/r/issues/902", out, "orphan 이슈 URL 이 없다")
+        self.assertIn("hgB200", out, "어느 태스크인지 밝히지 않았다")
+        self.assertIn("orphan 이슈(칸반에 번호가 없다)", out, "집계의 orphan 목록이 없다")
+        self.assertIn("실패 1", out, "집계 자체가 찍히지 않았다 — 예외가 밖으로 샜다")
+        # 뒤이은 태스크까지 통째로 건너뛰면 안 된다 — 예외가 새면 그렇게 된다.
+        self.assertIn("#42 갱신 완료", out, "남은 대상이 통째로 건너뛰어졌다")
+
+    def test_a_keyboard_interrupt_is_reported_first_and_then_re_raised(self):
+        """진짜 인터럽트는 삼키지 않는다 — 다만 orphan 보고를 잃지도 않는다."""
+        repo, _bare = _repo_with_origin("chore: 초기화")
+        kdir = _board(repo, PROMOTE_TASKS)
+
+        def interrupted_writer(task_id, number):
+            raise KeyboardInterrupt()
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            with self.assertRaises(KeyboardInterrupt):
+                gh._run_promote(PROMOTE_TASKS, repo, apply=True, kanban_dir=kdir,
+                                gh_check=lambda: (True, "ok"),
+                                gh_runner=_fake_issue_gh([], number=903),
+                                kanban_writer=interrupted_writer)
+        out = buf.getvalue()
+
+        self.assertIn("903", out, "인터럽트로 orphan 번호가 사라졌다")
+        self.assertIn("https://github.com/o/r/issues/903", out, "orphan 이슈 URL 이 없다")
+        self.assertIn("orphan 이슈(칸반에 번호가 없다)", out,
+                      "인터럽트로 빠져나가면서 orphan 집계를 잃었다")
+
+
+class PromoteRealWriterMissingTaskTest(unittest.TestCase):
+    """Critical 1 을 **주입 없이** 재현한다 — 보드에 없는 태스크에 쓰면 진짜
+    `set_task` 가 `SystemExit` 을 던진다. 실제 운영에서 이건 '읽은 뒤 `gh issue
+    create` 가 도는 사이에 보드가 바뀌었다'(아카이브 실행 등)와 같은 모양이다.
+    **임시 보드만 쓴다.**"""
+
+    def setUp(self):
+        self._old = os.environ.get("VIBE_HARNESS_SYNC_CONFIG")
+        os.environ["VIBE_HARNESS_SYNC_CONFIG"] = os.path.join(
+            tempfile.gettempdir(), "vibe-harness-tests-no-sync.json")
+
+    def tearDown(self):
+        if self._old is None:
+            os.environ.pop("VIBE_HARNESS_SYNC_CONFIG", None)
+        else:
+            os.environ["VIBE_HARNESS_SYNC_CONFIG"] = self._old
+
+    def test_the_default_writer_raising_system_exit_lands_as_an_orphan_report(self):
+        repo, _bare = _repo_with_origin("chore: 초기화")
+        # 보드는 비어 있다 — 우리가 승격하려는 태스크가 그 사이 사라진 상태.
+        kdir = _board(repo, [])
+        tasks = [{"id": "hgB240", "title": "보드에서 사라진 태스크", "share": True}]
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_promote(tasks, repo, apply=True, kanban_dir=kdir,
+                                   gh_check=lambda: (True, "ok"),
+                                   gh_runner=_fake_issue_gh([], number=904))
+        out = buf.getvalue()
+
+        self.assertNotEqual(0, code, "주입 없이도 orphan 인데 성공으로 끝났다")
+        self.assertIn("904", out)
+        self.assertIn("https://github.com/o/r/issues/904", out)
+        self.assertIn("hgB240", out)
+        self.assertIn("SystemExit", out, "무엇이 쓰기를 막았는지 원인을 밝히지 않았다")
+
+
+class PromoteCleanDuplicateIdTest(unittest.TestCase):
+    """Critical 2 — **깨끗한** 태스크 두 개가 같은 id 를 쓰면 이슈 둘이 만들어지고
+    번호는 하나만 남는다(`set_task` 는 첫 번째 태스크에만 적고 멈춘다). 번호를 못
+    받은 쪽은 매 실행마다 다시 승격되는데 화면엔 "실패 0" 으로 보인다 — 끝없는
+    중복 생성이다. 위생 게이트와 같은 모양으로 **외부 호출 전에** 전체를 거부한다.
+
+    기존 `PromoteDuplicateIdTest` 는 둘 다 위생 게이트에 걸리는 픽스처라 쓰기
+    루프에 아예 들어가지 않았다 — 이 구멍을 덮지 못한다.
+    """
+
+    def test_two_clean_tasks_sharing_an_id_refuse_the_whole_run(self):
+        repo, _bare = _repo_with_origin("chore: 초기화")
+        tasks = [
+            {"id": "dup", "title": "완전히 깨끗한 제목 하나", "share": True},
+            {"id": "dup", "title": "완전히 깨끗한 제목 둘", "share": True},
+        ]
+        kdir = _board(repo, tasks)
+        writes = []
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_promote(tasks, repo, apply=True, kanban_dir=kdir,
+                                   gh_check=lambda: (True, "ok"),
+                                   gh_runner=_poison("id 가 겹치는데 gh 를 불렀다"),
+                                   kanban_writer=_recording_writer(writes))
+        out = buf.getvalue()
+
+        self.assertEqual(1, code, "겹친 id 로 중복 생성이 열린 채 성공으로 끝났다")
+        self.assertIn("dup", out, "어느 id 가 겹쳤는지 밝히지 않았다")
+        self.assertIn("겹친", out)
+        self.assertEqual([], writes, "거부했는데 칸반에 썼다")
+
+    def test_a_create_and_an_update_sharing_an_id_also_refuse(self):
+        """한쪽이 이미 올라간 것이어도 같다 — 되돌려 적을 자리는 여전히 하나다."""
+        repo, _bare = _repo_with_origin("chore: 초기화")
+        tasks = [
+            {"id": "dup", "title": "아직 안 올라간 것", "share": True},
+            {"id": "dup", "title": "이미 올라간 것", "share": True, "issue": 42},
+        ]
+        kdir = _board(repo, tasks)
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_promote(tasks, repo, apply=True, kanban_dir=kdir,
+                                   gh_check=lambda: (True, "ok"),
+                                   gh_runner=_poison("id 가 겹치는데 gh 를 불렀다"))
+        self.assertEqual(1, code)
+
+    def test_the_dry_run_names_the_collision_before_anyone_approves(self):
+        """사람은 dry-run 출력을 보고 `--apply` 를 승인한다 — 거기 안 보이면
+        승인 근거가 실제 상태와 다르다."""
+        repo, _bare = _repo_with_origin("chore: 초기화")
+        tasks = [
+            {"id": "dup", "title": "완전히 깨끗한 제목 하나", "share": True},
+            {"id": "dup", "title": "완전히 깨끗한 제목 둘", "share": True},
+        ]
+        kdir = _board(repo, tasks)
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_promote(tasks, repo, apply=False, kanban_dir=kdir)
+        out = buf.getvalue()
+
+        self.assertEqual(0, code, "dry-run 은 아무것도 안 만든다 — 항상 0 이다")
+        self.assertIn("겹친", out, "dry-run 이 id 충돌을 숨겼다")
+        self.assertIn("dup", out)
+
+    def test_a_task_without_a_board_id_is_refused_before_any_gh_call(self):
+        """id 가 없으면 번호를 되돌려 적을 자리 자체가 없다 — 만드는 족족 orphan 이다."""
+        repo, _bare = _repo_with_origin("chore: 초기화")
+        tasks = [{"title": "보드 id 가 없다", "share": True}]
+        kdir = _board(repo, tasks)
+        writes = []
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_promote(tasks, repo, apply=True, kanban_dir=kdir,
+                                   gh_check=lambda: (True, "ok"),
+                                   gh_runner=_poison("id 가 없는데 gh 를 불렀다"),
+                                   kanban_writer=_recording_writer(writes))
+        out = buf.getvalue()
+
+        self.assertEqual(1, code, "id 없는 태스크를 그대로 올렸다")
+        self.assertIn("id 없는 태스크 1건", out)
+        self.assertEqual([], writes)
+
+    def test_id_problems_is_pure_and_separates_the_two_kinds(self):
+        got = gh.id_problems([{"id": "a"}, {"id": "a"}, {"id": "b"}, {"title": "id 없음"}])
+        self.assertEqual(["a"], got["duplicate"])
+        self.assertEqual(1, got["missing"])
+        self.assertEqual({"duplicate": [], "missing": 0}, gh.id_problems([]))
+
+
+class PromoteEveryPublishedArgvIsCheckedTest(unittest.TestCase):
+    """Important 3 — 갱신(`gh issue edit`) 쪽 argv 는 **아무 검사도 받지 않았다.**
+    기존 두 테스트는 생성만 걸러 봤고(`a[:3] == [..., "create"]`), 갱신은 번호만
+    봤다. 실측: `--body payload["body"]` 를 `str(t.get("details"))` 로 바꿔도
+    전체 스위트가 그대로 초록이었다 — `issue_payload` 의 docstring 이 막는다고
+    적어 둔 바로 그 유출이다.
+
+    그래서 **promote 가 내보내는 모든 gh 호출**을 한 자리에서 본다 — `_run_tag` 의
+    `test_every_gh_call_is_pinned_with_dash_r` 과 같은 태도다.
+    """
+
+    def test_every_gh_call_is_pinned_and_carries_exactly_the_issue_payload(self):
+        repo, _bare = _repo_with_origin("chore: 초기화")
+        kdir = _board(repo, PROMOTE_TASKS)
+        slug = _git(repo, "remote", "get-url", "origin").stdout.strip()
+        calls = []
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_promote(PROMOTE_TASKS, repo, apply=True, kanban_dir=kdir,
+                                   gh_check=lambda: (True, "ok"),
+                                   gh_runner=_fake_issue_gh(calls),
+                                   kanban_writer=_recording_writer([]))
+        self.assertEqual(0, code, buf.getvalue())
+
+        argvs = [a for a, _k in calls]
+        kinds = [a[2] for a in argvs]
+        self.assertEqual(["create", "edit"], sorted(kinds),
+                         "생성·갱신 중 한쪽이 안 불렸다 — 검사가 반쪽이 된다")
+        # 어느 호출이 어느 태스크의 텍스트를 실어야 하는지 — 공개되는 것은
+        # `issue_payload` 의 출력 **그대로**여야 한다(두 싱크 모두).
+        expected = {"create": gh.issue_payload(PROMOTE_TASKS[0]),
+                    "edit": gh.issue_payload(PROMOTE_TASKS[1])}
+
+        for argv in argvs:
+            kind = argv[2]
+            self.assertIn("-R", argv, f"-R 없이 부른 gh 호출이 있다: {argv}")
+            self.assertEqual(slug, argv[argv.index("-R") + 1],
+                             f"gh 호출이 이 레포에 고정되지 않았다: {argv}")
+            self.assertIn("--title", argv, f"제목 없는 gh 호출: {argv}")
+            self.assertIn("--body", argv, f"본문 없는 gh 호출: {argv}")
+            self.assertEqual(expected[kind]["title"], argv[argv.index("--title") + 1],
+                             f"{kind} 가 올리는 제목이 issue_payload 의 출력과 다르다")
+            self.assertEqual(expected[kind]["body"], argv[argv.index("--body") + 1],
+                             f"{kind} 가 올리는 본문이 issue_payload 의 출력과 다르다")
+
+        # `details`(내부 작업 보고서)는 어느 호출의 어느 인자에도 없어야 한다.
+        for argv in argvs:
+            for arg in argv:
+                self.assertNotIn(DETAILS_MARKER, arg,
+                                 f"내부 작업 보고서가 gh 인자로 갔다: {argv[:3]}")
+
+    def test_the_edit_call_targets_the_recorded_issue_number(self):
+        repo, _bare = _repo_with_origin("chore: 초기화")
+        kdir = _board(repo, PROMOTE_TASKS)
+        calls = []
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            gh._run_promote(PROMOTE_TASKS, repo, apply=True, kanban_dir=kdir,
+                            gh_check=lambda: (True, "ok"),
+                            gh_runner=_fake_issue_gh(calls),
+                            kanban_writer=_recording_writer([]))
+        edits = [a for a, _k in calls if a[:3] == ["gh", "issue", "edit"]]
+        self.assertEqual(1, len(edits))
+        self.assertEqual("42", edits[0][3])
+
+
+class PromoteInstalledLayoutFailsClosedTest(unittest.TestCase):
+    """Important 4 — 설치본(`~/.claude/skills/vibe-harness/`)에서는 `ROOT` 가
+    `~/.claude/skills` 라 `tests/` 도 `scripts/` 도 없다. 예전엔 거기서
+    `FileNotFoundError` 트레이스백으로 죽었다 — 무엇이 없는지도, 뭔가 만들어졌는지도
+    말하지 않는 실패다. **닫힌 채로, 이유를 말하고, 0 이 아닌 코드로** 끝나야 한다.
+    """
+
+    def setUp(self):
+        self._saved_root = gh.ROOT
+        self._saved_rules = gh._STRUCTURAL_RULES
+
+    def tearDown(self):
+        gh.ROOT = self._saved_root
+        gh._STRUCTURAL_RULES = self._saved_rules
+
+    def test_a_missing_hygiene_rules_file_fails_closed_in_the_dry_run(self):
+        repo, _bare = _repo_with_origin("chore: 초기화")
+        kdir = _board(repo, PROMOTE_TASKS)
+        gh.ROOT = tempfile.mkdtemp()   # tests/ 가 없는 설치본 레이아웃
+        gh._STRUCTURAL_RULES = None    # 캐시가 있으면 그 레이아웃을 흉내낼 수 없다
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_promote(PROMOTE_TASKS, repo, apply=False, kanban_dir=kdir)
+        out = buf.getvalue()
+
+        self.assertEqual(1, code, "검사 규칙이 없는데 dry-run 이 0 으로 끝났다")
+        self.assertIn("test_public_hygiene.py", out, "무엇이 없는지 밝히지 않았다")
+        self.assertIn("아무것도 만들지 않", out, "아무것도 안 만들었다는 말이 없다")
+
+    def test_a_missing_kanban_edit_fails_closed_before_any_gh_call(self):
+        repo, _bare = _repo_with_origin("chore: 초기화")
+        kdir = _board(repo, PROMOTE_TASKS)
+        gh._STRUCTURAL_RULES = self._saved_rules or gh._structural_rules()
+        gh.ROOT = tempfile.mkdtemp()   # scripts/ 가 없는 설치본 레이아웃
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_promote(
+                PROMOTE_TASKS, repo, apply=True, kanban_dir=kdir,
+                # 가용성 확인조차 가면 안 된다 — 이 확인은 **외부로 나가기 전**에
+                # 끝나야 한다. 이슈를 만든 뒤 쓰기 도구가 없다는 걸 알면 그게 orphan 이다.
+                gh_check=_poison_check("쓰기 도구가 없는데 gh 가용성부터 물었다"),
+                gh_runner=_poison("쓰기 도구가 없는데 gh 를 불렀다"))
+        out = buf.getvalue()
+
+        self.assertEqual(1, code, "번호를 적을 방법이 없는데 이슈를 만들러 갔다")
+        self.assertIn("kanban_edit.py", out, "무엇이 없는지 밝히지 않았다")
+        self.assertIn("아무것도 만들지 않", out)
+
+    def test_tag_also_fails_closed_instead_of_a_traceback(self):
+        """같은 규칙 파일을 `tag` 도 읽는다 — 한쪽만 고치면 나머지가 트레이스백으로 죽는다."""
+        repo, _bare = _repo_with_origin("feat: PMF50 완료 — 픽스처")
+        sha = _sha(repo, "PMF50 완료")
+        gh.ROOT = tempfile.mkdtemp()
+        gh._STRUCTURAL_RULES = None
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_tag([_plan_entry("phase/PMF50", sha)], repo, apply=False)
+        out = buf.getvalue()
+
+        self.assertEqual(1, code)
+        self.assertIn("test_public_hygiene.py", out)
+        self.assertEqual("", _git(repo, "tag", "-l").stdout.strip())
+
+
+class DenyMissingMessageFitsBothCallersTest(unittest.TestCase):
+    """Minor 5 — `private/DENY.txt` 없음 줄은 **호출부 둘 다**(tag 의 한 줄 요약,
+    promote 의 제목+본문)에 맞아야 한다. 이 줄은 DENY.txt 가 없는 모든 머신(CI
+    포함)에서 매 실행 찍히는 정상 경로다 — tag 전용 문구를 쓰면 promote 사용자가
+    읽는 검사 범위 설명이 실제와 어긋난다(기존 테스트들은 전부 DENY 파일을 먼저
+    써 두고 돌아서 이 분기를 보지 않았다)."""
+
+    def test_the_missing_file_message_is_not_written_for_the_tag_caller_only(self):
+        terms, why = gh._load_deny_terms(tempfile.mkdtemp())
+        self.assertIsNone(terms)
+        self.assertIn("private/DENY.txt 없음", why)
+        self.assertNotIn("공개 요약", why, "tag 전용 문구('요약')가 남아 있다")
+        self.assertNotIn("PHASES.md", why, "promote 와 무관한 소스를 이유로 든다")
+
+    def test_the_promote_dry_run_prints_it_without_tag_only_wording(self):
+        repo, _bare = _repo_with_origin("chore: 초기화")  # private/ 자체가 없다
+        kdir = _board(repo, PROMOTE_TASKS)
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_promote(PROMOTE_TASKS, repo, apply=False, kanban_dir=kdir)
+        out = buf.getvalue()
+
+        self.assertEqual(0, code)
+        self.assertIn("private/DENY.txt 없음", out, "없다는 사실을 조용히 넘겼다")
+        self.assertNotIn("공개 요약", out, "promote 출력이 '요약만 봤다'고 말한다")
+        self.assertNotIn("PHASES.md", out, "promote 와 무관한 소스를 이유로 든다")
+
+
+class PromoteBoardIdIsDerivedOnceTest(unittest.TestCase):
+    """Minor 6 — 공개되는 본문과 화면 로그가 보드 id 를 각자 유도하면 id 없는
+    태스크에서 본문은 `보드 id: ?`, 로그는 `None: ...` 이 된다. 올라간 이슈를 어느
+    태스크로도 되짚을 수 없게 되는데, 그 추적이야말로
+    `test_the_body_names_the_board_id_so_it_can_be_traced_back` 이 지키는 것이다."""
+
+    def test_the_body_and_the_log_use_the_same_derivation(self):
+        repo, _bare = _repo_with_origin("chore: 초기화")
+        tasks = [{"title": "id 가 없는 태스크", "share": True}]
+        kdir = _board(repo, tasks)
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            gh._run_promote(tasks, repo, apply=False, kanban_dir=kdir)
+        out = buf.getvalue()
+
+        tid = gh.board_id(tasks[0])
+        self.assertIn(f"- 보드 id: {tid}", gh.issue_payload(tasks[0])["body"])
+        self.assertIn(f"] {tid} —", out, "로그가 본문과 다른 id 문자열을 썼다")
+        self.assertNotIn("None", out, "로그가 id 를 None 으로 찍었다 — 본문과 어긋난다")
+
+    def test_board_id_is_the_single_derivation(self):
+        self.assertEqual("hgB200", gh.board_id(PROMOTE_TASKS[0]))
+        self.assertEqual("?", gh.board_id({"title": "id 없음"}))
+        self.assertEqual("?", gh.board_id(None))
+
+
+class PromoteRefusedRunDoesNotReadAsSuccessTest(unittest.TestCase):
+    """Minor 7 — 목록과 집계는 거부 문구보다 **위**에 찍힌다. 그 줄들이 완료를
+    말하면 거부된 실행이 성공한 실행처럼 읽힌다 — `_run_tag` 가 "태그 **가능**"
+    이라고 적는 것과 같은 이유로 후보를 말해야 한다."""
+
+    FIXTURE_TERM = "ZQX-FIXTURE-INTERNAL-CODE"
+
+    def _refused_output(self):
+        repo, _bare = _repo_with_origin("chore: 초기화")
+        _deny(repo, self.FIXTURE_TERM)
+        tasks = [
+            {"id": "hgB250", "title": "깨끗한 제목", "share": True},
+            {"id": "hgB251", "title": f"{self.FIXTURE_TERM} 섞인 제목", "share": True},
+        ]
+        kdir = _board(repo, tasks)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_promote(tasks, repo, apply=True, kanban_dir=kdir,
+                                   gh_check=lambda: (True, "ok"),
+                                   gh_runner=_poison("거부된 실행인데 gh 를 불렀다"))
+        return code, buf.getvalue()
+
+    def test_the_counts_describe_candidacy_not_completion(self):
+        code, out = self._refused_output()
+        self.assertEqual(1, code)
+        self.assertIn("생성 가능", out, "후보 수를 '생성 N건' 으로 말한다 — 만든 것처럼 읽힌다")
+        self.assertIn("갱신 가능", out)
+        self.assertNotIn("대상 중 생성 1건", out,
+                         "거부된 실행이 '1건 생성' 이라고 말한다")
+
+    def test_the_per_item_header_says_nothing_has_been_created_yet(self):
+        code, out = self._refused_output()
+        self.assertEqual(1, code)
+        self.assertIn("아직 만들지 않았다", out, "항목 머리말이 완료처럼 읽힌다")
+        self.assertNotIn("[생성] ", out, "'[생성]' 머리말은 이미 만든 것으로 읽힌다")
+
+    def test_a_successful_run_still_says_it_completed(self):
+        """완료를 말하는 문장을 통째로 지운 게 아니라는 대조군."""
+        repo, _bare = _repo_with_origin("chore: 초기화")
+        tasks = [{"id": "hgB252", "title": "깨끗한 제목", "share": True}]
+        kdir = _board(repo, tasks)
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = gh._run_promote(tasks, repo, apply=True, kanban_dir=kdir,
+                                   gh_check=lambda: (True, "ok"),
+                                   gh_runner=_fake_issue_gh([], number=778),
+                                   kanban_writer=_recording_writer([]))
+        out = buf.getvalue()
+
+        self.assertEqual(0, code)
+        self.assertIn("생성 + 칸반 기록 완료", out)
+        self.assertIn("생성 1, 갱신 0, 실패 0", out)
