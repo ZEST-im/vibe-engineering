@@ -81,10 +81,10 @@ def write_plist(path, body):
     이 프로젝트가 반복해서 당해 온 '성공처럼 보이는 침묵'과 같은 형태다.
     """
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
+    tmp = tmp_name(path)
     with open(tmp, "wb") as fh:
         plistlib.dump(body, fh)
-    os.replace(tmp, path)
+    atomic_replace(tmp, path)
 
 
 def read_plist(path):

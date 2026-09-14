@@ -202,12 +202,12 @@ def read_runtime(kanban_dir):
 def write_runtime(kanban_dir, data):
     path = runtime_path(kanban_dir)
     os.makedirs(kanban_dir, exist_ok=True)
-    tmp = path + ".tmp"
+    tmp = tmp_name(path)
     with open(tmp, "w", encoding="utf-8") as handle:
         json.dump(data, handle, indent=2, ensure_ascii=False)
         handle.flush()
         os.fsync(handle.fileno())
-    os.replace(tmp, path)
+    atomic_replace(tmp, path)
 
 
 def _merge(base, override):

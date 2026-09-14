@@ -589,11 +589,11 @@ def save_push_state(project, state):
     except Exception:
         doc = {}
     doc[project] = state
-    tmp = PUSH_STATE_PATH + ".tmp"
+    tmp = tmp_name(PUSH_STATE_PATH)
     os.makedirs(os.path.dirname(PUSH_STATE_PATH) or ".", exist_ok=True)
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(doc, fh, ensure_ascii=False, indent=2)
-    os.replace(tmp, PUSH_STATE_PATH)
+    atomic_replace(tmp, PUSH_STATE_PATH)
 
 
 def build_push_payload(project, runs, schema=1, machine=None):
@@ -811,13 +811,13 @@ def record_pipeline_status(ok, error=None, done=0, failed=(), path=None):
         doc["last_error"] = None
     else:
         doc["last_error"] = str(error)[:500] if error else "unknown"
-    tmp = path + ".tmp"
+    tmp = tmp_name(path)
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(doc, fh, ensure_ascii=False, indent=2)
         fh.flush()
         os.fsync(fh.fileno())
-    os.replace(tmp, path)
+    atomic_replace(tmp, path)
     return doc
 
 

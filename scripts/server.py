@@ -15,8 +15,10 @@ import getpass
 try:
     import fcntl
 except ImportError:
-    # Windows has no fcntl. flock becomes a no-op — the atomic .tmp→os.replace
-    # below is the real write guard, and this is a local single-user server.
+    # Windows has no fcntl. flock becomes a no-op. The write guard is the
+    # tmp→replace below, but plain os.replace is NOT atomic-safe on Windows:
+    # it is refused while any reader holds the destination open. atomic_replace()
+    # retries, and tmp_name() keeps concurrent writers off one temp file.
     class _FcntlShim:
         LOCK_EX = LOCK_UN = 0
         def flock(self, *args, **kwargs):
@@ -57,9 +59,10 @@ def _load_sibling(name, filename):
 
 
 from vibe_runtime import (
-    approval_required, expires_at, load_policy, new_identity, parse_time,
-    read_runtime, run_test_gate, runtime_lock, sanitized_runtime, utc_now,
-    valid_token, write_runtime,
+    approval_required, atomic_replace, expires_at, load_policy, new_identity,
+    parse_time, read_runtime, restrict_to_owner, run_test_gate, runtime_lock,
+    read_json_fast, sanitized_runtime, tmp_name, utc_now, valid_token,
+    write_runtime,
 )
 
 # Force UTF-8 console I/O so non-ASCII output (em-dash, Korean) survives on
@@ -193,14 +196,14 @@ def _read_kanban(kanban_dir):
 def _write_kanban(kanban_dir, data):
     kp = _kanban_path(kanban_dir)
     os.makedirs(kanban_dir, exist_ok=True)
-    tmp = kp + ".tmp"
+    tmp = tmp_name(kp)
     with open(tmp, "w", encoding="utf-8") as f:
         fcntl.flock(f, fcntl.LOCK_EX)
         json.dump(data, f, indent=2, ensure_ascii=False)
         f.flush()
         os.fsync(f.fileno())
         fcntl.flock(f, fcntl.LOCK_UN)
-    os.replace(tmp, kp)
+    atomic_replace(tmp, kp)
     _schedule_remote_sync(kanban_dir)
 
 # 보드가 아는 status 는 이 다섯이 전부다. 세 군데에 같은 리터럴이 흩어져 있었고
@@ -2220,12 +2223,12 @@ def _build_dashboard_snapshot(dashboard, project_keys):
 
 def _atomic_json(path, data):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
+    tmp = tmp_name(path)
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
         f.flush()
         os.fsync(f.fileno())
-    os.replace(tmp, path)
+    atomic_replace(tmp, path)
 
 
 def _read_pending_sync():
@@ -2362,7 +2365,7 @@ def _sync_worker(dirty_dirs):
     if pending:
         _atomic_json(SYNC_PENDING_PATH, pending)
         try:
-            os.chmod(SYNC_PENDING_PATH, 0o600)
+            restrict_to_owner(SYNC_PENDING_PATH)
         except OSError:
             pass
     elif os.path.exists(SYNC_PENDING_PATH):
@@ -2907,7 +2910,7 @@ def main():
         }
         _atomic_json(SYNC_CONFIG_PATH, cfg)
         try:
-            os.chmod(SYNC_CONFIG_PATH, 0o600)
+            restrict_to_owner(SYNC_CONFIG_PATH)
         except OSError:
             pass
         print(f"Remote sync configured: {SYNC_CONFIG_PATH}")
