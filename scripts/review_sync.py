@@ -32,6 +32,14 @@ import os
 import re
 import sys
 
+# Force UTF-8 console I/O so non-ASCII output (em-dash, Korean) survives on
+# Windows cp949 terminals. No-op where reconfigure is unavailable/unneeded.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
+
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)

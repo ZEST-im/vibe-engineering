@@ -4,10 +4,20 @@ Vibe Engineering Setup — Copy server files to ~/.claude/skills/vibe-harness/ a
 """
 import os
 import shutil
+import stat
 import subprocess
 import sys
 
 import json
+
+# Force UTF-8 console I/O so non-ASCII output (em-dash, Korean) survives on
+# Windows cp949 terminals. No-op where reconfigure is unavailable/unneeded.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
+
 
 DEST = os.path.expanduser("~/.claude/skills/vibe-harness")
 SRC = os.path.dirname(os.path.abspath(__file__))
@@ -46,6 +56,17 @@ SKILLS = ["vibe-harness", "vibe-planning", "vibe-design", "vibe-review"]
 # (vibe-harness 는 projects.json/server.log 가 함께 살아서 제외)
 REMOVABLE_SKILLS = ["vibe-planning", "vibe-design", "vibe-review"]
 
+def hook_cmd(name):
+    """settings.json 에 적을 훅 명령 경로.
+
+    Claude Code 는 Windows 에서도 훅 명령을 bash 에 넘긴다. bash 에서 역슬래시는
+    이스케이프라 역슬래시 경로가 `C:Userskimyh...` 로 먹히고, 훅 5개가
+    전부 "No such file or directory" 로 죽었다. 슬래시는 Windows API 도 받으므로
+    양쪽에서 그대로 통한다.
+    """
+    return os.path.join(HOOKS_DIR, name).replace("\\", "/")
+
+
 # Hook definitions: (src_name, event, entry_dict)
 HOOKS = [
     (
@@ -53,7 +74,7 @@ HOOKS = [
         "PreToolUse",
         {
             "matcher": "Edit|Write",
-            "hooks": [{"type": "command", "command": os.path.join(HOOKS_DIR, "vibe-harness-scope-guard.sh")}],
+            "hooks": [{"type": "command", "command": hook_cmd("vibe-harness-scope-guard.sh")}],
             "_id": "vibe-harness-scope-guard",
         },
     ),
@@ -62,7 +83,7 @@ HOOKS = [
         "PostToolUse",
         {
             "matcher": "Bash",
-            "hooks": [{"type": "command", "command": os.path.join(HOOKS_DIR, "vibe-harness-review.sh")}],
+            "hooks": [{"type": "command", "command": hook_cmd("vibe-harness-review.sh")}],
             "_id": "vibe-harness-code-review",
         },
     ),
@@ -70,7 +91,7 @@ HOOKS = [
         "vibe-harness-session-start.sh",
         "SessionStart",
         {
-            "hooks": [{"type": "command", "command": os.path.join(HOOKS_DIR, "vibe-harness-session-start.sh")}],
+            "hooks": [{"type": "command", "command": hook_cmd("vibe-harness-session-start.sh")}],
             "_id": "vibe-harness-session-start",
         },
     ),
@@ -78,7 +99,7 @@ HOOKS = [
         "vibe-harness-stop-gate.sh",
         "Stop",
         {
-            "hooks": [{"type": "command", "command": os.path.join(HOOKS_DIR, "vibe-harness-stop-gate.sh")}],
+            "hooks": [{"type": "command", "command": hook_cmd("vibe-harness-stop-gate.sh")}],
             "_id": "vibe-harness-stop-gate",
         },
     ),
@@ -86,7 +107,7 @@ HOOKS = [
         "vibe-harness-token-collector.sh",
         "SessionEnd",
         {
-            "hooks": [{"type": "command", "command": os.path.join(HOOKS_DIR, "vibe-harness-token-collector.sh")}],
+            "hooks": [{"type": "command", "command": hook_cmd("vibe-harness-token-collector.sh")}],
             "_id": "vibe-harness-token-collector",
         },
     ),
@@ -102,6 +123,27 @@ HOOK_HELPERS = ["vibe-harness-record-run.py", "vibe-harness-worktree-guard.py"]
 SKILL_COPY_IGNORE = shutil.ignore_patterns(
     "__pycache__", "*.pyc", "*.bak", ".DS_Store", ".git",
 )
+
+
+def force_rmtree(path):
+    """읽기 전용 파일이 섞여 있어도 디렉토리를 지운다.
+
+    Windows 의 shutil.rmtree 는 읽기 전용 비트가 켜진 파일에서 PermissionError
+    (WinError 5) 로 멈춘다 — 스킬 재설치가 거기서 죽는다.
+
+    POSIX 에서는 파일 모드가 아니라 **부모 디렉토리 권한**으로 지워지므로 이
+    전처리가 필요 없다. 그리고 필요 없는 정도가 아니라 해롭다 — 여기서 모드를
+    건드리면 디렉토리 진입 권한(+x)까지 날려 rmtree 가 오히려 실패한다.
+    그래서 Windows 에서만 돈다.
+    """
+    if os.name == "nt":
+        for root, _dirs, files in os.walk(path):
+            for name in files:
+                try:
+                    os.chmod(os.path.join(root, name), stat.S_IWRITE)
+                except OSError:
+                    pass
+    shutil.rmtree(path)
 
 
 def copy_skill_files():
@@ -128,7 +170,7 @@ def copy_skill_files():
                 continue
             stale = os.path.join(dest_dir, sub)
             if os.path.isdir(stale):
-                shutil.rmtree(stale)
+                force_rmtree(stale)
 
         shutil.copytree(src_dir, dest_dir, dirs_exist_ok=True,
                         ignore=SKILL_COPY_IGNORE)
@@ -144,7 +186,7 @@ def remove_added_skills():
     for name in REMOVABLE_SKILLS:
         d = os.path.join(SKILLS_ROOT, name)
         if os.path.isdir(d):
-            shutil.rmtree(d)
+            force_rmtree(d)
             print(f"  REMOVED {d}")
 
 
@@ -297,7 +339,7 @@ def install_launchd():
     print(f"  INSTALLED {dst}")
 
     # Load the agent
-    result = subprocess.run(["launchctl", "load", dst], capture_output=True, text=True)
+    result = subprocess.run(["launchctl", "load", dst], capture_output=True, text=True, encoding="utf-8", errors="replace")
     if result.returncode == 0:
         print(f"  LOADED {PLIST_NAME} — server will auto-start on login")
         return True
@@ -437,7 +479,7 @@ def migrate_projects_json():
     if not os.path.exists(config_path):
         return
 
-    with open(config_path) as f:
+    with open(config_path, encoding="utf-8") as f:
         projects = json.load(f)
 
     changed = False
@@ -450,7 +492,7 @@ def migrate_projects_json():
             print(f"  MIGRATED {key}: db_path → kanban_dir ({info['kanban_dir']})")
 
     if changed:
-        with open(config_path, "w") as f:
+        with open(config_path, "w", encoding="utf-8") as f:
             json.dump(projects, f, indent=2, ensure_ascii=False)
 
 
@@ -513,24 +555,97 @@ def upgrade():
 
     print(f"Updated {downloaded}/{len(files) + len(SKILLS)} files.")
 
-    # Restart server if running
+    restart_server()
+
+
+SERVER_PORT = 4242
+
+
+def server_pids(port=SERVER_PORT):
+    """포트를 듣고 있는 프로세스 id.
+
+    `lsof` 는 Windows 에 없다. 예전에는 그걸 그냥 부르고 바깥의
+    `except Exception: pass` 가 FileNotFoundError 를 삼켰다 — 그래서 Windows 에서는
+    업그레이드 후에도 **구버전 서버가 계속 돌았고 아무 말도 나오지 않았다.**
+    조용한 무동작이라 재시작했다고 믿게 된다.
+    """
+    if os.name == "nt":
+        try:
+            done = subprocess.run(["netstat", "-ano"], capture_output=True, text=True,
+                                  encoding="utf-8", errors="replace", check=False)
+        except OSError:
+            return []
+        found = []
+        for line in done.stdout.splitlines():
+            parts = line.split()
+            # TCP  127.0.0.1:4242  0.0.0.0:0  LISTENING  8092
+            if len(parts) >= 5 and parts[-2] == "LISTENING" and \
+                    parts[1].rsplit(":", 1)[-1] == str(port):
+                found.append(parts[-1])
+        return sorted(set(found))
     try:
-        result = subprocess.run(["lsof", "-ti:4242"], capture_output=True, text=True)
-        pids = result.stdout.strip()
-        if pids:
-            for pid in pids.split("\n"):
-                subprocess.run(["kill", pid.strip()], capture_output=True)
-            print("Stopped running server.")
-            # Restart via launchd if available
-            plist = os.path.join(LAUNCH_AGENTS, PLIST_NAME)
-            if os.path.exists(plist):
-                subprocess.run(["launchctl", "unload", plist], capture_output=True)
-                subprocess.run(["launchctl", "load", plist], capture_output=True)
-                print("Restarted server via launchd.")
-            else:
-                print("Restart the server manually: python3 ~/.claude/skills/vibe-harness/server.py serve &")
-    except Exception:
-        pass
+        done = subprocess.run(["lsof", "-ti:%d" % port], capture_output=True, text=True,
+                              encoding="utf-8", errors="replace", check=False)
+    except OSError:
+        return []
+    return [p.strip() for p in done.stdout.split("\n") if p.strip()]
+
+
+def stop_server(pids):
+    """서버 프로세스를 멈춘다. 멈춘 개수를 돌려준다."""
+    argv = (lambda pid: ["taskkill", "/F", "/PID", pid]) if os.name == "nt" \
+        else (lambda pid: ["kill", pid])
+    stopped = 0
+    for pid in pids:
+        try:
+            done = subprocess.run(argv(pid), capture_output=True, text=True,
+                                  encoding="utf-8", errors="replace", check=False)
+        except OSError:
+            continue
+        if done.returncode == 0:
+            stopped += 1
+    return stopped
+
+
+def restart_server():
+    """업그레이드된 파일로 서버를 다시 띄운다.
+
+    재시작하지 않으면 디스크의 코드와 도는 코드가 갈라진다. 실제로 그 상태가
+    오래갔다 — 설치본이 구버전이라 sync 설정을 읽지 못하는데, 재시작해도 같은
+    구버전이 다시 떠서 원인이 보이지 않았다.
+    """
+    pids = server_pids()
+    if not pids:
+        print("  No running server on port %d." % SERVER_PORT)
+        return
+    if not stop_server(pids):
+        print("  WARN could not stop the server (pid %s) - restart it yourself"
+              % ", ".join(pids))
+        return
+    print("  STOPPED server (pid %s)" % ", ".join(pids))
+
+    if os.name == "nt":
+        try:
+            done = subprocess.run(["schtasks", "/Run", "/TN", WINDOWS_SERVER_TASK],
+                                  capture_output=True, text=True, encoding="utf-8",
+                                  errors="replace", check=False)
+        except OSError:
+            done = None
+        if done is not None and done.returncode == 0:
+            print("  RESTARTED server via %s" % WINDOWS_SERVER_TASK)
+            return
+        print("  Restart the server manually: %s %s\\server.py serve"
+              % (sys.executable, DEST))
+        return
+
+    plist = os.path.join(LAUNCH_AGENTS, PLIST_NAME)
+    if os.path.exists(plist):
+        subprocess.run(["launchctl", "unload", plist], capture_output=True)
+        subprocess.run(["launchctl", "load", plist], capture_output=True)
+        print("  RESTARTED server via launchd.")
+        return
+    print("  Restart the server manually: %s %s/server.py serve &"
+          % (sys.executable, DEST))
 
     print()
     print("Upgrade complete!")

@@ -12,6 +12,14 @@ import time
 from urllib import error as urllib_error
 from urllib import request as urllib_request
 
+# Force UTF-8 console I/O so non-ASCII output (em-dash, Korean) survives on
+# Windows cp949 terminals. No-op where reconfigure is unavailable/unneeded.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
+
 
 def request_json(method, url, payload=None, timeout=30):
     raw = json.dumps(payload).encode("utf-8") if payload is not None else None
@@ -34,7 +42,7 @@ def request_json(method, url, payload=None, timeout=30):
 
 def git_output(cwd, *args):
     try:
-        return subprocess.check_output(["git", "-C", cwd, *args], text=True, stderr=subprocess.DEVNULL).strip()
+        return subprocess.check_output(["git", "-C", cwd, *args], text=True, encoding="utf-8", errors="replace", stderr=subprocess.DEVNULL).strip()
     except (OSError, subprocess.CalledProcessError):
         return ""
 
@@ -48,7 +56,7 @@ def create_worktree(project_root, project, task_id, run_id):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     completed = subprocess.run(
         ["git", "-C", project_root, "worktree", "add", "-b", branch, path, "HEAD"],
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
     )
