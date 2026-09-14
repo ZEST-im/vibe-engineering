@@ -2122,12 +2122,31 @@ _sync_dirty_dirs = set()
 _mission_watch_interval = 1.0
 
 
+def snapshot_credential(cfg):
+    """스냅샷 전송에 쓸 Bearer 값. 공유 secret 이 우선, 없으면 개인 토큰.
+
+    참가 플로우가 머신에 심는 것은 개인 토큰뿐이고 공유 secret 은 어디서도 내려가지
+    않는다. secret 을 손으로 못 받은 머신은 아래 _load_sync_config 가 None 을 돌려줘
+    **모든 프로젝트의** 스냅샷이 조용히 멈췄다 — 옛 머신이 밀어둔 행이 대시보드에 남아
+    있으면 본인도 관리자도 모른다(2026-09-14 실측).
+
+    순서가 reconcile_runs.push_credential 과 반대인 것은 의도다. run 은 사람별 귀속이
+    필요해 개인 토큰이 먼저지만, 스냅샷은 source key 단위 머지라 귀속이 없다. 이미
+    secret 으로 돌고 있는 머신의 동작을 바꾸지 않는 쪽을 고른다.
+    """
+    cfg = cfg or {}
+    secret = str(cfg.get("secret") or "").strip()
+    return secret or str(cfg.get("runs_token") or "").strip()
+
+
 def _load_sync_config():
     """Load optional remote sync config. Missing/disabled config is a no-op.
 
     Format:
       {"enabled": true, "endpoint": "https://.../sync", "secret": "...",
        "dashboards": {"ax-project": ["zesty-os", "zestim"]}}
+
+    secret 대신 runs_token 만 있어도 된다 — 서버가 개인 토큰도 받는다.
     """
     if not os.path.exists(SYNC_CONFIG_PATH):
         return None
@@ -2138,7 +2157,7 @@ def _load_sync_config():
             return None
         if not str(cfg.get("endpoint", "")).startswith(("https://", "http://localhost", "http://127.0.0.1")):
             return None
-        if not cfg.get("secret") or not isinstance(cfg.get("dashboards"), dict):
+        if not snapshot_credential(cfg) or not isinstance(cfg.get("dashboards"), dict):
             return None
         return cfg
     except (OSError, ValueError, TypeError):
@@ -2227,7 +2246,7 @@ def _post_snapshot(cfg, payload):
         cfg["endpoint"],
         data=raw,
         headers={
-            "Authorization": "Bearer " + cfg["secret"],
+            "Authorization": "Bearer " + snapshot_credential(cfg),
             "Content-Type": "application/json",
             "User-Agent": "Vibe-Engineering-Sync/1",
         },
@@ -2247,7 +2266,7 @@ def _remote_request(cfg, method, query=None, payload=None):
         url,
         data=raw,
         headers={
-            "Authorization": "Bearer " + cfg["secret"],
+            "Authorization": "Bearer " + snapshot_credential(cfg),
             "Content-Type": "application/json",
             "User-Agent": "Vibe-Engineering-Sync/1",
         },

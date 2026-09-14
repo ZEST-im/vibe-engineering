@@ -5,7 +5,13 @@
 ## Optional Remote Snapshot Sync
 
 Remote dashboards use an outbound, read-only snapshot publisher. Never expose
-the localhost server or reuse an end-user login token as the upload secret.
+the localhost server.
+
+The publisher authenticates with either the dashboard's shared upload secret or the
+machine's own `runs_token` — the receiving app accepts both, and `secret` wins when both
+are present. The fallback exists because enrollment installs only the personal token: a
+machine that never received the shared secret used to disable snapshot sync entirely and
+say nothing about it.
 
 Configuration: `~/.claude/skills/vibe-harness/sync.json` (chmod `600`):
 
