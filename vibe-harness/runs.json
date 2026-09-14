@@ -152,12 +152,12 @@
       "task_id": null,
       "agent": "claude",
       "model": "claude-opus-5",
-      "tokens": 403509608,
-      "input_tokens": 2134,
-      "output_tokens": 1233892,
-      "cache_read_tokens": 392608430,
-      "cache_write_tokens": 9665152,
-      "cost_usd": 287.5694,
+      "tokens": 435621349,
+      "input_tokens": 2456,
+      "output_tokens": 1372928,
+      "cache_read_tokens": 423739871,
+      "cache_write_tokens": 10506094,
+      "cost_usd": 311.8685,
       "cost_breakdown": {
         "in": 0.00017,
         "out": 0.48925,
@@ -818,6 +818,27 @@
       "session_id": "agent-aa998a5939047a544",
       "commit": "",
       "ts": "2026-09-13T22:47:38+09:00",
+      "source": "transcript-reconcile"
+    },
+    {
+      "task_id": null,
+      "agent": "claude",
+      "model": "claude-opus-5",
+      "tokens": 7343337,
+      "input_tokens": 156,
+      "output_tokens": 42884,
+      "cache_read_tokens": 6934173,
+      "cache_write_tokens": 366124,
+      "cost_usd": 6.8282,
+      "cost_breakdown": {
+        "in": 0.00078,
+        "out": 1.0721,
+        "cr": 3.467087,
+        "cw": 2.288275
+      },
+      "session_id": "agent-a7d2757ff07f3d619",
+      "commit": "",
+      "ts": "2026-09-14T16:35:29+09:00",
       "source": "transcript-reconcile"
     }
   ]
