@@ -245,6 +245,14 @@ def _repo(*subjects):
     """빈 커밋들로만 이뤄진 임시 레포. 오래된 것부터 순서대로 커밋한다. origin 없음."""
     d = tempfile.mkdtemp()
     _git(d, "init", "-q", "-b", "main")
+    # **레포 설정에 박는다 — `_git` 의 환경변수로는 부족하다.**
+    # 그 env 는 이 헬퍼가 직접 부르는 git 에만 붙는다. 정작 annotated 태그를
+    # 만드는 것은 `gh_surface` 가 자기 subprocess 로 부르는 git 이고, 그쪽은
+    # 주변 환경을 그대로 물려받는다. 개발 머신에는 전역 identity 가 있어 넘어가지만
+    # CI 러너에는 없어서 `Committer identity unknown` 으로 죽는다 —
+    # 로컬 923 초록, CI 11 빨강이 정확히 이 차이였다.
+    _git(d, "config", "user.name", "t")
+    _git(d, "config", "user.email", "t@t")
     for subj in subjects:
         _git(d, "commit", "--allow-empty", "-q", "-m", subj)
     return d
