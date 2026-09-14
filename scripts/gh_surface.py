@@ -19,6 +19,14 @@ import re
 import subprocess
 import sys
 
+# Windows cp949 콘솔에서 '—' 같은 문자가 크래시를 낸다. 사용자가 PYTHONUTF8=1 을 손으로
+# 붙여야 돌아가던 문제라 스크립트가 직접 보장한다. reconfigure 가 없으면 no-op.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # `git push` 는 유일하게 네트워크로 나가는 git 호출이다 — 자격증명 프롬프트가 뜨면
@@ -254,7 +262,9 @@ def _run(argv, env=None, timeout=None):
     push`)에만 적용하기 위한 것 — 나머지 로컬 전용 git 호출은 손대지 않는다.
     """
     try:
-        done = subprocess.run(argv, capture_output=True, text=True, env=env, timeout=timeout)
+        done = subprocess.run(argv, capture_output=True, text=True,
+                              encoding="utf-8", errors="replace",
+                              env=env, timeout=timeout)
     except subprocess.TimeoutExpired:
         return 124, "", f"{timeout}초 동안 응답이 없어 중단했다"
     return done.returncode, done.stdout, done.stderr
