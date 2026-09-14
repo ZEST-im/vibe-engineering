@@ -65,6 +65,15 @@ class ServedOverHttpTest(unittest.TestCase):
         cls._projects = server.load_projects
         server.load_projects = lambda: {"demo": {"name": "Demo",
                                                  "kanban_dir": cls.kanban}}
+        # **읽기만 격리하면 쓰기가 실제 파일로 샌다.** 이 클래스의 docstring 은
+        # 처음부터 "프로젝트 등록은 격리한다" 라고 적고 있었는데 `load_projects`
+        # 만 갈아끼웠다. `POST /api/projects` 는 `register_project` →
+        # `save_projects` 로 이어지고, 그쪽은 모듈 상수 `CONFIG_PATH` 를 그대로
+        # 쓴다 — 즉 이 머신의 진짜 `~/.claude/.../projects.json` 이다.
+        # 실제로 등록 테스트를 처음 추가한 순간 27개 프로젝트가 2개로 덮였다.
+        # 읽는 자리와 쓰는 자리를 **둘 다** 막는다.
+        cls._config_path = server.CONFIG_PATH
+        server.CONFIG_PATH = os.path.join(cls.tmp, "projects.json")
         cls.httpd = server.ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
         cls.thread = threading.Thread(target=cls.httpd.serve_forever, daemon=True)
         cls.thread.start()
@@ -76,6 +85,7 @@ class ServedOverHttpTest(unittest.TestCase):
         cls.httpd.server_close()
         cls.thread.join(timeout=3)
         server.load_projects = cls._projects
+        server.CONFIG_PATH = cls._config_path
 
     def call(self, method, path, body=None, headers=None):
         """(status, bytes). **연결이 끊기면 그 자체를 결과로 돌려준다** —
@@ -277,3 +287,81 @@ class NoRequestEndsInSilenceTest(ServedOverHttpTest):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BrowserCannotReachTheServerTest(ServedOverHttpTest):
+    """서버는 127.0.0.1 에만 바인드하지만 **브라우저는 거기에 닿는다.**
+
+    CodeQL 이 `py/path-injection` 7건을 6일간 열어두고 있었고, 실측해 보니 경로가
+    실재했다. 막는 자리는 등록 엔드포인트가 아니라 **CORS** 다 —
+
+    `Access-Control-Allow-Origin: *` 가 붙어 있으면 사용자가 연 아무 웹페이지나
+    `POST localhost:4242/api/projects` 로 임의 경로를 등록하고, 이어서 모든
+    프로젝트 보드를 **읽어간다**. 웹 UI 는 이 서버가 같은 오리진에서 서빙하므로
+    CORS 가 애초에 필요 없다. 필요 없는 허용이 통째로 공격 표면이었다.
+    """
+
+    def test_no_response_hands_out_a_wildcard_origin(self):
+        """응답 헤더에 `*` 가 하나라도 남으면 브라우저가 본문을 읽을 수 있다."""
+        for method, path in (("GET", "/api/demo/tasks"),
+                             ("GET", "/api/demo/stats"),
+                             ("GET", "/api/nonexistent-project/tasks")):
+            with self.subTest(method=method, path=path):
+                _s, _b, h = self.call(method, path)
+                self.assertNotEqual(
+                    "*", h.get("Access-Control-Allow-Origin"),
+                    f"{path} 가 아무 오리진에나 본문을 내준다")
+
+    def test_preflight_does_not_authorise_a_foreign_origin(self):
+        """프리플라이트가 통과하면 그 뒤 POST 가 실제로 나간다."""
+        _s, _b, h = self.call("OPTIONS", "/api/projects",
+                              headers={"Origin": "https://evil.example",
+                                       "Access-Control-Request-Method": "POST"})
+        self.assertNotEqual("*", h.get("Access-Control-Allow-Origin"),
+                            "프리플라이트가 외부 오리진에 POST 를 허가한다")
+
+    def test_a_request_carrying_a_foreign_origin_is_refused(self):
+        """브라우저는 교차 출처 요청에 Origin 을 **반드시** 붙인다. curl·스크립트는
+        붙이지 않는다 — 그래서 이 검사는 사람의 도구를 막지 않고 브라우저만 막는다."""
+        status, _b, _h = self.call("GET", "/api/demo/tasks",
+                                   headers={"Origin": "https://evil.example"})
+        self.assertEqual(403, status, "외부 오리진의 요청이 그대로 처리됐다")
+
+    def test_the_web_ui_own_origin_still_works(self):
+        """막되 끄지 않는다 — 웹 UI 가 깨지면 이 검사는 곧 되돌려진다."""
+        status, _b, _h = self.call("GET", "/api/demo/tasks",
+                                   headers={"Origin": self.base})
+        self.assertEqual(200, status, "자기 오리진을 막으면 웹 UI 가 죽는다")
+
+
+class RegisteringAProjectIsNotAFileWritePrimitiveTest(ServedOverHttpTest):
+    """`POST /api/projects` 는 `kanban_dir` 을 본문에서 그대로 받아
+    `os.makedirs` + 파일 쓰기까지 간다. CORS 를 닫아도 같은 머신의 다른 프로세스는
+    남으므로 **입력 자체를 좁힌다** (심층 방어)."""
+
+    def test_a_relative_path_is_refused(self):
+        status, body, _h = self.call("POST", "/api/projects",
+                                     {"key": "rel", "kanban_dir": "relative/dir"})
+        self.assertEqual(400, status, f"상대경로가 등록됐다: {body}")
+
+    def test_a_traversal_is_refused(self):
+        status, body, _h = self.call("POST", "/api/projects",
+                                     {"key": "trav",
+                                      "kanban_dir": os.path.join(self.tmp, "..", "..", "x")})
+        self.assertEqual(400, status, f"상위로 올라가는 경로가 등록됐다: {body}")
+
+    def test_a_parentless_path_is_refused(self):
+        """부모가 없으면 임의의 깊은 트리를 새로 만들 수 있다."""
+        status, body, _h = self.call(
+            "POST", "/api/projects",
+            {"key": "deep", "kanban_dir": os.path.join(self.tmp, "no", "such", "parent", "vh")})
+        self.assertEqual(400, status, f"부모 없는 경로가 등록됐다: {body}")
+
+    def test_a_normal_registration_still_works(self):
+        """막되 끄지 않는다."""
+        good = os.path.join(self.tmp, "another-project")
+        os.makedirs(good, exist_ok=True)
+        status, body, _h = self.call("POST", "/api/projects",
+                                     {"key": "ok-project",
+                                      "kanban_dir": os.path.join(good, "vibe-harness")})
+        self.assertEqual(201, status, f"정상 등록이 막혔다: {body}")

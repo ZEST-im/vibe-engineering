@@ -139,6 +139,34 @@ def save_projects(projects):
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(projects, f, indent=2, ensure_ascii=False)
 
+def validate_kanban_dir(kanban_dir):
+    """등록으로 들어온 경로를 좁힌다. `(통과했는가, 경로 또는 사유)`.
+
+    `POST /api/projects` 는 이 값을 본문에서 그대로 받아 `os.makedirs` 와 파일
+    쓰기까지 간다. CORS 를 닫아 브라우저 경로는 막았지만, 같은 머신의 다른
+    프로세스는 여전히 이 엔드포인트에 닿는다 — 그쪽까지 막으려면 입력 자체를
+    좁혀야 한다(심층 방어).
+
+    **부모가 이미 있어야 한다**는 조건이 핵심이다. `os.makedirs` 는 중간 경로를
+    통째로 만들기 때문에, 이것이 없으면 임의의 깊은 트리를 새로 만들 수 있다.
+    부모를 요구하면 공격자가 고를 수 있는 자리가 '이미 있는 디렉토리' 로 줄어든다.
+    """
+    if not kanban_dir:
+        return False, "kanban_dir required"
+    if not os.path.isabs(kanban_dir):
+        return False, "kanban_dir must be an absolute path"
+    # **정규형만 받는다.** `..` 을 normpath 로 걷어낸 뒤에 `..` 을 찾는 검사는
+    # 영원히 걸리지 않는다 — 걷어내는 쪽이 먼저이기 때문이다(처음에 그렇게 썼다가
+    # 테스트가 잡았다). 정규화가 경로를 **바꿨다면** 입력에 `..`·`.`·중복
+    # 슬래시가 있었다는 뜻이고, 그것만 보면 된다.
+    if os.path.normpath(kanban_dir) != kanban_dir.rstrip(os.sep) or ".." in kanban_dir.split(os.sep):
+        return False, "kanban_dir must be a canonical path (no '..' or '.')"
+    parent = os.path.dirname(kanban_dir.rstrip(os.sep))
+    if not os.path.isdir(parent):
+        return False, "kanban_dir parent must already exist"
+    return True, kanban_dir.rstrip(os.sep)
+
+
 def register_project(key, name, kanban_dir):
     projects = load_projects()
     projects[key] = {"name": name, "kanban_dir": os.path.abspath(kanban_dir)}
@@ -2470,7 +2498,6 @@ class Handler(BaseHTTPRequestHandler):
     def _json(self, data, status=200):
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
-        self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(json.dumps(data, ensure_ascii=False).encode())
 
@@ -2544,6 +2571,23 @@ class Handler(BaseHTTPRequestHandler):
             return key, projects[key]["kanban_dir"], parts[1:]
         return None, None, parts
 
+    def _origin_is_local(self):
+        """브라우저의 교차 출처 요청을 막는다. **사람의 도구는 막지 않는다.**
+
+        브라우저는 교차 출처 요청에 `Origin` 을 반드시 붙인다. curl·스크립트·훅은
+        붙이지 않는다 — 그래서 헤더가 없으면 통과시킨다. 넓게 잡아 전부 막으면
+        기존 호출부가 죽고, 죽으면 이 검사가 곧 꺼진다.
+
+        CORS 헤더를 뺀 것만으로 브라우저는 **응답을 읽지 못한다.** 그런데 단순
+        요청(simple request)은 프리플라이트 없이 **나가기는 한다** — 읽지 못할 뿐
+        서버는 이미 처리한 뒤다. 등록·삭제처럼 쓰는 요청에는 그것으로 부족하다.
+        """
+        origin = self.headers.get("Origin")
+        if not origin:
+            return True
+        host = urlparse(origin).hostname
+        return host in ("127.0.0.1", "localhost", "::1")
+
     def _guarded(self, handler):
         """모든 요청의 마지막 방어선.
 
@@ -2553,6 +2597,8 @@ class Handler(BaseHTTPRequestHandler):
 
         500 을 돌려주는 것이 조용히 끊는 것보다 낫다. 관측 가능하기 때문이다.
         """
+        if not self._origin_is_local():
+            return self._error(403, "cross-origin request refused")
         try:
             return handler()
         except BadRequest as exc:
@@ -2573,17 +2619,24 @@ class Handler(BaseHTTPRequestHandler):
         self.close_connection = True
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
-        self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Connection", "close")
         self.end_headers()
         self.wfile.write(json.dumps({"error": message}, ensure_ascii=False).encode())
 
     def do_OPTIONS(self):
+        """프리플라이트에 **아무 허가도 주지 않는다.**
+
+        웹 UI 는 이 서버가 같은 오리진에서 서빙하므로 CORS 가 애초에 필요 없다.
+        그런데 `Access-Control-Allow-Origin: *` 가 붙어 있어서, 사용자가 연 아무
+        웹페이지나 `POST /api/projects` 로 임의 경로를 등록하고 이어서 모든
+        프로젝트 보드를 **읽어갈** 수 있었다. 서버가 127.0.0.1 에만 바인드해도
+        브라우저는 거기에 닿는다 — 바인드 주소는 이 경로를 막지 못한다.
+
+        필요 없는 허용이 통째로 공격 표면이었다. 200 은 돌려주되 허용 헤더를
+        빼면 브라우저가 교차 출처 요청을 스스로 중단한다.
+        """
         self.send_response(200)
-        for h, v in [("Access-Control-Allow-Origin", "*"),
-                      ("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS"),
-                      ("Access-Control-Allow-Headers", "Content-Type")]:
-            self.send_header(h, v)
+        self.send_header("Content-Length", "0")
         self.end_headers()
 
     def do_GET(self):
@@ -2714,9 +2767,12 @@ class Handler(BaseHTTPRequestHandler):
             # Backward compat: if db_path given, convert to kanban_dir
             if kanban_dir.endswith(".db") or kanban_dir.endswith("/kanban.db"):
                 kanban_dir = os.path.dirname(kanban_dir)
-            if not key or not kanban_dir:
+            if not key:
                 return self._json({"error": "key and kanban_dir required"}, 400)
-            projects = register_project(key, name, kanban_dir)
+            ok, checked = validate_kanban_dir(kanban_dir)
+            if not ok:
+                return self._json({"error": checked}, 400)
+            projects = register_project(key, name, checked)
             return self._json({"registered": key, "total": len(projects)}, 201)
 
         # ── API: /api/{project}/... ──
