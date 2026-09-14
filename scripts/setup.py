@@ -125,6 +125,27 @@ SKILL_COPY_IGNORE = shutil.ignore_patterns(
 )
 
 
+def force_rmtree(path):
+    """읽기 전용 파일이 섞여 있어도 디렉토리를 지운다.
+
+    Windows 의 shutil.rmtree 는 읽기 전용 비트가 켜진 파일에서 PermissionError
+    (WinError 5) 로 멈춘다 — 스킬 재설치가 거기서 죽는다.
+
+    POSIX 에서는 파일 모드가 아니라 **부모 디렉토리 권한**으로 지워지므로 이
+    전처리가 필요 없다. 그리고 필요 없는 정도가 아니라 해롭다 — 여기서 모드를
+    건드리면 디렉토리 진입 권한(+x)까지 날려 rmtree 가 오히려 실패한다.
+    그래서 Windows 에서만 돈다.
+    """
+    if os.name == "nt":
+        for root, _dirs, files in os.walk(path):
+            for name in files:
+                try:
+                    os.chmod(os.path.join(root, name), stat.S_IWRITE)
+                except OSError:
+                    pass
+    shutil.rmtree(path)
+
+
 def copy_skill_files():
     """skills/<name>/ 전체를 ~/.claude/skills/<name>/ 로 복사.
 
@@ -149,7 +170,7 @@ def copy_skill_files():
                 continue
             stale = os.path.join(dest_dir, sub)
             if os.path.isdir(stale):
-                shutil.rmtree(stale)
+                force_rmtree(stale)
 
         shutil.copytree(src_dir, dest_dir, dirs_exist_ok=True,
                         ignore=SKILL_COPY_IGNORE)
@@ -165,7 +186,7 @@ def remove_added_skills():
     for name in REMOVABLE_SKILLS:
         d = os.path.join(SKILLS_ROOT, name)
         if os.path.isdir(d):
-            shutil.rmtree(d)
+            force_rmtree(d)
             print(f"  REMOVED {d}")
 
 

@@ -194,12 +194,36 @@ def uninstall(plist=None, runner=None):
     return plist
 
 
+def _other_platform_hint():
+    """macOS 가 아닌 곳에서 무엇을 하라고 할지.
+
+    예전에는 무조건 cron 을 가리켰다. Windows 에는 cron 이 없다 — 그대로 따라 할 수
+    없는 안내다. Windows 는 enroll.py 가 이미 작업 스케줄러에 등록한다.
+    """
+    if os.name == "nt":
+        enroll = os.path.join(os.path.dirname(os.path.abspath(__file__)), "enroll.py")
+        return "\n".join([
+            "launchd 는 macOS 전용 — Windows 는 작업 스케줄러를 쓴다.",
+            "  등록: python %s --token <토큰>" % enroll,
+            "  확인: schtasks /Query /TN VibeHarnessReconcile",
+        ])
+    return ("launchd 는 macOS 전용 — 다른 OS 는 cron 으로 "
+            "'*/180 * * * * %s %s --all --push' 등록" % (PYTHON, RECONCILE))
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="토큰 수집 주기 실행 잡 설치")
     ap.add_argument("--uninstall", action="store_true")
     ap.add_argument("--check", action="store_true",
                     help="설치된 잡이 지금도 유효한지 본다 (경로 어긋남·exit status)")
     a = ap.parse_args(argv)
+
+    # 가드가 --check 뒤에 있었다. 그래서 Windows 에서 `--check` 가 macOS 전용
+    # plist 경로를 들이밀며 "설치되어 있지 않다"고 거짓 보고했다 — 실제로는
+    # enroll.py 가 작업 스케줄러에 등록해 둔 상태다. 틀린 진단은 없느니만
+    # 못하므로 어떤 하위 명령보다 먼저 막는다.
+    if sys.platform != "darwin":
+        raise SystemExit(_other_platform_hint())
 
     if a.check:
         found = problems()
@@ -212,10 +236,6 @@ def main(argv=None):
             print("  ✗ " + p)
         print("\n다시 설치: python3 %s" % os.path.abspath(__file__))
         return 1
-
-    if sys.platform != "darwin":
-        raise SystemExit("launchd는 macOS 전용 — 다른 OS는 cron으로 "
-                         f"'*/180 * * * * {PYTHON} {RECONCILE} --all --push' 등록")
 
     if a.uninstall:
         print("제거됨:", uninstall())
