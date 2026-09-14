@@ -10,7 +10,9 @@ Windows 사용자가 실제로 겪은 것을 macOS/Linux 에서도 재현되는 
 3. 수집 에이전트 자동 등록이 macOS 전용이었고, 안내 문구는 Windows 에 없는 cron 을
    가리켰다.
 """
+import ast
 import importlib.util
+import io
 import json
 import os
 import shutil
@@ -19,6 +21,7 @@ import sys
 import tempfile
 import types
 import unittest
+import unittest.mock
 
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -34,6 +37,11 @@ _rspec = importlib.util.spec_from_file_location(
     "reconcile_runs", os.path.join(SCRIPTS, "reconcile_runs.py"))
 reconcile = importlib.util.module_from_spec(_rspec)
 _rspec.loader.exec_module(reconcile)
+
+_vspec = importlib.util.spec_from_file_location(
+    "vh_runtime_t", os.path.join(SCRIPTS, "vibe_runtime.py"))
+vibe_runtime = importlib.util.module_from_spec(_vspec)
+_vspec.loader.exec_module(vibe_runtime)
 
 _sspec = importlib.util.spec_from_file_location(
     "vh_setup", os.path.join(SCRIPTS, "setup.py"))
@@ -212,11 +220,71 @@ class SchtasksTest(unittest.TestCase):
 
 
 class WindowsGuidanceTest(unittest.TestCase):
-    def test_does_not_tell_windows_users_to_use_cron(self):
-        """Windows 에 cron 은 없다. 잘못된 안내는 없느니만 못하다."""
-        source = open(os.path.join(SCRIPTS, "enroll.py"), encoding="utf-8").read()
+    """Windows 사용자에게 Windows 에 없는 것을 시키면 안 된다.
 
-        self.assertNotIn("cron", source.lower())
+    예전에는 enroll.py 한 파일만 봤다. 그래서 install_reconcile.py 가 그대로
+    cron 을 가리키고 있었고, 게다가 macOS 가드가 `--check` 뒤에 있어서 Windows 에서
+    `--check` 를 돌리면 macOS 전용 plist 경로를 들이밀며 "설치되어 있지 않다"고
+    **틀린 진단**을 내놨다 — 실제로는 작업 스케줄러에 등록돼 있는 상태였다.
+
+    파일을 나열하면 다음에 또 샌다. 디렉토리를 훑는다.
+    """
+
+    def scripts(self):
+        return [n for n in sorted(os.listdir(SCRIPTS)) if n.endswith(".py")]
+
+    def test_no_script_tells_windows_users_to_use_cron(self):
+        guilty = []
+        for name in self.scripts():
+            with io.open(os.path.join(SCRIPTS, name), encoding="utf-8") as fh:
+                src = fh.read().lower()
+            for i, line in enumerate(src.splitlines(), 1):
+                # cron 을 언급해도 괜찮은 경우가 있다: `os.name == "nt"` 분기 밖의
+                # POSIX 안내문. 구분이 어려우니 "nt 분기를 가진 파일"만 봐준다.
+                if "cron" in line and 'os.name == "nt"' not in src:
+                    guilty.append("%s:%d" % (name, i))
+
+        self.assertEqual([], guilty, "Windows 에 없는 cron 을 안내한다")
+
+    def test_the_sweep_actually_sees_files(self):
+        self.assertGreater(len(self.scripts()), 5)
+
+    @unittest.skipIf(os.name == "nt", "여기서는 아래 Windows 테스트가 본다")
+    def test_install_reconcile_still_guides_posix_users_to_cron(self):
+        """Windows 를 고치면서 Linux 안내까지 지우면 안 된다."""
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "ir_guide", os.path.join(SCRIPTS, "install_reconcile.py"))
+        ir = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(ir)
+
+        self.assertIn("cron", ir._other_platform_hint())
+
+    @unittest.skipUnless(os.name == "nt", "Windows 안내 전용")
+    def test_install_reconcile_guides_windows_to_the_task_scheduler(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "ir_guide", os.path.join(SCRIPTS, "install_reconcile.py"))
+        ir = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(ir)
+        hint = ir._other_platform_hint()
+
+        self.assertNotIn("cron", hint)
+        self.assertIn("schtasks", hint)
+
+    @unittest.skipUnless(os.name == "nt", "macOS 가드가 걸리는 것은 Windows 뿐")
+    def test_check_refuses_before_reporting_a_macos_path(self):
+        """`--check` 가 macOS 전용 경로로 틀린 진단을 내놓으면 안 된다."""
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "ir_check", os.path.join(SCRIPTS, "install_reconcile.py"))
+        ir = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(ir)
+
+        with self.assertRaises(SystemExit) as caught:
+            ir.main(["--check"])
+
+        self.assertIn("schtasks", str(caught.exception))
 
 
 if __name__ == "__main__":
@@ -510,3 +578,362 @@ class SetupAutoStartTest(unittest.TestCase):
             self.assertTrue(setup.install_windows_server_task())
 
         cleanup.assert_called_once_with()
+
+
+class HookCommandPathTest(unittest.TestCase):
+    """훅 명령에 역슬래시가 들어가면 Windows 에서 훅이 전부 죽는다.
+
+    Claude Code 는 Windows 에서도 훅 명령을 bash 에 넘긴다. bash 에서 역슬래시는
+    이스케이프라 역슬래시 경로가 `C:Userskimyh...` 로 뭉개지고, 실제로
+    "bash: C:Userskimyh/.claude/hooksvibe-harness-review.sh: No such file or
+    directory" 가 툴 호출마다 찍혔다. 조용한 실패가 아니라 훅 5개 전원 정지다.
+    """
+
+    def test_no_backslash_in_any_registered_hook_command(self):
+        bad = [e["hooks"][0]["command"] for _, _, e in setup.HOOKS
+               if "\\" in e["hooks"][0]["command"]]
+
+        self.assertEqual([], bad, "훅 명령에 역슬래시 — bash 가 먹는다")
+
+    def test_hook_cmd_converts_a_windows_path(self):
+        """이 머신이 POSIX 여도 규칙이 고정되어야 한다 — 그래서 문자열로 직접 본다."""
+        self.assertNotIn("\\", setup.hook_cmd("x.sh").replace(setup.HOOKS_DIR, ""))
+        self.assertTrue(setup.hook_cmd("x.sh").endswith("/x.sh"))
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+NETSTAT_SAMPLE = """
+  Proto  Local Address          Foreign Address        State           PID
+  TCP    127.0.0.1:4242         0.0.0.0:0              LISTENING       8092
+  TCP    127.0.0.1:4242         127.0.0.1:50152        ESTABLISHED     8092
+  TCP    127.0.0.1:4242         127.0.0.1:53975        TIME_WAIT       0
+  TCP    127.0.0.1:50152        127.0.0.1:4242         ESTABLISHED     8532
+  TCP    127.0.0.1:42420        0.0.0.0:0              LISTENING       9999
+"""
+
+
+class ServerPidLookupTest(unittest.TestCase):
+    """업그레이드 후 서버를 못 멈추면 디스크와 도는 코드가 갈라진다.
+
+    예전에는 `lsof` 를 무조건 불렀고, Windows 에 없어서 나는 FileNotFoundError 를
+    바깥의 `except Exception: pass` 가 삼켰다. 그래서 업그레이드가 끝났다고
+    출력하면서도 **구버전 서버가 계속 돌았다.** 크래시가 아니라 조용한 무동작이라
+    재시작했다고 믿게 된다 — 실제로 sync 설정을 못 읽는 구버전이 오래 살아남았다.
+    """
+
+    def netstat(self, stdout):
+        done = types.SimpleNamespace(stdout=stdout, stderr="", returncode=0)
+        return unittest.mock.patch.object(setup.subprocess, "run",
+                                          return_value=done)
+
+    def test_windows_reads_the_listening_pid_from_netstat(self):
+        with unittest.mock.patch.object(setup.os, "name", "nt"), \
+                self.netstat(NETSTAT_SAMPLE):
+            self.assertEqual(["8092"], setup.server_pids(4242))
+
+    def test_established_and_time_wait_rows_are_ignored(self):
+        """ESTABLISHED 행의 pid 를 죽이면 서버가 아니라 **브라우저**를 죽인다."""
+        with unittest.mock.patch.object(setup.os, "name", "nt"), \
+                self.netstat(NETSTAT_SAMPLE):
+            self.assertNotIn("8532", setup.server_pids(4242))
+            self.assertNotIn("0", setup.server_pids(4242))
+
+    def test_a_port_that_merely_starts_the_same_is_not_matched(self):
+        """`:42420` 은 `:4242` 가 아니다. 부분 문자열로 보면 남의 서버를 죽인다."""
+        with unittest.mock.patch.object(setup.os, "name", "nt"), \
+                self.netstat(NETSTAT_SAMPLE):
+            self.assertNotIn("9999", setup.server_pids(4242))
+
+    def test_missing_tool_is_reported_as_no_server_not_a_crash(self):
+        with unittest.mock.patch.object(setup.subprocess, "run",
+                                        side_effect=OSError("no such tool")):
+            self.assertEqual([], setup.server_pids(4242))
+
+
+class ForceRmtreeTest(unittest.TestCase):
+    """읽기 전용 파일이 섞이면 Windows 의 shutil.rmtree 가 WinError 5 로 멈춘다."""
+
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.TemporaryDirectory()
+        self.target = os.path.join(self.tmp.name, "skill", "references")
+        os.makedirs(self.target)
+        self.ro = os.path.join(self.target, "ro.md")
+        with io.open(self.ro, "w", encoding="utf-8") as fh:
+            fh.write("x")
+
+    def tearDown(self):
+        import stat as _stat
+        for root, _d, files in os.walk(self.tmp.name):
+            for n in files:
+                try:
+                    os.chmod(os.path.join(root, n), _stat.S_IWRITE)
+                except OSError:
+                    pass
+        self.tmp.cleanup()
+
+    def test_removes_a_tree_that_holds_a_read_only_file(self):
+        import stat as _stat
+        os.chmod(self.ro, _stat.S_IREAD)
+        top = os.path.dirname(self.target)
+
+        setup.force_rmtree(top)
+
+        self.assertFalse(os.path.exists(top))
+
+    def test_ordinary_tree_is_removed_too(self):
+        top = os.path.dirname(self.target)
+
+        setup.force_rmtree(top)
+
+        self.assertFalse(os.path.exists(top))
+
+
+class RmtreeIsRoutedTest(unittest.TestCase):
+    """setup.py 가 shutil.rmtree 를 직접 부르면 읽기 전용 파일에서 다시 멈춘다."""
+
+    def test_setup_routes_every_rmtree_through_the_helper(self):
+        with io.open(os.path.join(SCRIPTS, "setup.py"), encoding="utf-8") as fh:
+            tree = ast.parse(fh.read())
+        bad = []
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "rmtree"
+                    and isinstance(node.func.value, ast.Name)
+                    and node.func.value.id == "shutil"
+                    and node.lineno > self._helper_line(tree)):
+                bad.append("setup.py:%d" % node.lineno)
+
+        self.assertEqual([], bad, "shutil.rmtree 직접 호출")
+
+    def _helper_line(self, tree):
+        for node in tree.body:
+            if isinstance(node, ast.FunctionDef) and node.name == "force_rmtree":
+                return node.end_lineno
+        self.fail("force_rmtree 가 없다")
+
+
+class NoImplicitEncodingInSourceTest(unittest.TestCase):
+    """텍스트 모드 open() 에 encoding 이 빠지면 Windows 에서 로케일(cp949)로 열린다.
+
+    위의 ImplicitEncodingTest 는 함수를 하나씩 실행해 본다. 그래서 **실행되지 않은
+    경로는 보지 못한다** — 실제로 runs.json 을 쓰는 줄이 그렇게 빠져나갔고, 한글
+    제목을 cp949 로 쓰다 중간에 UnicodeEncodeError 로 끊겨 파일이 깨졌다. 읽기는
+    utf-8 로 고정돼 있어서 그 다음 수집이 통째로 멈췄다.
+
+    실행이 아니라 소스를 본다. 새로 추가되는 줄도 같이 잡힌다.
+    """
+
+    BINARY = ("rb", "wb", "ab", "r+b", "w+b", "a+b", "rb+", "wb+", "ab+")
+
+    def _offenders(self, relpath):
+        tree = ast.parse(io.open(os.path.join(ROOT, relpath), encoding="utf-8").read())
+        bad = []
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Name) and node.func.id == "open"):
+                continue
+            if any(k.arg == "encoding" for k in node.keywords):
+                continue
+            mode = node.args[1].value if len(node.args) > 1 and isinstance(
+                node.args[1], ast.Constant) else ""
+            if isinstance(mode, str) and "b" in mode:
+                continue
+            bad.append("%s:%d" % (relpath, node.lineno))
+        return bad
+
+    def test_no_script_opens_text_without_an_encoding(self):
+        bad = []
+        for d in ("scripts", os.path.join("scripts", "hooks")):
+            for name in sorted(os.listdir(os.path.join(ROOT, d))):
+                if name.endswith(".py"):
+                    bad += self._offenders(os.path.join(d, name))
+
+        self.assertEqual([], bad, "encoding 없는 텍스트 open — Windows 에서 cp949 로 열린다")
+
+
+class NoImplicitSubprocessEncodingTest(unittest.TestCase):
+    """subprocess 를 텍스트 모드로 열 때 encoding 이 빠지면 로케일로 디코드된다.
+
+    cp949 머신에서 한글 커밋 메시지를 읽다 UnicodeDecodeError 가 나고, 그 예외는
+    subprocess 의 reader 스레드에서 터진다. 호출한 쪽은 예외 대신 `stdout=None`
+    을 받아 `AttributeError` 로 죽는다 — 원인에서 두 단계 떨어진 곳이다.
+    실제로 check.py 의 분기 판정과 search.py 의 커밋 검색이 그렇게 멈췄다.
+
+    open() 과 같은 이유로 실행이 아니라 소스를 본다. macOS 에서는 로케일이 이미
+    UTF-8 이라 명시해도 동작이 같다 — 고정하는 쪽은 Windows 다.
+    """
+
+    TEXT_KW = ("text", "universal_newlines")
+
+    def _offenders(self, relpath):
+        tree = ast.parse(io.open(os.path.join(ROOT, relpath), encoding="utf-8").read())
+        bad = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            kw = {k.arg for k in node.keywords if k.arg}
+            if kw & set(self.TEXT_KW) and "encoding" not in kw:
+                bad.append("%s:%d" % (relpath, node.lineno))
+        return bad
+
+    def test_no_script_decodes_subprocess_output_with_the_locale(self):
+        bad = []
+        for d in ("scripts", os.path.join("scripts", "hooks")):
+            for name in sorted(os.listdir(os.path.join(ROOT, d))):
+                if name.endswith(".py"):
+                    bad += self._offenders(os.path.join(d, name))
+
+        self.assertEqual([], bad, "encoding 없는 텍스트 subprocess — 로케일로 디코드된다")
+
+
+class EveryEntrypointSurvivesCp949Test(unittest.TestCase):
+    """엔트리포인트 전부가 cp949 콘솔에서 한글을 출력할 수 있어야 한다.
+
+    위 ConsoleEncodingTest 는 enroll 과 reconcile 두 개만 본다. 그래서 나머지
+    7개(check, setup, search, worker, kanban_edit, review_sync,
+    install_reconcile)가 전부 빠져 있었고, 실제로 `check.py --fast` 는 이 머신에서
+    em-dash 한 글자에 UnicodeEncodeError 로 죽었다.
+
+    **파일을 나열하지 않고 디렉토리를 훑는다.** 나열하면 다음에 추가되는
+    엔트리포인트가 또 빠진다. 이 테스트가 이미 그렇게 새어나간 자리다.
+    """
+
+    # 라이브러리 모듈. 직접 실행되지 않으므로 콘솔을 건드릴 이유가 없다.
+    LIBRARIES = {"vibe_runtime.py"}
+
+    def entrypoints(self):
+        return [n for n in sorted(os.listdir(SCRIPTS))
+                if n.endswith(".py") and n not in self.LIBRARIES]
+
+    def test_every_entrypoint_prints_korean_under_a_cp949_console(self):
+        body = (
+            "import importlib.util, os, sys\n"
+            # 직접 실행하면 파이썬이 스크립트 디렉토리를 path 에 넣어준다. 여기서는
+            # spec 으로 읽으므로 그 일을 대신해야 형제 모듈 import 가 재현된다.
+            "sys.path.insert(0, os.path.dirname(sys.argv[1]))\n"
+            "spec = importlib.util.spec_from_file_location('m', sys.argv[1])\n"
+            "m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)\n"
+            "print('한글 — 대시')\n"
+        )
+        env = dict(os.environ, PYTHONIOENCODING="cp949:strict")
+        dead = []
+        for name in self.entrypoints():
+            r = subprocess.run([sys.executable, "-c", body, os.path.join(SCRIPTS, name)],
+                               capture_output=True, text=True, encoding="utf-8",
+                               errors="replace", env=env, cwd=ROOT, timeout=120)
+            if r.returncode != 0:
+                dead.append("%s: %s" % (name, r.stderr.strip().splitlines()[-1:]))
+
+        self.assertEqual([], dead, "cp949 콘솔에서 죽는 엔트리포인트")
+
+    def test_the_list_is_not_empty(self):
+        """훑기가 조용히 0개를 훑으면 위 테스트는 아무것도 검사하지 않는다."""
+        self.assertGreater(len(self.entrypoints()), 5)
+
+
+class AtomicReplaceIsRoutedTest(unittest.TestCase):
+    """원자 교체는 반드시 atomic_replace 를 거쳐야 한다.
+
+    POSIX 의 rename 은 대상이 열려 있어도 성공한다. Windows 는 거부한다 —
+    실측: 브라우저 탭 하나가 2초마다 폴링하는 것만으로 보드 저장 200번 중 3번,
+    탭이 여럿이면 32번이 PermissionError 로 실패했다. 읽기 4스레드를 붙이면
+    200번 중 198번이 실패한다. ThreadingHTTPServer 라 이 조건은 평시다.
+
+    또 모두가 `<path>.tmp` 하나를 쓰면 동시 쓰기끼리도 서로를 막는다.
+
+    CI 는 ubuntu 에서만 돌아 이 동작 차이를 볼 수 없다. 그래서 **동작이 아니라
+    배선을 고정한다** — 어느 플랫폼에서 돌려도 같은 것을 검사한다.
+    """
+
+    HELPER = "vibe_runtime.py"   # atomic_replace 의 구현 자체가 사는 곳
+
+    def _raw_sites(self, relpath):
+        tree = ast.parse(io.open(os.path.join(ROOT, relpath), encoding="utf-8").read())
+        bad = []
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "replace"
+                    and isinstance(node.func.value, ast.Name)
+                    and node.func.value.id == "os"):
+                bad.append("%s:%d" % (relpath, node.lineno))
+        return bad
+
+    def test_no_script_calls_os_replace_directly(self):
+        bad = []
+        for d in ("scripts", os.path.join("scripts", "hooks")):
+            for name in sorted(os.listdir(os.path.join(ROOT, d))):
+                if name.endswith(".py") and name != self.HELPER:
+                    bad += self._raw_sites(os.path.join(d, name))
+
+        self.assertEqual([], bad, "os.replace 직접 호출 — Windows 에서 재시도가 없다")
+
+    def test_temp_names_are_not_shared(self):
+        """`path + '.tmp'` 는 동시 쓰기끼리 같은 파일을 잡는다."""
+        bad = []
+        for d in ("scripts", os.path.join("scripts", "hooks")):
+            for name in sorted(os.listdir(os.path.join(ROOT, d))):
+                if not name.endswith(".py"):
+                    continue
+                rel = os.path.join(d, name)
+                for i, line in enumerate(io.open(os.path.join(ROOT, rel),
+                                                 encoding="utf-8"), 1):
+                    if '+ ".tmp"' in line and "lambda" not in line:
+                        bad.append("%s:%d" % (rel, i))
+
+        self.assertEqual([], bad, "공유 임시 파일명 — 동시 쓰기가 서로를 막는다")
+
+    def test_tmp_name_differs_per_thread(self):
+        import threading
+        seen = []
+        ts = [threading.Thread(target=lambda: seen.append(vibe_runtime.tmp_name("/x/k.json")))
+              for _ in range(8)]
+        for t in ts: t.start()
+        for t in ts: t.join()
+
+        self.assertEqual(8, len(set(seen)))
+
+
+@unittest.skipUnless(os.name == "nt", "os.replace 가 거부되는 것은 Windows 뿐")
+class ConcurrentBoardWriteTest(unittest.TestCase):
+    """읽는 쪽이 있어도 보드 저장이 성공해야 한다. 고치기 전엔 2% ~ 99% 가 실패했다."""
+
+    def test_writes_survive_a_concurrent_reader(self):
+        import tempfile, threading, time
+        spec = importlib.util.spec_from_file_location("srv_cc",
+                                                      os.path.join(SCRIPTS, "server.py"))
+        srv = importlib.util.module_from_spec(spec); spec.loader.exec_module(srv)
+
+        d = tempfile.mkdtemp()
+        srv.init_kanban(d)
+        board = {"version": 1, "next_id": 1,
+                 "tasks": [{"id": i, "title": "태스크 %d" % i, "details": "내용 " * 40}
+                           for i in range(40)]}
+        srv._write_kanban(d, board)
+        stop = threading.Event()
+
+        def poller():
+            while not stop.is_set():
+                try:
+                    srv._read_kanban(d)
+                except Exception:
+                    pass
+                time.sleep(0.01)
+
+        t = threading.Thread(target=poller, daemon=True)
+        t.start()
+        failures = 0
+        try:
+            for _ in range(60):
+                try:
+                    srv._write_kanban(d, board)
+                except OSError:
+                    failures += 1
+        finally:
+            stop.set(); t.join(timeout=3)
+
+        self.assertEqual(0, failures)
+
