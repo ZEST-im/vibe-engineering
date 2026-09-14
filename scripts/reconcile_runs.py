@@ -614,9 +614,11 @@ def _http_post(url, payload, secret):
 def push_credential(cfg):
     """run 전송에 쓸 자격증명.
 
-    스냅샷(/sync)은 프로젝트 단위 공유 secret 만 인정하고, run(/runs)은 사람별 귀속을
-    위해 개인 토큰을 요구한다. 두 값을 한 필드에 뭉개면 개인 토큰으로 덮어쓰는 순간
-    스냅샷이 401 로 죽는다. 그래서 runs_token 을 따로 두고, 없으면 secret 으로 떨어진다.
+    run(/runs)은 사람별 귀속을 위해 개인 토큰을 요구한다. 두 값을 한 필드에 뭉개면
+    스냅샷과 run 이 서로를 덮어써 한쪽이 401 로 죽는다. 그래서 runs_token 을 따로 두고,
+    없으면 secret 으로 떨어진다.
+
+    스냅샷(/sync)도 이제 둘 다 받는다 — 우선순위는 반대다(server.snapshot_credential).
     """
     cfg = cfg or {}
     token = str(cfg.get("runs_token") or "").strip()

@@ -287,6 +287,28 @@
       "review": "",
       "created_by": "hogun",
       "assigned_to": "hogun"
+    },
+    {
+      "id": "hgA103",
+      "title": "/sync 개인 토큰 인가 허용 — 공유 secret 배포 제거",
+      "description": "",
+      "details": "## 무엇을 고쳤나\n\n스냅샷 업로드(/sync)가 대시보드 공유 secret 만 인정해서, 참가 플로우로 들어온 새 머신은 스냅샷을 한 건도 못 올렸다. 참가 플로우가 심어주는 것은 개인 토큰 하나뿐이고 공유 secret 은 어느 경로로도 내려가지 않는다. 그래서 사람이 컴퓨터를 바꿀 때마다 누군가 손으로 secret 을 옮겨야 했다.\n\n더 나쁜 건 침묵이다 — _load_sync_config 가 secret 없으면 None 을 돌려주므로 그 머신의 **모든 프로젝트** 동기화가 통째로 꺼진다. 에러도 로그도 없고, 다른 머신이 밀어둔 행이 대시보드에 남아 있으면 본인도 관리자도 모른다.\n\n## 변경\n\n- server.py: snapshot_credential(cfg) 추가 — secret 우선, 없으면 runs_token. _load_sync_config 가드와 _post_snapshot/_remote_request 헤더가 이걸 쓴다.\n- reconcile_runs.push_credential docstring, references/remote-sync.md 의 낡은 설명 교정.\n- 수신 앱 쪽(별도 레포): /sync 인가가 개인 토큰도 받도록. 공유 secret 도 계속 받으므로 기존 머신 무중단.\n\n## 기술 결정\n\n우선순위가 reconcile_runs.push_credential 과 반대다(secret 먼저). run 은 사람별 귀속이 필요해 개인 토큰이 먼저지만, 스냅샷은 source key 단위 머지라 귀속이 없다. 이미 secret 으로 도는 머신의 동작을 바꾸지 않는 쪽이 안전하다.\n\n## 테스트\n\ntests/test_sync_credential.py 신규 9건 — 자격증명 선택, _load_sync_config 가드, 실제 Authorization 헤더. 전체 686 passed. 수신 앱 쪽도 9건 추가.\n\n## 후속\n\n- 인가 모집단이 secret 보유 머신에서 참가자 전원으로 넓어진다. 스냅샷은 source key 머지라 유효 토큰이면 남의 source 도 덮어쓸 수 있다(공유 secret 시절에도 동일). source 소유자 검증은 별도 과제.\n- 각 머신이 enroll.py --update-skill 로 클라이언트를 받아야 적용된다. 수신 앱 먼저 배포(2026-09-14 완료).",
+      "status": "done",
+      "priority": "high",
+      "category": "backend",
+      "target_date": "",
+      "started_at": "",
+      "completed_at": "2026-09-14T10:56:07+09:00",
+      "lines_added": 377,
+      "lines_removed": 52,
+      "tokens_used": 0,
+      "created_at": "2026-09-14T10:51:05+09:00",
+      "updated_at": "2026-09-14T11:40:29+09:00",
+      "position": 0,
+      "phase": "",
+      "review": "",
+      "created_by": "hogun",
+      "assigned_to": ""
     }
   ]
 }
