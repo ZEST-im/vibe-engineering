@@ -281,6 +281,17 @@ def _tracked_docs(root, runner=None):
             if p and p.lower().endswith(DOC_SUFFIXES)]
 
 
+def _posix(rel):
+    """문서 id 는 슬래시 구분자로 고정한다.
+
+    코퍼스는 두 곳에서 온다 — `git ls-files` 와 `os.walk`. git 은 Windows 에서도
+    슬래시를 주는데 walk 는 역슬래시를 준다. 둘이 갈라지면 같은 파일이 서로 다른
+    id 로 두 번 들어가고, 역슬래시가 박힌 id 는 사용자가 열 수 없다.
+    POSIX 에서는 os.sep 이 이미 "/" 라 아무 일도 하지 않는다.
+    """
+    return rel.replace(os.sep, "/")
+
+
 def _walked_docs(root, cap=None):
     """추적 목록을 못 얻을 때의 대안. 생성물 디렉토리를 걸러내고 **상한을 둔다.**
 
@@ -293,7 +304,7 @@ def _walked_docs(root, cap=None):
                        if d not in SKIP_DIRS and not d.startswith(".")]
         for name in sorted(filenames):
             if name.lower().endswith(DOC_SUFFIXES):
-                out.append(os.path.relpath(os.path.join(dirpath, name), root))
+                out.append(_posix(os.path.relpath(os.path.join(dirpath, name), root)))
                 if cap is not None and len(out) >= cap:
                     return out, True
     return out, False
@@ -344,7 +355,7 @@ def doc_records(root, max_bytes=DOC_MAX_BYTES, extra_dirs=("private",)):
             base = os.path.join(root, extra)
             if os.path.isdir(base):
                 more, _ = _walked_docs(base, cap=DOC_SCAN_CAP)
-                rels += [os.path.join(extra, r) for r in more]
+                rels += [_posix(os.path.join(extra, r)) for r in more]
 
     for rel in sorted(set(rels)):
         full = os.path.join(root, rel)
