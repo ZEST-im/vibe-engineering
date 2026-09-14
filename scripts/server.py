@@ -139,7 +139,16 @@ def save_projects(projects):
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(projects, f, indent=2, ensure_ascii=False)
 
-def validate_kanban_dir(kanban_dir):
+# 등록을 허용하는 루트. 밖에서 들어온 경로는 **여기 아래로만** 만들어진다.
+# 테스트는 이 값을 임시 디렉토리로 갈아끼운다(실제 홈을 건드리지 않기 위해).
+PROJECT_ROOTS = (os.path.expanduser("~"),)
+
+# 경로 조각으로 허용하는 문자. 넓게 잡으면 재구성이 뜻을 잃는다 — 아무 문자열이나
+# join 하는 것은 받은 경로를 그대로 쓰는 것과 같다.
+_SEGMENT = re.compile(r"^[A-Za-z0-9._][A-Za-z0-9._-]*$")
+
+
+def validate_kanban_dir(kanban_dir, roots=None):
     """등록으로 들어온 경로를 좁힌다. `(통과했는가, 경로 또는 사유)`.
 
     `POST /api/projects` 는 이 값을 본문에서 그대로 받아 `os.makedirs` 와 파일
@@ -147,24 +156,36 @@ def validate_kanban_dir(kanban_dir):
     프로세스는 여전히 이 엔드포인트에 닿는다 — 그쪽까지 막으려면 입력 자체를
     좁혀야 한다(심층 방어).
 
-    **부모가 이미 있어야 한다**는 조건이 핵심이다. `os.makedirs` 는 중간 경로를
-    통째로 만들기 때문에, 이것이 없으면 임의의 깊은 트리를 새로 만들 수 있다.
-    부모를 요구하면 공격자가 고를 수 있는 자리가 '이미 있는 디렉토리' 로 줄어든다.
+    **검증만으로는 부족하다. 통과한 값을 그대로 쓰지 않고 다시 만든다.**
+    처음에는 "절대경로 · 정규형 · 부모 존재" 만 봤는데, 그러면 같은 문자열이
+    검사를 지나 파일 연산까지 그대로 흐른다. 정적 분석기가 이것을 오염으로
+    보는 것이 옳다 — 검사가 충분한지는 밖에서 알 수 없기 때문이다(CodeQL 이
+    검증 추가 뒤에도 6건을 열어뒀다). 신뢰된 루트에 검증된 조각만 이어 붙이면
+    받은 문자열은 **판단에만 쓰이고 결과에는 남지 않는다.**
+
+    `..` 은 따로 찾지 않는다. `realpath` 가 이미 풀어놓았고, 푼 결과가 루트 안에
+    있는지만 보면 된다 — 심볼릭 링크로 밖을 가리키는 경우까지 같이 걸린다.
     """
     if not kanban_dir:
         return False, "kanban_dir required"
     if not os.path.isabs(kanban_dir):
         return False, "kanban_dir must be an absolute path"
-    # **정규형만 받는다.** `..` 을 normpath 로 걷어낸 뒤에 `..` 을 찾는 검사는
-    # 영원히 걸리지 않는다 — 걷어내는 쪽이 먼저이기 때문이다(처음에 그렇게 썼다가
-    # 테스트가 잡았다). 정규화가 경로를 **바꿨다면** 입력에 `..`·`.`·중복
-    # 슬래시가 있었다는 뜻이고, 그것만 보면 된다.
-    if os.path.normpath(kanban_dir) != kanban_dir.rstrip(os.sep) or ".." in kanban_dir.split(os.sep):
-        return False, "kanban_dir must be a canonical path (no '..' or '.')"
-    parent = os.path.dirname(kanban_dir.rstrip(os.sep))
-    if not os.path.isdir(parent):
-        return False, "kanban_dir parent must already exist"
-    return True, kanban_dir.rstrip(os.sep)
+
+    real = os.path.realpath(kanban_dir)
+    for root in (roots if roots is not None else PROJECT_ROOTS):
+        base = os.path.realpath(root)
+        if real == base or real.startswith(base + os.sep):
+            rel = os.path.relpath(real, base)
+            segments = rel.split(os.sep)
+            if not all(_SEGMENT.match(seg) for seg in segments):
+                return False, "kanban_dir has a path segment that is not allowed"
+            # **여기가 핵심이다.** 받은 문자열이 아니라 상수 루트 + 검증된 조각으로
+            # 새로 만든 경로를 돌려준다.
+            rebuilt = os.path.join(base, *segments)
+            if not os.path.isdir(os.path.dirname(rebuilt)):
+                return False, "kanban_dir parent must already exist"
+            return True, rebuilt
+    return False, "kanban_dir must be inside an allowed project root"
 
 
 def register_project(key, name, kanban_dir):

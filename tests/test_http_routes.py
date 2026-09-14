@@ -74,6 +74,10 @@ class ServedOverHttpTest(unittest.TestCase):
         # 읽는 자리와 쓰는 자리를 **둘 다** 막는다.
         cls._config_path = server.CONFIG_PATH
         server.CONFIG_PATH = os.path.join(cls.tmp, "projects.json")
+        # 등록 허용 루트도 임시로. 기본값은 이 사람의 홈이라, 그대로 두면 테스트가
+        # 실제 홈 아래에 디렉토리를 만들 수 있다.
+        cls._roots = server.PROJECT_ROOTS
+        server.PROJECT_ROOTS = (cls.tmp,)
         cls.httpd = server.ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
         cls.thread = threading.Thread(target=cls.httpd.serve_forever, daemon=True)
         cls.thread.start()
@@ -86,6 +90,7 @@ class ServedOverHttpTest(unittest.TestCase):
         cls.thread.join(timeout=3)
         server.load_projects = cls._projects
         server.CONFIG_PATH = cls._config_path
+        server.PROJECT_ROOTS = cls._roots
 
     def call(self, method, path, body=None, headers=None):
         """(status, bytes). **연결이 끊기면 그 자체를 결과로 돌려준다** —
@@ -356,6 +361,51 @@ class RegisteringAProjectIsNotAFileWritePrimitiveTest(ServedOverHttpTest):
             "POST", "/api/projects",
             {"key": "deep", "kanban_dir": os.path.join(self.tmp, "no", "such", "parent", "vh")})
         self.assertEqual(400, status, f"부모 없는 경로가 등록됐다: {body}")
+
+    def test_a_path_outside_the_allowed_roots_is_refused(self):
+        """검증을 통과한 값을 **그대로 쓰지 않고** 신뢰된 루트 아래로 다시 만든다.
+
+        정적 분석기는 "이 검사가 충분한가" 를 판단하지 못한다. 검증 함수를 지나도
+        같은 문자열이 파일 연산까지 흐르면 오염으로 본다 — 실제로 CodeQL 이
+        검증 추가 뒤에도 6건을 그대로 열어뒀다. 루트 + 검증된 조각으로 **재구성**
+        하면 흐름이 끊긴다. 그리고 그건 지표만이 아니라 실제로 더 좁다.
+        """
+        status, body, _h = self.call("POST", "/api/projects",
+                                     {"key": "outside", "kanban_dir": "/etc/vibe-harness"})
+        self.assertEqual(400, status, f"허용 루트 밖 경로가 등록됐다: {body}")
+
+    def test_a_segment_with_odd_characters_is_refused(self):
+        """조각을 검사해야 재구성이 뜻을 갖는다 — 아무 문자열이나 join 하면 같은 일이다.
+
+        **부모를 실제로 만들어 둔다.** 안 만들면 "부모 없음" 에서 먼저 걸려
+        400 이 나오고, 조각 검사를 지워도 이 테스트는 초록으로 남는다 —
+        처음 쓴 판이 정확히 그랬고 변이 주입에서 드러났다.
+        """
+        odd_parent = os.path.join(self.tmp, "weird name")
+        os.makedirs(odd_parent, exist_ok=True)
+        status, body, _h = self.call(
+            "POST", "/api/projects",
+            {"key": "odd", "kanban_dir": os.path.join(odd_parent, "vibe-harness")})
+        self.assertEqual(400, status, f"이상한 문자가 든 조각이 등록됐다: {body}")
+
+    def test_the_stored_path_is_rebuilt_not_the_string_we_were_given(self):
+        """**재구성이 실제로 일어나는지**를 본다. 심볼릭 링크로 가르면 드러난다 —
+        받은 문자열을 그대로 쓰면 링크 경로가, 다시 만들면 실제 경로가 남는다.
+
+        이 구분이 없으면 "검증 통과값을 그대로 반환" 으로 되돌려도 전부 초록이다.
+        """
+        real = os.path.join(self.tmp, "realdir")
+        link = os.path.join(self.tmp, "linkdir")
+        os.makedirs(real, exist_ok=True)
+        if not os.path.islink(link):
+            os.symlink(real, link)
+        submitted = os.path.join(link, "vibe-harness")
+        status, body, _h = self.call("POST", "/api/projects",
+                                     {"key": "viaLink", "kanban_dir": submitted})
+        self.assertEqual(201, status, f"정상 경로가 막혔다: {body}")
+        stored = json.load(open(server.CONFIG_PATH, encoding="utf-8"))["viaLink"]["kanban_dir"]
+        self.assertEqual(os.path.join(os.path.realpath(real), "vibe-harness"), stored,
+                         "받은 문자열이 그대로 저장됐다 — 재구성되지 않았다")
 
     def test_a_normal_registration_still_works(self):
         """막되 끄지 않는다."""
