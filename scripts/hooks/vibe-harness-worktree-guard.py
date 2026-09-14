@@ -60,7 +60,7 @@ def _git(repo, *args):
     try:
         done = subprocess.run(
             ["git", "--no-optional-locks", "-C", repo, *args],
-            capture_output=True, text=True, timeout=10)
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10)
     except (OSError, subprocess.SubprocessError):
         return None
     return done.stdout if done.returncode == 0 else None

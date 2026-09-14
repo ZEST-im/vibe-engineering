@@ -46,6 +46,32 @@ except ImportError:
 
     fcntl = _FcntlShim()
 
+
+def _runtime():
+    """vibe_runtime 을 찾아 읽는다. 훅은 설치본에서 skills 디렉토리와 떨어져 산다.
+
+    레포에서는 ../vibe_runtime.py, 설치본에서는 스킬 디렉토리에 있다. 못 찾으면
+    표준 동작으로 떨어진다 — 훅이 import 하나 때문에 죽으면 수집이 통째로 멈춘다.
+    """
+    import importlib.util
+    here = os.path.dirname(os.path.abspath(__file__))
+    for cand in (os.path.join(here, os.pardir, "vibe_runtime.py"),
+                 os.path.expanduser("~/.claude/skills/vibe-harness/vibe_runtime.py")):
+        if os.path.isfile(cand):
+            spec = importlib.util.spec_from_file_location("vh_runtime", cand)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            return mod
+    return None
+
+
+_VR = _runtime()
+# Windows 에서 os.replace 는 대상이 열려 있으면 거부된다. 재시도가 있는 구현을
+# 쓰되, 못 찾으면 기존 동작 그대로 간다.
+tmp_name = _VR.tmp_name if _VR else (lambda path: path + ".tmp")
+atomic_replace = _VR.atomic_replace if _VR else os.replace
+
+
 CONFIG_PATH = os.path.expanduser("~/.claude/skills/vibe-harness/projects.json")
 SERVER = "http://localhost:4242"
 
@@ -178,13 +204,13 @@ def append_direct(kanban_dir, run):
         except Exception:
             pass
     data.setdefault("runs", []).append(run)
-    tmp = rp + ".tmp"
+    tmp = tmp_name(rp)
     with open(tmp, "w", encoding="utf-8") as f:
         fcntl.flock(f, fcntl.LOCK_EX)
         json.dump(data, f, indent=2, ensure_ascii=False)
         f.flush(); os.fsync(f.fileno())
         fcntl.flock(f, fcntl.LOCK_UN)
-    os.replace(tmp, rp)
+    atomic_replace(tmp, rp)
     # sync task tokens_used = sum of its runs
     tid = run.get("task_id")
     if tid is not None:
@@ -199,13 +225,13 @@ def append_direct(kanban_dir, run):
             if task is not None:
                 task["tokens_used"] = total
                 task["updated_at"] = _now()
-                tmp = kp + ".tmp"
+                tmp = tmp_name(kp)
                 with open(tmp, "w", encoding="utf-8") as f:
                     fcntl.flock(f, fcntl.LOCK_EX)
                     json.dump(kd, f, indent=2, ensure_ascii=False)
                     f.flush(); os.fsync(f.fileno())
                     fcntl.flock(f, fcntl.LOCK_UN)
-                os.replace(tmp, kp)
+                atomic_replace(tmp, kp)
 
 
 def post_server(key, run):

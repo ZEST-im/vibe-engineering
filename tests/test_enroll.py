@@ -455,12 +455,37 @@ class AddProjectToDashboardTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             enroll.add_project_to_dashboard(self.path, "pante_capture")
 
+    @unittest.skipIf(os.name == "nt", "NTFS 는 모드 비트가 아니라 ACL 이다")
     def test_written_file_is_owner_only(self):
         self.write({"dashboards": {"ax-project": []}})
 
         enroll.add_project_to_dashboard(self.path, "pante_capture")
 
         self.assertEqual(0o600, os.stat(self.path).st_mode & 0o777)
+
+    @unittest.skipUnless(os.name == "nt", "Windows ACL 전용")
+    def test_written_file_drops_the_users_ace_on_windows(self):
+        """Windows 의 chmod 는 읽기 전용 비트만 건드린다 — 권한은 그대로다.
+
+        취약 조건을 **직접 만들어 놓고** 검사한다. 사용자 프로필 안은 이미
+        Users 그룹 ACE 가 없어서, 그냥 임시 디렉토리에 쓰면 수정이 없어도
+        통과한다. 통과하는 보안 테스트는 없느니만 못하다.
+        """
+        import subprocess
+        # S-1-5-32-545 = Users 그룹. 이름은 로케일마다 다르니 SID 로 준다.
+        granted = subprocess.run(
+            ["icacls", self.tmp.name, "/grant", "*S-1-5-32-545:(OI)(CI)(F)"],
+            capture_output=True)
+        if granted.returncode != 0:
+            self.skipTest("이 환경에서 Users ACE 를 부여하지 못했다")
+        self.write({"dashboards": {"ax-project": []}})
+
+        enroll.add_project_to_dashboard(self.path, "pante_capture")
+
+        acl = subprocess.run(["icacls", self.path],
+                             capture_output=True).stdout.decode("utf-8", "replace")
+        self.assertNotIn("S-1-5-32-545", acl)
+        self.assertNotIn("Users:", acl)
 
 
 class FlushDashboardSnapshotTest(unittest.TestCase):

@@ -15,8 +15,10 @@ import getpass
 try:
     import fcntl
 except ImportError:
-    # Windows has no fcntl. flock becomes a no-op — the atomic .tmp→os.replace
-    # below is the real write guard, and this is a local single-user server.
+    # Windows has no fcntl. flock becomes a no-op. The write guard is the
+    # tmp→replace below, but plain os.replace is NOT atomic-safe on Windows:
+    # it is refused while any reader holds the destination open. atomic_replace()
+    # retries, and tmp_name() keeps concurrent writers off one temp file.
     class _FcntlShim:
         LOCK_EX = LOCK_UN = 0
         def flock(self, *args, **kwargs):
@@ -57,9 +59,10 @@ def _load_sibling(name, filename):
 
 
 from vibe_runtime import (
-    approval_required, expires_at, load_policy, new_identity, parse_time,
-    read_runtime, run_test_gate, runtime_lock, sanitized_runtime, utc_now,
-    valid_token, write_runtime,
+    approval_required, atomic_replace, expires_at, load_policy, new_identity,
+    parse_time, read_runtime, restrict_to_owner, run_test_gate, runtime_lock,
+    read_json_fast, sanitized_runtime, tmp_name, utc_now, valid_token,
+    write_runtime,
 )
 
 # Force UTF-8 console I/O so non-ASCII output (em-dash, Korean) survives on
@@ -184,8 +187,7 @@ def _read_kanban(kanban_dir):
     kp = _kanban_path(kanban_dir)
     if not os.path.exists(kp):
         return {"version": 1, "next_id": 1, "tasks": []}
-    with open(kp, encoding="utf-8") as f:
-        data = json.load(f)
+    data = read_json_fast(kp)
     if "next_id" not in data:
         nums = _numeric_ids(data.get("tasks"))
         data["next_id"] = (max(nums) + 1) if nums else 1
@@ -194,14 +196,14 @@ def _read_kanban(kanban_dir):
 def _write_kanban(kanban_dir, data):
     kp = _kanban_path(kanban_dir)
     os.makedirs(kanban_dir, exist_ok=True)
-    tmp = kp + ".tmp"
+    tmp = tmp_name(kp)
     with open(tmp, "w", encoding="utf-8") as f:
         fcntl.flock(f, fcntl.LOCK_EX)
         json.dump(data, f, indent=2, ensure_ascii=False)
         f.flush()
         os.fsync(f.fileno())
         fcntl.flock(f, fcntl.LOCK_UN)
-    os.replace(tmp, kp)
+    atomic_replace(tmp, kp)
     _schedule_remote_sync(kanban_dir)
 
 # 보드가 아는 status 는 이 다섯이 전부다. 세 군데에 같은 리터럴이 흩어져 있었고
@@ -1427,20 +1429,19 @@ def _read_decisions(kanban_dir):
     p = _decisions_path(kanban_dir)
     if not os.path.exists(p):
         return {"version": 1, "next_id": 1, "decisions": []}
-    with open(p, encoding="utf-8") as f:
-        return json.load(f)
+    return read_json_fast(p)
 
 def _write_decisions(kanban_dir, data):
     p = _decisions_path(kanban_dir)
     os.makedirs(kanban_dir, exist_ok=True)
-    tmp = p + ".tmp"
+    tmp = tmp_name(p)
     with open(tmp, "w", encoding="utf-8") as f:
         fcntl.flock(f, fcntl.LOCK_EX)
         json.dump(data, f, indent=2, ensure_ascii=False)
         f.flush()
         os.fsync(f.fileno())
         fcntl.flock(f, fcntl.LOCK_UN)
-    os.replace(tmp, p)
+    atomic_replace(tmp, p)
     _schedule_remote_sync(kanban_dir)
 
 def _new_decision(data, d):
@@ -1476,20 +1477,19 @@ def _read_runs(kanban_dir):
     p = _runs_path(kanban_dir)
     if not os.path.exists(p):
         return {"version": 1, "runs": []}
-    with open(p, encoding="utf-8") as f:
-        return json.load(f)
+    return read_json_fast(p)
 
 def _write_runs(kanban_dir, data):
     p = _runs_path(kanban_dir)
     os.makedirs(kanban_dir, exist_ok=True)
-    tmp = p + ".tmp"
+    tmp = tmp_name(p)
     with open(tmp, "w", encoding="utf-8") as f:
         fcntl.flock(f, fcntl.LOCK_EX)
         json.dump(data, f, indent=2, ensure_ascii=False)
         f.flush()
         os.fsync(f.fileno())
         fcntl.flock(f, fcntl.LOCK_UN)
-    os.replace(tmp, p)
+    atomic_replace(tmp, p)
     _schedule_remote_sync(kanban_dir)
 
 def _safe_int(v):
@@ -1980,7 +1980,7 @@ def _execution_workdir(kanban_dir, candidate):
             raw = subprocess.check_output(
                 ["git", "-C", path, "rev-parse", "--git-common-dir"],
                 stderr=subprocess.DEVNULL,
-                text=True,
+                text=True, encoding="utf-8", errors="replace",
             ).strip()
             return os.path.realpath(os.path.join(path, raw))
         return candidate if common(candidate) == common(project_dir) else None
@@ -2223,12 +2223,12 @@ def _build_dashboard_snapshot(dashboard, project_keys):
 
 def _atomic_json(path, data):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
+    tmp = tmp_name(path)
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
         f.flush()
         os.fsync(f.fileno())
-    os.replace(tmp, path)
+    atomic_replace(tmp, path)
 
 
 def _read_pending_sync():
@@ -2365,7 +2365,7 @@ def _sync_worker(dirty_dirs):
     if pending:
         _atomic_json(SYNC_PENDING_PATH, pending)
         try:
-            os.chmod(SYNC_PENDING_PATH, 0o600)
+            restrict_to_owner(SYNC_PENDING_PATH)
         except OSError:
             pass
     elif os.path.exists(SYNC_PENDING_PATH):
@@ -2910,7 +2910,7 @@ def main():
         }
         _atomic_json(SYNC_CONFIG_PATH, cfg)
         try:
-            os.chmod(SYNC_CONFIG_PATH, 0o600)
+            restrict_to_owner(SYNC_CONFIG_PATH)
         except OSError:
             pass
         print(f"Remote sync configured: {SYNC_CONFIG_PATH}")

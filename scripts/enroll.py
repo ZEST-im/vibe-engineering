@@ -89,17 +89,23 @@ def merge_sync_config(existing, token, endpoint, machine=None, runs_schema=None,
     return cfg
 
 
+# vibe_runtime.py 는 항상 이 파일 옆에 함께 배포된다 (SKILL_RUNTIME_FILES).
+# 권한 강화 구현이 두 벌로 갈라지면 한쪽만 고쳐지고, 그게 시크릿 파일이다.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from vibe_runtime import atomic_replace, restrict_to_owner, tmp_name  # noqa: E402
+
+
 def write_sync_config(path, cfg):
     """시크릿이 들어가므로 소유자만 읽을 수 있게 쓴다."""
     parent = os.path.dirname(path)
     if parent:
         os.makedirs(parent, exist_ok=True)
-    tmp = path + ".tmp"
+    tmp = tmp_name(path)
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(cfg, fh, ensure_ascii=False, indent=2)
         fh.write("\n")
-    os.chmod(tmp, 0o600)
-    os.replace(tmp, path)
+    restrict_to_owner(tmp)
+    atomic_replace(tmp, path)
 
 
 DEFAULT_DASHBOARD = "ax-project"
@@ -188,7 +194,7 @@ def derive_project_key(repo_path):
     repo = os.path.abspath(os.path.expanduser(str(repo_path or "")))
     try:
         out = subprocess.run(["git", "-C", repo, "remote", "get-url", "origin"],
-                             capture_output=True, text=True, timeout=5)
+                             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5)
         url = out.stdout.strip() if out.returncode == 0 else ""
     except (OSError, subprocess.SubprocessError):
         url = ""
@@ -274,11 +280,11 @@ def add_project(registry_path, key, repo_path):
     parent = os.path.dirname(registry_path)
     if parent:
         os.makedirs(parent, exist_ok=True)
-    tmp = registry_path + ".tmp"
+    tmp = tmp_name(registry_path)
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(data, fh, ensure_ascii=False, indent=2)
         fh.write("\n")
-    os.replace(tmp, registry_path)
+    atomic_replace(tmp, registry_path)
     return data[key]
 
 
@@ -399,7 +405,7 @@ def flush_dashboard_snapshot():
         return False, f"설치본 server.py 를 찾지 못했다: {server}"
     try:
         out = subprocess.run([sys.executable, server, "sync"],
-                             capture_output=True, text=True, timeout=120)
+                             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
     except (OSError, subprocess.SubprocessError) as exc:
         return False, f"스냅샷 push 실행 실패: {exc}"
     if out.returncode != 0:
@@ -456,7 +462,7 @@ def install_windows_task(script, interval=DEFAULT_INTERVAL, dry_run=False):
     argv = build_schtasks_argv(script, interval=interval)
     if dry_run:
         return "would-install"
-    done = subprocess.run(argv, capture_output=True, text=True, check=False)
+    done = subprocess.run(argv, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False)
     if done.returncode != 0:
         detail = (done.stderr or done.stdout or "").strip()[-300:]
         return f"실패 — 직접 등록이 필요하다: {' '.join(argv)}\n            {detail}"
@@ -661,8 +667,8 @@ def main(argv=None):
     print(f"agent     : {result} → {script}")
 
     if os.name == "nt":
-        print("주의      : Windows 는 POSIX 권한이 적용되지 않아 sync.json 이 0600 으로"
-              " 보호되지 않는다. 토큰이 든 파일이니 계정 밖에 노출되지 않게 둔다.")
+        print("권한      : Windows 는 모드 비트가 없어 icacls 로 sync.json 의 상속을"
+              " 끊고 현재 계정만 남겼다. SYSTEM·Administrators 는 남는다(POSIX 의 root 와 같다).")
 
     print("\n확인:  python3 %s --all --dry-run" % script)
     return 0

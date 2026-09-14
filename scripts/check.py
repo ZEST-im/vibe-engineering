@@ -32,6 +32,14 @@ import sys
 import tempfile
 import venv
 
+# Force UTF-8 console I/O so non-ASCII output (em-dash, Korean) survives on
+# Windows cp949 terminals. No-op where reconfigure is unavailable/unneeded.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
+
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WORKFLOW = os.path.join(ROOT, ".github", "workflows", "tests.yml")
@@ -112,7 +120,7 @@ def unverified_here(clone=None):
 
     dirty = subprocess.run(["git", "--no-optional-locks", "-C", ROOT,
                             "status", "--porcelain"],
-                           capture_output=True, text=True)
+                           capture_output=True, text=True, encoding="utf-8", errors="replace")
     n = len([ln for ln in dirty.stdout.splitlines() if ln.strip()])
     if n:
         notes.append("커밋되지 않은 변경 %d건 — **CI 는 커밋된 트리만 본다.** "
@@ -194,7 +202,7 @@ def clone_state():
     """
     def git(*args):
         done = subprocess.run(["git", "-C", ROOT, *args],
-                              capture_output=True, text=True)
+                              capture_output=True, text=True, encoding="utf-8", errors="replace")
         return done.stdout.strip() if done.returncode == 0 else None
 
     upstream = git("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
@@ -275,7 +283,7 @@ def private_free_tests(root=ROOT, python=None, verbose=False):
         dest = copy_without_private(root, os.path.join(tmp, "tree"))
         done = subprocess.run(
             [python or sys.executable, "-m", "unittest", "discover", "-s", "tests"],
-            cwd=dest, capture_output=True, text=True)
+            cwd=dest, capture_output=True, text=True, encoding="utf-8", errors="replace")
         if done.returncode != 0 and verbose:
             print((done.stderr or done.stdout).rstrip()[-4000:])
         return True, done.returncode == 0

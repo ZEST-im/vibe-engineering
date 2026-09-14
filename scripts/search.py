@@ -36,6 +36,14 @@ import json
 import os
 import sys
 
+# Force UTF-8 console I/O so non-ASCII output (em-dash, Korean) survives on
+# Windows cp949 terminals. No-op where reconfigure is unavailable/unneeded.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
+
 
 SNIPPET_CHARS = 160
 DEFAULT_LIMIT = 10
@@ -264,13 +272,24 @@ def _tracked_docs(root, runner=None):
         return None
     try:
         done = runner(["git", "--no-optional-locks", "-C", root, "ls-files", "-z"],
-                      capture_output=True, text=True, timeout=30)
+                      capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
     except (OSError, ValueError):
         return None
     if getattr(done, "returncode", 1) != 0:
         return None
     return [p for p in (done.stdout or "").split("\0")
             if p and p.lower().endswith(DOC_SUFFIXES)]
+
+
+def _posix(rel):
+    """문서 id 는 슬래시 구분자로 고정한다.
+
+    코퍼스는 두 곳에서 온다 — `git ls-files` 와 `os.walk`. git 은 Windows 에서도
+    슬래시를 주는데 walk 는 역슬래시를 준다. 둘이 갈라지면 같은 파일이 서로 다른
+    id 로 두 번 들어가고, 역슬래시가 박힌 id 는 사용자가 열 수 없다.
+    POSIX 에서는 os.sep 이 이미 "/" 라 아무 일도 하지 않는다.
+    """
+    return rel.replace(os.sep, "/")
 
 
 def _walked_docs(root, cap=None):
@@ -285,7 +304,7 @@ def _walked_docs(root, cap=None):
                        if d not in SKIP_DIRS and not d.startswith(".")]
         for name in sorted(filenames):
             if name.lower().endswith(DOC_SUFFIXES):
-                out.append(os.path.relpath(os.path.join(dirpath, name), root))
+                out.append(_posix(os.path.relpath(os.path.join(dirpath, name), root)))
                 if cap is not None and len(out) >= cap:
                     return out, True
     return out, False
@@ -336,7 +355,7 @@ def doc_records(root, max_bytes=DOC_MAX_BYTES, extra_dirs=("private",)):
             base = os.path.join(root, extra)
             if os.path.isdir(base):
                 more, _ = _walked_docs(base, cap=DOC_SCAN_CAP)
-                rels += [os.path.join(extra, r) for r in more]
+                rels += [_posix(os.path.join(extra, r)) for r in more]
 
     for rel in sorted(set(rels)):
         full = os.path.join(root, rel)
@@ -382,7 +401,7 @@ def commit_records(root, limit=COMMIT_LIMIT, runner=None):
         done = runner(["git", "--no-optional-locks", "-C", root, "log",
                        "--max-count=%d" % limit,
                        "--format=%H%x1f%aI%x1f%s%x1f%b" + sep],
-                      capture_output=True, text=True, timeout=60)
+                      capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
     except (OSError, Exception):        # noqa: B014 - subprocess 계열 전부
         return []
     if getattr(done, "returncode", 1) != 0:

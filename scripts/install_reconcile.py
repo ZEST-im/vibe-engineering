@@ -33,6 +33,20 @@ import plistlib
 import subprocess
 import sys
 
+# Force UTF-8 console I/O so non-ASCII output (em-dash, Korean) survives on
+# Windows cp949 terminals. No-op where reconfigure is unavailable/unneeded.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
+
+
+# vibe_runtime.py 는 항상 이 파일 옆에 함께 배포된다 (SKILL_RUNTIME_FILES).
+# 원자 교체는 Windows 에서 재시도가 필요하다 — 구현이 갈라지면 한쪽만 고쳐진다.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from vibe_runtime import atomic_replace, tmp_name  # noqa: E402
+
 HOME = os.path.expanduser("~")
 LABEL = "com.vibe-harness.reconcile"
 PLIST = os.path.join(HOME, "Library/LaunchAgents", LABEL + ".plist")
@@ -67,10 +81,10 @@ def write_plist(path, body):
     이 프로젝트가 반복해서 당해 온 '성공처럼 보이는 침묵'과 같은 형태다.
     """
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
+    tmp = tmp_name(path)
     with open(tmp, "wb") as fh:
         plistlib.dump(body, fh)
-    os.replace(tmp, path)
+    atomic_replace(tmp, path)
 
 
 def read_plist(path):
@@ -103,7 +117,7 @@ def job_status(label=LABEL, runner=None):
     """
     runner = runner or subprocess.run
     try:
-        done = runner(["launchctl", "list"], capture_output=True, text=True)
+        done = runner(["launchctl", "list"], capture_output=True, text=True, encoding="utf-8", errors="replace")
     except (OSError, subprocess.SubprocessError):
         return None
     if getattr(done, "returncode", 1) != 0:
@@ -168,7 +182,7 @@ def install(plist=None, reconcile=None, log=None, runner=None):
         runner(["launchctl", "unload", plist], capture_output=True)
     os.makedirs(os.path.dirname(log), exist_ok=True)
     write_plist(plist, plist_dict(reconcile, log))
-    return runner(["launchctl", "load", plist], capture_output=True, text=True)
+    return runner(["launchctl", "load", plist], capture_output=True, text=True, encoding="utf-8", errors="replace")
 
 
 def uninstall(plist=None, runner=None):
@@ -180,12 +194,36 @@ def uninstall(plist=None, runner=None):
     return plist
 
 
+def _other_platform_hint():
+    """macOS 가 아닌 곳에서 무엇을 하라고 할지.
+
+    예전에는 무조건 cron 을 가리켰다. Windows 에는 cron 이 없다 — 그대로 따라 할 수
+    없는 안내다. Windows 는 enroll.py 가 이미 작업 스케줄러에 등록한다.
+    """
+    if os.name == "nt":
+        enroll = os.path.join(os.path.dirname(os.path.abspath(__file__)), "enroll.py")
+        return "\n".join([
+            "launchd 는 macOS 전용 — Windows 는 작업 스케줄러를 쓴다.",
+            "  등록: python %s --token <토큰>" % enroll,
+            "  확인: schtasks /Query /TN VibeHarnessReconcile",
+        ])
+    return ("launchd 는 macOS 전용 — 다른 OS 는 cron 으로 "
+            "'*/180 * * * * %s %s --all --push' 등록" % (PYTHON, RECONCILE))
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="토큰 수집 주기 실행 잡 설치")
     ap.add_argument("--uninstall", action="store_true")
     ap.add_argument("--check", action="store_true",
                     help="설치된 잡이 지금도 유효한지 본다 (경로 어긋남·exit status)")
     a = ap.parse_args(argv)
+
+    # 가드가 --check 뒤에 있었다. 그래서 Windows 에서 `--check` 가 macOS 전용
+    # plist 경로를 들이밀며 "설치되어 있지 않다"고 거짓 보고했다 — 실제로는
+    # enroll.py 가 작업 스케줄러에 등록해 둔 상태다. 틀린 진단은 없느니만
+    # 못하므로 어떤 하위 명령보다 먼저 막는다.
+    if sys.platform != "darwin":
+        raise SystemExit(_other_platform_hint())
 
     if a.check:
         found = problems()
@@ -198,10 +236,6 @@ def main(argv=None):
             print("  ✗ " + p)
         print("\n다시 설치: python3 %s" % os.path.abspath(__file__))
         return 1
-
-    if sys.platform != "darwin":
-        raise SystemExit("launchd는 macOS 전용 — 다른 OS는 cron으로 "
-                         f"'*/180 * * * * {PYTHON} {RECONCILE} --all --push' 등록")
 
     if a.uninstall:
         print("제거됨:", uninstall())
