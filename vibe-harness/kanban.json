@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "next_id": 107,
+  "next_id": 108,
   "tasks": [
     {
       "id": "hg98",
@@ -304,6 +304,28 @@
       "tokens_used": 0,
       "created_at": "2026-09-14T10:51:05+09:00",
       "updated_at": "2026-09-14T11:40:29+09:00",
+      "position": 0,
+      "phase": "",
+      "review": "",
+      "created_by": "hogun",
+      "assigned_to": ""
+    },
+    {
+      "id": "hgA107",
+      "title": "설치본 갱신 롤아웃 — 남은 머신 확인",
+      "description": "",
+      "details": "runs_token 폴백은 배포됐지만 각 머신이 설치본을 받아 서버를 재시작해야 적용된다.\n\n확인 방법: 명령 폴링이 5초 간격이라 GET /sync 분당 요청 수로 살아있는 머신 수를 센다(12/분 = 1대). 09-14 관측: 11:50 약 1대 → 12:00 2대 → 12:50 3대로 늘고 그 뒤 평평. 재시작한 머신은 시작 즉시 전체 플러시를 밀므로 POST 가 곧바로 찍힌다.\n\n남은 한 머신은 재시작 전이다 — 파일만 받고 옛 프로세스가 도는 상태로 보인다. 그 보드는 아직 0건.",
+      "status": "todo",
+      "priority": "medium",
+      "category": "infra",
+      "target_date": "",
+      "started_at": "",
+      "completed_at": "",
+      "lines_added": 0,
+      "lines_removed": 0,
+      "tokens_used": 0,
+      "created_at": "2026-09-14T14:56:38+09:00",
+      "updated_at": "2026-09-14T14:56:38+09:00",
       "position": 0,
       "phase": "",
       "review": "",
