@@ -39,6 +39,15 @@ import os
 import sys
 import time
 
+# Force UTF-8 console I/O so non-ASCII output (em-dash, Korean) survives on
+# Windows cp949 terminals. No-op where reconfigure is unavailable/unneeded.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
+
+
 try:
     import fcntl
     HAVE_FLOCK = True
@@ -123,7 +132,7 @@ def kanban_lock(kanban_dir, require=False, timeout_note=True):
                 "  --require-lock 없이 실행하면 잠금 없이 진행한다.")
         yield None
         return
-    fh = open(path, "a+")
+    fh = open(path, "a+", encoding="utf-8")
     try:
         _lock_exclusive(fh)
         yield fh

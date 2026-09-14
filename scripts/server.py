@@ -184,8 +184,7 @@ def _read_kanban(kanban_dir):
     kp = _kanban_path(kanban_dir)
     if not os.path.exists(kp):
         return {"version": 1, "next_id": 1, "tasks": []}
-    with open(kp, encoding="utf-8") as f:
-        data = json.load(f)
+    data = read_json_fast(kp)
     if "next_id" not in data:
         nums = _numeric_ids(data.get("tasks"))
         data["next_id"] = (max(nums) + 1) if nums else 1
@@ -1427,20 +1426,19 @@ def _read_decisions(kanban_dir):
     p = _decisions_path(kanban_dir)
     if not os.path.exists(p):
         return {"version": 1, "next_id": 1, "decisions": []}
-    with open(p, encoding="utf-8") as f:
-        return json.load(f)
+    return read_json_fast(p)
 
 def _write_decisions(kanban_dir, data):
     p = _decisions_path(kanban_dir)
     os.makedirs(kanban_dir, exist_ok=True)
-    tmp = p + ".tmp"
+    tmp = tmp_name(p)
     with open(tmp, "w", encoding="utf-8") as f:
         fcntl.flock(f, fcntl.LOCK_EX)
         json.dump(data, f, indent=2, ensure_ascii=False)
         f.flush()
         os.fsync(f.fileno())
         fcntl.flock(f, fcntl.LOCK_UN)
-    os.replace(tmp, p)
+    atomic_replace(tmp, p)
     _schedule_remote_sync(kanban_dir)
 
 def _new_decision(data, d):
@@ -1476,20 +1474,19 @@ def _read_runs(kanban_dir):
     p = _runs_path(kanban_dir)
     if not os.path.exists(p):
         return {"version": 1, "runs": []}
-    with open(p, encoding="utf-8") as f:
-        return json.load(f)
+    return read_json_fast(p)
 
 def _write_runs(kanban_dir, data):
     p = _runs_path(kanban_dir)
     os.makedirs(kanban_dir, exist_ok=True)
-    tmp = p + ".tmp"
+    tmp = tmp_name(p)
     with open(tmp, "w", encoding="utf-8") as f:
         fcntl.flock(f, fcntl.LOCK_EX)
         json.dump(data, f, indent=2, ensure_ascii=False)
         f.flush()
         os.fsync(f.fileno())
         fcntl.flock(f, fcntl.LOCK_UN)
-    os.replace(tmp, p)
+    atomic_replace(tmp, p)
     _schedule_remote_sync(kanban_dir)
 
 def _safe_int(v):
@@ -1980,7 +1977,7 @@ def _execution_workdir(kanban_dir, candidate):
             raw = subprocess.check_output(
                 ["git", "-C", path, "rev-parse", "--git-common-dir"],
                 stderr=subprocess.DEVNULL,
-                text=True,
+                text=True, encoding="utf-8", errors="replace",
             ).strip()
             return os.path.realpath(os.path.join(path, raw))
         return candidate if common(candidate) == common(project_dir) else None

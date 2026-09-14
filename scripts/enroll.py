@@ -188,7 +188,7 @@ def derive_project_key(repo_path):
     repo = os.path.abspath(os.path.expanduser(str(repo_path or "")))
     try:
         out = subprocess.run(["git", "-C", repo, "remote", "get-url", "origin"],
-                             capture_output=True, text=True, timeout=5)
+                             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5)
         url = out.stdout.strip() if out.returncode == 0 else ""
     except (OSError, subprocess.SubprocessError):
         url = ""
@@ -398,7 +398,7 @@ def flush_dashboard_snapshot():
         return False, f"설치본 server.py 를 찾지 못했다: {server}"
     try:
         out = subprocess.run([sys.executable, server, "sync"],
-                             capture_output=True, text=True, timeout=120)
+                             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
     except (OSError, subprocess.SubprocessError) as exc:
         return False, f"스냅샷 push 실행 실패: {exc}"
     if out.returncode != 0:
@@ -455,7 +455,7 @@ def install_windows_task(script, interval=DEFAULT_INTERVAL, dry_run=False):
     argv = build_schtasks_argv(script, interval=interval)
     if dry_run:
         return "would-install"
-    done = subprocess.run(argv, capture_output=True, text=True, check=False)
+    done = subprocess.run(argv, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False)
     if done.returncode != 0:
         detail = (done.stderr or done.stdout or "").strip()[-300:]
         return f"실패 — 직접 등록이 필요하다: {' '.join(argv)}\n            {detail}"

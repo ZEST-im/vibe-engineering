@@ -33,6 +33,20 @@ import plistlib
 import subprocess
 import sys
 
+# Force UTF-8 console I/O so non-ASCII output (em-dash, Korean) survives on
+# Windows cp949 terminals. No-op where reconfigure is unavailable/unneeded.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
+
+
+# vibe_runtime.py 는 항상 이 파일 옆에 함께 배포된다 (SKILL_RUNTIME_FILES).
+# 원자 교체는 Windows 에서 재시도가 필요하다 — 구현이 갈라지면 한쪽만 고쳐진다.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from vibe_runtime import atomic_replace, tmp_name  # noqa: E402
+
 HOME = os.path.expanduser("~")
 LABEL = "com.vibe-harness.reconcile"
 PLIST = os.path.join(HOME, "Library/LaunchAgents", LABEL + ".plist")
@@ -103,7 +117,7 @@ def job_status(label=LABEL, runner=None):
     """
     runner = runner or subprocess.run
     try:
-        done = runner(["launchctl", "list"], capture_output=True, text=True)
+        done = runner(["launchctl", "list"], capture_output=True, text=True, encoding="utf-8", errors="replace")
     except (OSError, subprocess.SubprocessError):
         return None
     if getattr(done, "returncode", 1) != 0:
@@ -168,7 +182,7 @@ def install(plist=None, reconcile=None, log=None, runner=None):
         runner(["launchctl", "unload", plist], capture_output=True)
     os.makedirs(os.path.dirname(log), exist_ok=True)
     write_plist(plist, plist_dict(reconcile, log))
-    return runner(["launchctl", "load", plist], capture_output=True, text=True)
+    return runner(["launchctl", "load", plist], capture_output=True, text=True, encoding="utf-8", errors="replace")
 
 
 def uninstall(plist=None, runner=None):

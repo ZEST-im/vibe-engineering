@@ -102,18 +102,24 @@ def cost_breakdown(model, input_tokens=0, output_tokens=0,
 
 def _projects():
     try:
-        return json.load(open(CONFIG))
+        return json.load(open(CONFIG, encoding="utf-8"))
     except Exception:
         return {}
 
 
+# vibe_runtime.py 는 항상 이 파일 옆에 함께 배포된다 (SKILL_RUNTIME_FILES).
+# 원자 교체는 Windows 에서 재시도가 필요하다 — 구현이 갈라지면 한쪽만 고쳐진다.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from vibe_runtime import atomic_replace, tmp_name  # noqa: E402
+
+
 def _atomic_json(path, data):
     """JSON을 같은 디렉토리의 임시 파일에 쓴 뒤 원자적으로 교체한다."""
-    tmp = path + ".tmp"
+    tmp = tmp_name(path)
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(data, fh, ensure_ascii=False, indent=2)
         fh.write("\n")
-    os.replace(tmp, path)
+    atomic_replace(tmp, path)
 
 
 def _kanban_dir_for(key):
@@ -689,7 +695,7 @@ def reconcile(project, kanban_dir, transcripts, dry_run=False, push=False,
     if os.path.exists(rp):
         shutil.copy2(rp, rp + ".bak")
     merged = merge_runs(existing, runs)
-    with open(rp, "w") as fh:
+    with open(rp, "w", encoding="utf-8") as fh:
         json.dump(merged, fh, ensure_ascii=False, indent=2)
     added = len(merged["runs"]) - before
     print(f"  로컬 기록: {rp} (기존 {before}건 유지 + 신규 {added}건)")

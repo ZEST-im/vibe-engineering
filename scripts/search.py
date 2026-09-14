@@ -36,6 +36,14 @@ import json
 import os
 import sys
 
+# Force UTF-8 console I/O so non-ASCII output (em-dash, Korean) survives on
+# Windows cp949 terminals. No-op where reconfigure is unavailable/unneeded.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
+
 
 SNIPPET_CHARS = 160
 DEFAULT_LIMIT = 10
@@ -264,7 +272,7 @@ def _tracked_docs(root, runner=None):
         return None
     try:
         done = runner(["git", "--no-optional-locks", "-C", root, "ls-files", "-z"],
-                      capture_output=True, text=True, timeout=30)
+                      capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
     except (OSError, ValueError):
         return None
     if getattr(done, "returncode", 1) != 0:
@@ -382,7 +390,7 @@ def commit_records(root, limit=COMMIT_LIMIT, runner=None):
         done = runner(["git", "--no-optional-locks", "-C", root, "log",
                        "--max-count=%d" % limit,
                        "--format=%H%x1f%aI%x1f%s%x1f%b" + sep],
-                      capture_output=True, text=True, timeout=60)
+                      capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
     except (OSError, Exception):        # noqa: B014 - subprocess 계열 전부
         return []
     if getattr(done, "returncode", 1) != 0:
