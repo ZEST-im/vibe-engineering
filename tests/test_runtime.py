@@ -323,3 +323,52 @@ class NullPositionTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ExecutionWorkdirTest(unittest.TestCase):
+    """`worktree_path` 는 요청 본문에서 온다. 받아들이는 조건은 **같은 저장소의
+    워크트리인가** 하나다 — 그 판정은 git 에게 묻는다.
+
+    루트로 가두지 않는 이유가 있다. 워커는 `VIBE_HARNESS_WORKTREE_ROOT` 로
+    워크트리를 아무 데나 만들 수 있고(테스트도 임시 디렉토리를 쓴다), 홈 아래로
+    제한하면 그 기능이 죽는다. **규칙을 넓게 잡으면 규칙이 꺼지고, 좁게 잡아
+    기능을 깨도 규칙이 꺼진다.** 여기서 맞는 좁힘은 경로 위치가 아니라 소속이다.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.project = os.path.join(self.tmp, "proj")
+        os.makedirs(os.path.join(self.project, "vibe-harness"))
+        self.kanban = os.path.join(self.project, "vibe-harness")
+        for args in (["init", "-q"], ["config", "user.email", "t@t"],
+                     ["config", "user.name", "t"],
+                     ["commit", "-qm", "x", "--allow-empty"]):
+            subprocess.run(["git", "-C", self.project, *args], check=True,
+                           capture_output=True)
+
+    def test_no_candidate_falls_back_to_the_project(self):
+        self.assertEqual(os.path.abspath(self.project),
+                         server._execution_workdir(self.kanban, None))
+
+    def test_a_directory_outside_the_repository_is_refused(self):
+        outsider = os.path.join(self.tmp, "elsewhere")
+        os.makedirs(outsider)
+        self.assertIsNone(server._execution_workdir(self.kanban, outsider),
+                          "남의 디렉토리가 실행 워크디렉토리로 받아들여졌다")
+
+    def test_a_path_that_is_not_a_directory_is_refused(self):
+        """`os.path.isdir` 로 먼저 재보지 않아도 결과가 같아야 한다 —
+        git 이 그 경로에서 실패하기 때문이다."""
+        f = os.path.join(self.tmp, "afile")
+        with open(f, "w", encoding="utf-8") as fh:
+            fh.write("x")
+        self.assertIsNone(server._execution_workdir(self.kanban, f))
+        self.assertIsNone(server._execution_workdir(self.kanban,
+                                                    os.path.join(self.tmp, "nope")))
+
+    def test_a_real_worktree_of_the_same_repository_is_accepted(self):
+        wt = os.path.join(self.tmp, "wt")
+        subprocess.run(["git", "-C", self.project, "worktree", "add", "-q", wt],
+                       check=True, capture_output=True)
+        self.assertEqual(os.path.realpath(wt),
+                         server._execution_workdir(self.kanban, wt))

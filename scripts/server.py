@@ -2022,8 +2022,11 @@ def _execution_workdir(kanban_dir, candidate):
     if not candidate:
         return project_dir
     candidate = os.path.realpath(str(candidate))
-    if not os.path.isdir(candidate):
-        return None
+    # 존재 여부를 따로 재보지 않는다. 아래 `git -C <경로>` 가 없는 경로·파일에서
+    # 그대로 실패하므로 결과가 같고, 받은 경로를 파일시스템에 미리 대보는 자리가
+    # 하나 줄어든다 — 그 자리는 "이 디렉토리가 있느냐" 를 묻는 통로이기도 했다.
+    # 받아들이는 조건은 위치가 아니라 **같은 저장소의 워크트리인가** 이고,
+    # 그 판정은 git 에게 묻는다.
     try:
         def common(path):
             raw = subprocess.check_output(
