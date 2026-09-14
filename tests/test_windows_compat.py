@@ -886,15 +886,43 @@ class AtomicReplaceIsRoutedTest(unittest.TestCase):
 
         self.assertEqual([], bad, "공유 임시 파일명 — 동시 쓰기가 서로를 막는다")
 
-    def test_tmp_name_differs_per_thread(self):
-        import threading
-        seen = []
-        ts = [threading.Thread(target=lambda: seen.append(vibe_runtime.tmp_name("/x/k.json")))
-              for _ in range(8)]
-        for t in ts: t.start()
-        for t in ts: t.join()
+    def test_tmp_name_differs_between_threads_that_are_alive_together(self):
+        """**동시에 살아 있는** 쓰기끼리 겹치지 않으면 된다.
 
-        self.assertEqual(8, len(set(seen)))
+        threading.get_ident() 는 죽은 스레드의 id 를 재사용한다. 그래서 순차로
+        돌린 스레드 8개는 같은 이름을 받을 수 있고, 실제로 CI 의 리눅스
+        3.11·3.12 에서 8개가 전부 같은 값이었다(Windows·3.13 에서는 우연히
+        겹쳐 돌아 통과했다). 처음 쓴 단언이 틀렸던 것이다.
+
+        그건 결함이 아니다 — 먼저 쓰기가 os.replace 로 임시 파일을 치운 뒤에야
+        다음 것이 시작하므로 순차 스레드는 애초에 충돌할 수 없다. 고정해야
+        하는 성질은 '같이 살아 있는 동안 다른가'뿐이다. barrier 로 8개를 동시에
+        세워 놓고 본다.
+        """
+        import threading
+        n = 8
+        seen, lock = [], threading.Lock()
+        gate = threading.Barrier(n, timeout=30)
+
+        def work():
+            gate.wait()                       # 8개가 다 뜰 때까지 아무도 안 죽는다
+            name = vibe_runtime.tmp_name("/x/k.json")
+            with lock:
+                seen.append(name)
+            gate.wait()                       # 이름을 다 받을 때까지 살아 있는다
+
+        threads = [threading.Thread(target=work) for _ in range(n)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=60)
+
+        self.assertEqual(n, len(seen), "스레드가 제때 끝나지 않았다")
+        self.assertEqual(n, len(set(seen)))
+
+    def test_tmp_name_includes_the_pid(self):
+        """다른 프로세스끼리도 갈라야 한다 — 훅·수집기·서버가 같은 보드를 쓴다."""
+        self.assertIn(str(os.getpid()), vibe_runtime.tmp_name("/x/k.json"))
 
 
 @unittest.skipUnless(os.name == "nt", "os.replace 가 거부되는 것은 Windows 뿐")
