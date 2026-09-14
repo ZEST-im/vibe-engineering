@@ -46,6 +46,17 @@ SKILLS = ["vibe-harness", "vibe-planning", "vibe-design", "vibe-review"]
 # (vibe-harness 는 projects.json/server.log 가 함께 살아서 제외)
 REMOVABLE_SKILLS = ["vibe-planning", "vibe-design", "vibe-review"]
 
+def hook_cmd(name):
+    """settings.json 에 적을 훅 명령 경로.
+
+    Claude Code 는 Windows 에서도 훅 명령을 bash 에 넘긴다. bash 에서 역슬래시는
+    이스케이프라 역슬래시 경로가 `C:Userskimyh...` 로 먹히고, 훅 5개가
+    전부 "No such file or directory" 로 죽었다. 슬래시는 Windows API 도 받으므로
+    양쪽에서 그대로 통한다.
+    """
+    return os.path.join(HOOKS_DIR, name).replace("\\", "/")
+
+
 # Hook definitions: (src_name, event, entry_dict)
 HOOKS = [
     (
@@ -53,7 +64,7 @@ HOOKS = [
         "PreToolUse",
         {
             "matcher": "Edit|Write",
-            "hooks": [{"type": "command", "command": os.path.join(HOOKS_DIR, "vibe-harness-scope-guard.sh")}],
+            "hooks": [{"type": "command", "command": hook_cmd("vibe-harness-scope-guard.sh")}],
             "_id": "vibe-harness-scope-guard",
         },
     ),
@@ -62,7 +73,7 @@ HOOKS = [
         "PostToolUse",
         {
             "matcher": "Bash",
-            "hooks": [{"type": "command", "command": os.path.join(HOOKS_DIR, "vibe-harness-review.sh")}],
+            "hooks": [{"type": "command", "command": hook_cmd("vibe-harness-review.sh")}],
             "_id": "vibe-harness-code-review",
         },
     ),
@@ -70,7 +81,7 @@ HOOKS = [
         "vibe-harness-session-start.sh",
         "SessionStart",
         {
-            "hooks": [{"type": "command", "command": os.path.join(HOOKS_DIR, "vibe-harness-session-start.sh")}],
+            "hooks": [{"type": "command", "command": hook_cmd("vibe-harness-session-start.sh")}],
             "_id": "vibe-harness-session-start",
         },
     ),
@@ -78,7 +89,7 @@ HOOKS = [
         "vibe-harness-stop-gate.sh",
         "Stop",
         {
-            "hooks": [{"type": "command", "command": os.path.join(HOOKS_DIR, "vibe-harness-stop-gate.sh")}],
+            "hooks": [{"type": "command", "command": hook_cmd("vibe-harness-stop-gate.sh")}],
             "_id": "vibe-harness-stop-gate",
         },
     ),
@@ -86,7 +97,7 @@ HOOKS = [
         "vibe-harness-token-collector.sh",
         "SessionEnd",
         {
-            "hooks": [{"type": "command", "command": os.path.join(HOOKS_DIR, "vibe-harness-token-collector.sh")}],
+            "hooks": [{"type": "command", "command": hook_cmd("vibe-harness-token-collector.sh")}],
             "_id": "vibe-harness-token-collector",
         },
     ),
