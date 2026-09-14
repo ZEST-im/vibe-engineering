@@ -101,6 +101,14 @@ Two things this does **not** solve, both known:
 - **`share`** (optional, bool): promote this task to a GitHub issue. The board is the
   record; GitHub is the public surface, and only what a person marks goes there. Absent
   means not shared — the field is never written by tooling.
+- **`share_note`** (optional, str): the text published as the issue body. **A person writes
+  this, for the person who will read it.** `details` is never published — it is an internal
+  work report (files touched, technical decisions, follow-up notes), and publishing it
+  repeats a leak this repo already caught once. But dropping it left a body carrying only
+  id, phase, category and status, which tells the reader nothing about what to do; the first
+  real promotion produced two such issues and they were rejected on sight. `share` says
+  *whether*; this says *what*. Absent is allowed and does not block — the dry-run names the
+  tasks that lack it rather than shipping a hollow issue quietly.
 - **`issue`** (optional, int): the issue number this task was promoted to. Present means
   update, absent means create. Without it the same task becomes two issues.
 - **Concurrent edits**: atomicity alone is not enough. Two agents that each read, modify, and

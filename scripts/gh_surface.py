@@ -254,7 +254,21 @@ def issue_payload(task):
         value = str(task.get(key) or "").strip()
         if value:
             lines.append(f"- {label}: {value}")
-    return {"title": title, "body": "\n".join(lines) + "\n\n" + _PROMOTE_FOOTER}
+    tail = "\n".join(lines) + "\n\n" + _PROMOTE_FOOTER
+    note = (task.get("share_note") or "").strip()
+    # 사람이 쓴 글이 먼저다. 분류 몇 줄을 앞세우면 정작 읽어야 할 것이 묻힌다.
+    return {"title": title, "body": (note + "\n\n---\n" + tail) if note else tail}
+
+
+def missing_share_note(tasks):
+    """공유 표시는 있는데 **공개용 설명이 없는** 태스크의 id.
+
+    설명이 없어도 이슈는 만들어진다 — 막지 않는다. 다만 조용히 내보내지 않는다.
+    그렇게 만든 이슈는 id·분류·상태만 담아서, 받는 사람이 무엇을 해야 할지 알 수
+    없다(실제로 첫 dry-run 이 그런 이슈 둘을 내놓았고 그래서 이 필드가 생겼다).
+    """
+    return [board_id(t) for t in tasks or []
+            if t.get("share") and not (t.get("share_note") or "").strip()]
 
 
 def _run(argv, env=None, timeout=None):
@@ -796,6 +810,12 @@ def _run_promote(tasks, root, apply=False, kanban_dir=None,
     if deny_corrupted:
         print("  ⚠ 파일은 있지만 항목이 0개다 — 잘렸거나 손상됐을 수 있어 정확 문자열 "
               "검사를 신뢰할 수 없다(구조 규칙은 위 결과대로 별도로 적용된다)")
+
+    noteless = missing_share_note([t for _k, t, _p, _h in entries])
+    if noteless:
+        print(f"\n⚠ 공개용 설명(share_note)이 없는 태스크 {len(noteless)}개 — "
+              f"{', '.join(noteless)}. 본문이 id·분류·상태만 담아 받는 사람이 무엇을 "
+              "해야 할지 알 수 없다. 막지는 않는다")
 
     clean_creates = sum(1 for kind, _t, _p, hits in entries if kind == "create" and not hits)
     clean_updates = sum(1 for kind, _t, _p, hits in entries if kind == "update" and not hits)

@@ -1482,6 +1482,37 @@ class IssuePayloadTest(unittest.TestCase):
         추적 불가능해진다."""
         self.assertIn("hgB200", gh.issue_payload(PROMOTE_TASKS[0])["body"])
 
+    def test_share_note_is_published_as_the_body(self):
+        """**공개용 글은 사람이 쓴다.**
+
+        `details` 를 뺀 것은 옳았지만(내부 작업 보고서다) 거기서 "아무것도 안 싣는다"
+        로 간 것이 과했다. 남은 본문이 id·분류·상태뿐이라 **받는 사람이 무엇을 해야
+        할지 알 수 없었다** — 이슈가 이슈 노릇을 못 한다.
+        `share` 는 공유 **여부**만 담는다. 그래서 **내용**을 담을 자리를 따로 둔다.
+        """
+        got = gh.issue_payload({"id": "hgB210", "title": "제목",
+                                "share_note": "받는 사람이 읽을 설명이다."})
+        self.assertIn("받는 사람이 읽을 설명이다.", got["body"])
+
+    def test_share_note_comes_before_the_derived_classification(self):
+        """사람이 쓴 글이 먼저다 — 분류 몇 줄을 먼저 읽히면 본문이 묻힌다."""
+        body = gh.issue_payload({"id": "hgB211", "title": "제목",
+                                 "share_note": "사람이 쓴 줄"})["body"]
+        self.assertLess(body.index("사람이 쓴 줄"), body.index("보드 id"))
+
+    def test_share_note_does_not_open_a_details_backdoor(self):
+        """설명이 있어도 `details` 는 여전히 실리지 않는다."""
+        got = gh.issue_payload({"id": "hgB212", "title": "제목",
+                                "share_note": "설명", "details": DETAILS_MARKER})
+        self.assertNotIn(DETAILS_MARKER, got["body"])
+
+    def test_a_missing_share_note_is_reported_not_silent(self):
+        """설명 없이도 만들어지지만 **조용히 앙상한 이슈를 내보내지 않는다.**
+        못 본 것과 깨끗한 것은 다르다."""
+        self.assertTrue(gh.missing_share_note([{"id": "a", "share": True}]))
+        self.assertFalse(gh.missing_share_note(
+            [{"id": "a", "share": True, "share_note": "있다"}]))
+
     def test_a_task_without_a_title_still_gets_a_nonempty_title(self):
         """빈 제목으로 이슈를 만들면 `gh` 가 거부하거나 제목 없는 이슈가 남는다."""
         got = gh.issue_payload({"id": "hgB299", "title": "   "})
