@@ -63,23 +63,47 @@ class MissingToolFile(RuntimeError):
     """
 
 
-def _outside_code_fences(body):
-    """코드펜스(```/~~~) 안을 걷어낸 본문.
+def _fenced_spans(body):
+    """코드펜스(```/~~~) 안에 해당하는 (시작, 끝) 문자 오프셋.
 
-    이 저장소는 사고를 문서에 자세히 적는다 — "이렇게 헤딩이 둘 생겼다" 를 설명하려면
-    코드블록에 그 헤딩을 그대로 인용하게 된다. 인용까지 세면 **맞게 쓴 문서에서 CI 가
-    빨개진다.** 오탐으로 빨개지는 게이트는 곧 무시되고, 그러면 장치가 있으나 마나다.
+    **본문을 잘라내지 않고 구간만 돌려준다.** `phase_sections()` 는 여기서 얻은
+    절 본문을 그대로 릴리스 노트로 쓰므로, 펜스를 걷어낸 문자열을 주면 노트에서
+    코드블록이 사라진다. 그래서 "어디가 펜스 안인가" 만 알려주고, 자르는 것은
+    원본에서 한다.
 
-    인용구(`> `)는 줄 앞에 `> ` 가 붙어 `^##` 에 안 걸리므로 따로 다루지 않는다.
+    CommonMark 는 펜스를 3칸까지 들여쓸 수 있게 하므로 `lstrip()` 후에 본다.
+    인용구(`> `)는 줄 앞의 `> ` 때문에 `^##` 에 애초에 안 걸려 따로 다루지 않는다.
+
+    닫히지 않은 펜스는 파일 끝까지 펜스로 본다 — 여는 표시가 있는데 안 닫혔으면
+    그 아래는 사람이 코드로 적은 것이다.
     """
-    out, inside = [], False
-    for line in (body or "").splitlines():
-        if line.startswith(("```", "~~~")):
-            inside = not inside
-            continue
-        if not inside:
-            out.append(line)
-    return "\n".join(out)
+    spans, start, pos, inside = [], 0, 0, False
+    for line in (body or "").splitlines(keepends=True):
+        if line.lstrip().startswith(("```", "~~~")):
+            if inside:
+                spans.append((start, pos + len(line)))
+                inside = False
+            else:
+                start, inside = pos, True
+        pos += len(line)
+    if inside:
+        spans.append((start, pos))
+    return spans
+
+
+def _real_phase_hits(pattern, body):
+    """펜스 밖에 있는 Phase 헤딩만.
+
+    이 저장소는 사고를 문서에 자세히 적는다 — "이렇게 헤딩이 둘 생겼다" 를
+    설명하려면 그 헤딩을 코드블록에 그대로 인용하게 된다. 인용까지 세면 **맞게 쓴
+    문서에서 CI 가 빨개지고**, 오탐으로 빨개지는 게이트는 곧 무시된다.
+
+    중복을 세는 쪽과 절을 뽑는 쪽이 **같은 기준을 써야** 한다. 한쪽만 펜스를
+    건너뛰면 "중복은 없다는데 절이 둘" 같은 상태가 생긴다.
+    """
+    spans = _fenced_spans(body)
+    return [m for m in pattern.finditer(body or "")
+            if not any(a <= m.start() < b for a, b in spans)]
 
 
 def duplicate_phases(body):
@@ -102,7 +126,7 @@ def duplicate_phases(body):
     것만 세면 정확히 그 사고를 놓친다.
     """
     counts = {}
-    for m in ANY_PHASE.finditer(_outside_code_fences(body)):
+    for m in _real_phase_hits(ANY_PHASE, body):
         counts[m.group(1)] = counts.get(m.group(1), 0) + 1
     return {name: n for name, n in counts.items() if n > 1}
 
@@ -110,7 +134,7 @@ def duplicate_phases(body):
 def phase_sections(body):
     """`PHASES.md` 본문에서 완료 Phase 절을 뽑는다. **파일이 아니라 텍스트를 받는다.**"""
     out = {}
-    hits = list(DONE_PHASE.finditer(body or ""))
+    hits = _real_phase_hits(DONE_PHASE, body)
     for i, m in enumerate(hits):
         start = m.end()
         end = hits[i + 1].start() if i + 1 < len(hits) else len(body)
