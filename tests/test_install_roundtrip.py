@@ -302,6 +302,53 @@ class InstallRoundTripTest(unittest.TestCase):
                 self.assertTrue(call[-1].startswith(self.home),
                                 "임시 HOME 밖의 plist 를 건드리려 했다: %s" % call)
 
+    @contextlib.contextmanager
+    def pretending_to_be_darwin(self):
+        """darwin 분기를 어느 플랫폼에서든 밟게 한다.
+
+        `setup.sys` 는 진짜 `sys` 다 — 프로세스 전역이라 반드시 되돌린다.
+        이 레포는 Windows 분기에도 이미 같은 방식을 쓴다.
+        """
+        saved = (self.mod.sys.platform, self.mod.os.name)
+        self.mod.sys.platform, self.mod.os.name = "darwin", "posix"
+        try:
+            yield
+        finally:
+            self.mod.sys.platform, self.mod.os.name = saved
+
+    def test_the_darwin_plist_path_runs_on_every_platform(self):
+        """CI 가 구조적으로 못 밟던 자리를 밟는다.
+
+        아래 `test_plist_is_written_and_removed` 에 같은 단언이 이미 있었지만
+        `skipUnless(darwin)` 뒤에 있었다. CI 는 ubuntu 하나뿐이라 **그 경로가
+        깨져도 초록이었다** — 설치 사고 3건 중 2건이 그 자리에서 났다.
+
+        `launchctl` 은 여전히 부르지 않는다(FakeSubprocess). 파일을 쓰는 쪽과
+        무엇을 부르려 했는지만 본다 — 사고가 났던 것이 그 둘이다.
+        """
+        plist = os.path.join(self.mod.LAUNCH_AGENTS, self.mod.PLIST_NAME)
+
+        with self.pretending_to_be_darwin(), contextlib.redirect_stdout(io.StringIO()):
+            self.assertTrue(self.mod.install_launchd(),
+                            "darwin 설치가 실패를 돌려줬다")
+
+        self.assertTrue(os.path.exists(plist), "plist 가 설치되지 않았다")
+        with open(plist, encoding="utf-8") as fh:
+            content = fh.read()
+        self.assertNotIn("__HOME__", content, "템플릿의 __HOME__ 이 치환되지 않았다")
+        self.assertIn(self.home, content, "plist 가 이 HOME 을 가리키지 않는다")
+        self.assertTrue(
+            [c for c in self.mod.subprocess.calls if c[:2] == ["launchctl", "load"]],
+            "등록만 하고 launchctl load 를 부르지 않았다")
+
+        with self.pretending_to_be_darwin(), contextlib.redirect_stdout(io.StringIO()):
+            self.mod.uninstall_launchd()
+
+        self.assertFalse(os.path.exists(plist), "제거 후에도 plist 가 남았다")
+        self.assertTrue(
+            [c for c in self.mod.subprocess.calls if c[:2] == ["launchctl", "unload"]],
+            "파일만 지우고 unload 를 안 불렀다 — 잡은 살아 있다")
+
     @unittest.skipUnless(sys.platform == "darwin", "launchd 는 macOS 전용 — CI(ubuntu)는 못 본다")
     def test_plist_is_written_and_removed(self):
         """**CI 가 밟지 않는 경로다.** 사고 3건 중 2건이 여기서 났다."""
