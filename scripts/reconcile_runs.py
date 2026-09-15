@@ -164,28 +164,61 @@ def _transcript_dir(cwd):
 
 
 def _summarize(path):
+    """transcript 한 개의 토큰 합계. **깨진 줄 하나가 그 뒤를 버리면 안 된다.**
+
+    줄 단위 `try` 가 `json.loads` **만** 감싸고 있었다. 그래서 파싱은 되는데 dict 가
+    아닌 줄(`[1,2,3]`, `"hello"`)은 바로 다음 `m.get(...)` 에서 AttributeError 를 내고,
+    그 예외가 바깥 `except Exception: pass` 로 빠져 **파일 순회가 통째로 중단**됐다.
+    `usage` 값이 숫자가 아닐 때의 `int()` 도 같은 자리로 샌다.
+    `isinstance(msg, dict)` 검사는 `m.get` **다음**이라 막지 못한다.
+
+    결과는 조용한 under-counting 이다. 실측: 정상 3줄 600 토큰짜리 파일의 가운데에
+    `[1,2,3]` 한 줄을 넣으면 600 이 아니라 **200** 이 나온다. 에러도 로그도 없다.
+
+    세 가지를 바꾼다.
+
+    - 레코드 처리를 **줄 단위 `try` 안으로** 넣는다 — 깨진 줄은 그 줄만 건너뛴다
+    - 바깥은 `OSError` 로 좁힌다 — 파일을 못 열거나 읽다 끊긴 경우만이다.
+      나머지를 계속 삼키면 같은 종류의 침묵이 다시 생긴다
+    - 건너뛴 줄이 있으면 **말한다.** 덜 센 것을 조용히 덜 센 채로 두지 않는다
+    """
     tot = inp = out = cr = cw = 0
     model = ""
+    skipped = 0
     try:
         with open(path, encoding="utf-8", errors="ignore") as fh:
             for line in fh:
                 try:
                     m = json.loads(line)
+                except json.JSONDecodeError:
+                    # **이건 정상이다.** 지금 쓰이고 있는 transcript 는 마지막 줄이
+                    # 잘려 있다. 세지 않고 조용히 넘어간다 — 여기서 경고하면 활성
+                    # 세션마다 매 수집에 한 줄씩 나오고, 그 소음이 아래의 진짜
+                    # 경고를 덮는다.
+                    continue
+                try:
+                    msg = m.get("message") or m
+                    if not isinstance(msg, dict):
+                        continue
+                    u = msg.get("usage")
+                    if u:
+                        i = int(u.get("input_tokens") or 0)
+                        o = int(u.get("output_tokens") or 0)
+                        a = int(u.get("cache_read_input_tokens") or 0)
+                        b = int(u.get("cache_creation_input_tokens") or 0)
+                        inp += i; out += o; cr += a; cw += b; tot += i + o + a + b
+                        model = msg.get("model", model) or model
                 except Exception:
-                    continue
-                msg = m.get("message") or m
-                if not isinstance(msg, dict):
-                    continue
-                u = msg.get("usage")
-                if u:
-                    i = int(u.get("input_tokens") or 0)
-                    o = int(u.get("output_tokens") or 0)
-                    a = int(u.get("cache_read_input_tokens") or 0)
-                    b = int(u.get("cache_creation_input_tokens") or 0)
-                    inp += i; out += o; cr += a; cw += b; tot += i + o + a + b
-                    model = msg.get("model", model) or model
-    except Exception:
-        pass
+                    skipped += 1
+    except OSError as exc:
+        # 못 열거나 읽다 끊긴 파일. 여기까지 센 값을 그대로 돌려준다 —
+        # 한 파일 때문에 나머지 transcript 수집을 멈추지 않는다.
+        print(f"  WARN transcript 를 끝까지 읽지 못했다: {path} ({exc})",
+              file=sys.stderr)
+    if skipped:
+        # 파싱은 됐는데 모양이 예상과 다른 줄. 흔한 일이 아니라서 말할 값어치가 있다.
+        print(f"  WARN {os.path.basename(path)}: 모양이 예상과 다른 줄 {skipped}개 —"
+              " 그만큼 덜 셌다", file=sys.stderr)
     return tot, inp, out, cr, cw, model
 
 

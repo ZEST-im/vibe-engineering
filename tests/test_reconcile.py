@@ -1,6 +1,9 @@
+import contextlib
 import importlib.util
+import io
 import json
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -320,6 +323,65 @@ class MissingBoardDirIsSkippedNotCrashedTest(unittest.TestCase):
 
         self.assertTrue(os.path.exists(os.path.join(self.kanban, "runs.json")))
 
+
+class OneOddLineDoesNotEatTheRestTest(unittest.TestCase):
+    """깨진 줄 하나가 그 뒤 전부를 버리던 것 — 조용한 under-counting.
+
+    줄 단위 `try` 가 `json.loads` **만** 감싸고 있었다. 파싱은 되는데 dict 가 아닌
+    줄(`[1,2,3]`, `"hello"`)은 바로 다음 `m.get(...)` 에서 AttributeError 를 내고,
+    그 예외가 바깥 `except Exception: pass` 로 빠져 **파일 순회가 통째로 중단**됐다.
+    `isinstance(msg, dict)` 검사는 `m.get` 다음이라 막지 못한다.
+
+    실측: 정상 3줄(600 토큰) 가운데에 `[1,2,3]` 을 넣으면 **200** 이 나왔다 —
+    첫 줄만 세고 멈춘 것이다. 에러도 로그도 없다.
+    """
+
+    GOOD = json.dumps({"message": {"model": "claude-fable-5",
+                                   "usage": {"input_tokens": 100,
+                                             "output_tokens": 100}}})
+
+    def _file(self, lines):
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, ignore_errors=True)
+        path = os.path.join(d, "s.jsonl")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("\n".join(lines) + "\n")
+        return path
+
+    def _summarize(self, lines):
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            total = reconcile_runs._summarize(self._file(lines))[0]
+        return total, err.getvalue()
+
+    def test_a_line_that_is_not_an_object_only_costs_that_line(self):
+        total, _err = self._summarize([self.GOOD, "[1,2,3]", self.GOOD])
+
+        self.assertEqual(400, total, "깨진 줄 뒤의 줄까지 버렸다")
+
+    def test_a_non_numeric_usage_only_costs_that_record(self):
+        odd = json.dumps({"message": {"usage": {"input_tokens": "많음"}}})
+        total, _err = self._summarize([self.GOOD, odd, self.GOOD])
+
+        self.assertEqual(400, total)
+
+    def test_it_says_how_much_it_could_not_count(self):
+        """덜 센 것을 조용히 덜 센 채로 두지 않는다."""
+        _total, err = self._summarize([self.GOOD, "[1,2,3]", self.GOOD])
+
+        self.assertIn("WARN", err)
+
+    def test_a_transcript_being_written_stays_quiet(self):
+        """**소음을 만들면 안 된다.**
+
+        지금 쓰이고 있는 transcript 는 마지막 줄이 잘려 있다 — 정상이다.
+        여기서 경고하면 활성 세션마다 매 수집에 한 줄씩 나오고, 그 소음이 위의
+        진짜 경고를 덮는다.
+        """
+        total, err = self._summarize([self.GOOD, self.GOOD, '{"messa'])
+
+        self.assertEqual(400, total)
+        self.assertEqual("", err, "쓰이는 중인 파일에 경고를 냈다")
 
 if __name__ == "__main__":
     unittest.main()
