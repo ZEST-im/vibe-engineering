@@ -326,6 +326,70 @@ class TranscriptPathTest(unittest.TestCase):
                          reconcile._project_slug("/home/hong/proj.v2"))
 
 
+class RecorderSurvivesAnOldRuntimeTest(unittest.TestCase):
+    """훅 옆의 `vibe_runtime.py` 가 낡아도 훅은 떠야 한다.
+
+    훅은 `~/.claude/hooks/` 에 살고 `vibe_runtime.py` 는 스킬 설치본으로 간다.
+    `SKILL_RUNTIME_FILES` 에 훅이 없으므로 **갱신 경로가 둘로 갈려 있고**, 한쪽만
+    새 것인 상태가 정상적으로 생긴다 — 지금 깔려 있는 설치본들이 그렇다.
+
+    `_runtime()` 은 "파일 없음" 만 막고 있었다. 그래서 옛 런타임 옆에서는
+    `_VR.tmp_name` 이 AttributeError 로 죽었고, 그 자리가 import 단계라 훅이
+    통째로 멈췄다. SessionEnd 훅은 stderr 를 버리고 exit 0 하므로 **아무 흔적
+    없이 수집이 멈춘다.** 폴백은 처음부터 코드에 있었고 닿지 못했을 뿐이다.
+    """
+
+    def _probe(self, runtime_src):
+        """임시 HOME 에 훅과 `vibe_runtime.py` 를 두고 import 만 시켜 본다.
+
+        HOME 을 옮기는 이유는 `_runtime()` 의 두 번째 후보가
+        `~/.claude/skills/...` 라서다 — 안 옮기면 이 머신의 **정상** 런타임이
+        폴백으로 잡혀 검사가 헛돈다.
+        """
+        home = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, home, ignore_errors=True)
+        hooks = os.path.join(home, "hooks")
+        os.makedirs(hooks)
+        shutil.copy(RECORDER, os.path.join(hooks, os.path.basename(RECORDER)))
+        with io.open(os.path.join(home, "vibe_runtime.py"), "w",
+                     encoding="utf-8") as fh:
+            fh.write(runtime_src)
+
+        env = dict(os.environ, HOME=home, USERPROFILE=home)
+        body = (
+            "import importlib.util, sys\n"
+            "s = importlib.util.spec_from_file_location('rr', sys.argv[1])\n"
+            "m = importlib.util.module_from_spec(s); s.loader.exec_module(m)\n"
+            "print(m.tmp_name('a.json'))\n"
+        )
+        return subprocess.run(
+            [sys.executable, "-c", body,
+             os.path.join(hooks, os.path.basename(RECORDER))],
+            capture_output=True, text=True, encoding="utf-8",
+            env=env, cwd=ROOT, timeout=120)
+
+    def test_a_runtime_without_tmp_name_falls_back(self):
+        """PR #3 이전의 `vibe_runtime.py` 모양 — 이름이 아직 없다."""
+        r = self._probe("def atomic_replace(tmp, path):\n    pass\n")
+
+        self.assertEqual(0, r.returncode, r.stderr[-900:])
+        self.assertEqual("a.json.tmp", r.stdout.strip())
+
+    def test_a_runtime_that_raises_on_import_falls_back(self):
+        """읽다 죽는 것은 없는 것과 같이 다룬다."""
+        r = self._probe("raise RuntimeError('옛 런타임이 import 에서 죽는다')\n")
+
+        self.assertEqual(0, r.returncode, r.stderr[-900:])
+        self.assertEqual("a.json.tmp", r.stdout.strip())
+
+    def test_a_good_runtime_is_still_used(self):
+        """막되 끄지 않는다 — 제대로 된 런타임이면 그쪽을 쓴다."""
+        r = self._probe("def tmp_name(path):\n    return path + '.REAL'\n")
+
+        self.assertEqual(0, r.returncode, r.stderr[-900:])
+        self.assertEqual("a.json.REAL", r.stdout.strip())
+
+
 class MissingStdlibModuleTest(unittest.TestCase):
     """Windows 에 없는 표준 모듈. import 를 막아 macOS/Linux 에서도 재현한다.
 

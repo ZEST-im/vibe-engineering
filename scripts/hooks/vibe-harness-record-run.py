@@ -60,7 +60,14 @@ def _runtime():
         if os.path.isfile(cand):
             spec = importlib.util.spec_from_file_location("vh_runtime", cand)
             mod = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(mod)
+            try:
+                spec.loader.exec_module(mod)
+            except Exception:
+                # 읽다 죽는 것은 없는 것과 같이 다룬다. 다음 후보로 넘어가고,
+                # 없으면 아래 폴백으로 간다 — **import 하나로 수집 전체가
+                # 멈추는 것보다 낫다.** 이 docstring 이 처음부터 그렇게 적혀
+                # 있었는데 구현이 "파일 없음" 만 막고 있었다.
+                continue
             return mod
     return None
 
@@ -68,8 +75,12 @@ def _runtime():
 _VR = _runtime()
 # Windows 에서 os.replace 는 대상이 열려 있으면 거부된다. 재시도가 있는 구현을
 # 쓰되, 못 찾으면 기존 동작 그대로 간다.
-tmp_name = _VR.tmp_name if _VR else (lambda path: path + ".tmp")
-atomic_replace = _VR.atomic_replace if _VR else os.replace
+# **함수 없음도 파일 없음처럼 다룬다.** 훅은 `~/.claude/hooks/` 에 살고
+# `vibe_runtime.py` 는 스킬 설치본으로 간다 — 갱신 경로가 둘로 갈려 있어 한쪽만
+# 새 것인 상태가 정상적으로 생긴다. 옛 `vibe_runtime.py` 옆에서 `_VR.tmp_name`
+# 은 AttributeError 로 죽었고, 그 자리는 import 단계라 훅이 통째로 멈췄다.
+tmp_name = getattr(_VR, "tmp_name", None) or (lambda path: path + ".tmp")
+atomic_replace = getattr(_VR, "atomic_replace", None) or os.replace
 
 
 CONFIG_PATH = os.path.expanduser("~/.claude/skills/vibe-harness/projects.json")
