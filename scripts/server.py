@@ -2446,6 +2446,9 @@ def _sync_worker(dirty_dirs):
     if pending:
         _atomic_json(SYNC_PENDING_PATH, pending)
         try:
+            # 결과를 일부러 버린다 — 이 함수는 주기적으로 돈다. 매 주기마다 경고를
+            # 찍으면 로그가 그 줄로 덮이고, 덮이면 아무도 안 읽는다. 사람이 보는
+            # 자리(enroll · `sync-config`)에서는 결과를 말한다.
             restrict_to_owner(SYNC_PENDING_PATH)
         except OSError:
             pass
@@ -3018,11 +3021,20 @@ def main():
             "dashboards": {sys.argv[3]: sys.argv[4:]},
         }
         _atomic_json(SYNC_CONFIG_PATH, cfg)
+        # 이 파일에는 공유 secret 이 들어간다. 못 좁혔으면 **그렇게 말한다** —
+        # enroll 쪽에서 고친 것과 같은 이유다(이슈 #7). 여기는 "설정됐다" 만 찍고
+        # 권한은 주장하지 않아 거짓말은 아니었지만, 시크릿 파일의 조용한 실패는
+        # 사용자가 확인할 계기를 주지 않는다.
         try:
-            restrict_to_owner(SYNC_CONFIG_PATH)
-        except OSError:
-            pass
+            locked = restrict_to_owner(SYNC_CONFIG_PATH)
+        except OSError as exc:
+            locked, detail = False, exc
+        else:
+            detail = "icacls 가 실패했거나 실행되지 않았다"
         print(f"Remote sync configured: {SYNC_CONFIG_PATH}")
+        if not locked:
+            print(f"  WARN 권한을 좁히지 못했다 ({detail}) — 공유 secret 이 든 파일이다.",
+                  file=sys.stderr)
         return
 
     if len(sys.argv) > 1 and sys.argv[1] == "sync":

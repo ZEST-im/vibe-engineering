@@ -475,5 +475,43 @@ class RegisteringAProjectIsNotAFileWritePrimitiveTest(ServedOverHttpTest):
                                       "kanban_dir": os.path.join(good, "vibe-harness")})
         self.assertEqual(201, status, f"정상 등록이 막혔다: {body}")
 
+class SyncConfigSaysIfItCouldNotLockTest(unittest.TestCase):
+    """공유 secret 이 든 파일이다 — 못 좁혔으면 그렇게 말한다.
+
+    `configure-sync` 는 "Remote sync configured" 만 찍고 권한은 주장하지 않아
+    거짓말은 아니었다. 다만 시크릿 파일의 조용한 실패는 사용자에게 확인할 계기를
+    주지 않는다 — 이슈 #7 에서 enroll 쪽을 고친 것과 같은 이유다.
+
+    주기적으로 도는 `_sync_worker` 쪽은 일부러 그대로 둔다. 매 주기 경고는 로그를
+    덮고, 덮인 로그는 아무도 안 읽는다.
+    """
+
+    def _run(self, locked):
+        import contextlib
+        from unittest import mock
+
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        argv = ["server.py", "configure-sync", "https://e/sync", "board", "k1"]
+        err = io.StringIO()
+        with (mock.patch.object(server, "SYNC_CONFIG_PATH",
+                                os.path.join(tmp, "sync.json")),
+              mock.patch.object(server, "restrict_to_owner", return_value=locked),
+              mock.patch.dict(os.environ, {"VIBE_HARNESS_SYNC_SECRET": "s3cret"}),
+              mock.patch.object(server.sys, "argv", argv),
+              contextlib.redirect_stdout(io.StringIO()),
+              contextlib.redirect_stderr(err)):
+            server.main()
+        return err.getvalue()
+
+    def test_it_warns_when_the_acl_was_not_narrowed(self):
+        self.assertIn("WARN", self._run(locked=False),
+                      "시크릿 파일의 권한 실패가 조용히 지나갔다")
+
+    def test_it_stays_quiet_when_the_acl_was_narrowed(self):
+        """막되 끄지 않는다 — 정상 경로에 경고가 섞이면 경고가 안 읽힌다."""
+        self.assertNotIn("WARN", self._run(locked=True))
+
+
 if __name__ == "__main__":
     unittest.main()

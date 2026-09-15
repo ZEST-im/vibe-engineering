@@ -104,6 +104,9 @@ def write_sync_config(path, cfg):
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(cfg, fh, ensure_ascii=False, indent=2)
         fh.write("\n")
+    # 결과를 여기서 보지 않는 것은 의도다 — `main()` 이 마지막에 **완성된 파일**로
+    # 한 번 더 부르고 그 결과를 사람에게 말한다. 임시 파일의 성패를 여기서 보고해도
+    # 사용자가 확인할 대상(`sync.json`)과 다르다.
     restrict_to_owner(tmp)
     atomic_replace(tmp, path)
 
