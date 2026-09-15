@@ -62,11 +62,15 @@ def _runtime():
             mod = importlib.util.module_from_spec(spec)
             try:
                 spec.loader.exec_module(mod)
-            except Exception:
+            except Exception as exc:
                 # 읽다 죽는 것은 없는 것과 같이 다룬다. 다음 후보로 넘어가고,
                 # 없으면 아래 폴백으로 간다 — **import 하나로 수집 전체가
                 # 멈추는 것보다 낫다.** 이 docstring 이 처음부터 그렇게 적혀
                 # 있었는데 구현이 "파일 없음" 만 막고 있었다.
+                # 조용히 떨어지면 진단이 안 된다. 폴백은 Windows 에서 원자
+                # 교체가 약해지는 쪽이라, 무엇이 왜 안 잡혔는지는 남긴다.
+                print(f"vibe_runtime 을 읽지 못해 표준 동작으로 간다: {cand} ({exc})",
+                      file=sys.stderr)
                 continue
             return mod
     return None
