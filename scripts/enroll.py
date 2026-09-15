@@ -277,6 +277,12 @@ def add_project(registry_path, key, repo_path):
     # 갈린다. 읽는 쪽은 전부 os.path.abspath 를 거치므로 "/" 로 적어도 Windows 에서
     # 그대로 동작한다.
     data[key] = {"name": key, "kanban_dir": kdir.replace(os.sep, "/")}
+    # **등록이 디렉토리를 만든다.** 예전에는 서버 시작 루프가 뒤에서 만들어 줬는데,
+    # 그 루프가 지운 프로젝트까지 되살리고 있어서 없앴다(#9). 없앤 자리를 여기가
+    # 받는다 — 등록은 사람이 명시적으로 하는 일이라 만들 자격이 있다.
+    # 이걸 안 하면 `reconcile` 이 `runs.json` 을 쓸 때 FileNotFoundError 로 죽고,
+    # 그 예외는 프로젝트 단위 가드(`except SystemExit`)에 안 걸려 **수집 전체**가 멈춘다.
+    os.makedirs(kdir, exist_ok=True)
     parent = os.path.dirname(registry_path)
     if parent:
         os.makedirs(parent, exist_ok=True)
@@ -666,9 +672,22 @@ def main(argv=None):
                   f"{a.interval}초 간격으로 직접 걸어야 한다")
     print(f"agent     : {result} → {script}")
 
-    if os.name == "nt":
-        print("권한      : Windows 는 모드 비트가 없어 icacls 로 sync.json 의 상속을"
-              " 끊고 현재 계정만 남겼다. SYSTEM·Administrators 는 남는다(POSIX 의 root 와 같다).")
+    if os.name == "nt" and not a.dry_run and os.path.exists(SYNC_CONFIG):
+        # **결과를 보고 적는다.** 예전에는 이 줄이 무조건 나왔다 — icacls 가 0 이
+        # 아닌 코드로 끝나도, USERNAME/USER 가 비어 icacls 를 **아예 실행하지
+        # 않아도** "남겼다" 고 말했다. 그 파일에는 개인 토큰이 들어 있다.
+        # 잠기지 않았는데 잠갔다고 말하면 사용자가 확인할 이유를 잃는다.
+        #
+        # 여기서 한 번 더 부르는 이유: sync.json 을 쓰는 경로가 둘이라
+        # (`--token` 갱신, `--add-project` 의 대시보드 등록) 어느 쪽이 돌았는지
+        # 세는 것보다 지금 상태를 다시 확인하는 쪽이 짧고 정확하다. 멱등이다.
+        if restrict_to_owner(SYNC_CONFIG):
+            print("권한      : Windows 는 모드 비트가 없어 icacls 로 sync.json 의 상속을"
+                  " 끊고 현재 계정만 남겼다. SYSTEM·Administrators 는 남는다(POSIX 의 root 와 같다).")
+        else:
+            print("권한      : WARN sync.json 의 ACL 을 좁히지 못했다 — 상속 권한 그대로다."
+                  " 개인 토큰이 든 파일이니 직접 확인한다:")
+            print('            icacls "%s"' % SYNC_CONFIG)
 
     print("\n확인:  python3 %s --all --dry-run" % script)
     return 0

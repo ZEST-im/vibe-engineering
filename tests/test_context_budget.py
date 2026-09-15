@@ -144,8 +144,6 @@ class DisciplineIsSurfacedTest(unittest.TestCase):
             self.assertIn(field, body, f"/context 응답에 {field} 가 없다")
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 class ArchiveHintTest(unittest.TestCase):
@@ -197,3 +195,6 @@ class ArchiveHintTest(unittest.TestCase):
     def test_context_exposes_the_hint(self):
         with open(os.path.join(SCRIPTS, "server.py"), encoding="utf-8") as fh:
             self.assertIn('"archive_hint": _archive_hint(', fh.read())
+
+if __name__ == "__main__":
+    unittest.main()

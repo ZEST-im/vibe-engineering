@@ -4,6 +4,7 @@ setup.py 는 훅을 중복 등록한 이력이 있어 잠겨 있다. 그 실패�
 모듈의 존재 이유다: 같은 명령을 두 번 실행해도 에이전트가 두 개가 되지 않고, 기존
 설정(dashboards 등)을 잃지 않는다.
 """
+import ast
 import importlib.util
 import json
 import os
@@ -11,6 +12,7 @@ import plistlib
 import stat
 import sys
 import tempfile
+import types
 import unittest
 
 
@@ -22,6 +24,11 @@ if SCRIPTS not in sys.path:
 spec = importlib.util.spec_from_file_location("enroll", os.path.join(SCRIPTS, "enroll.py"))
 enroll = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(enroll)
+
+_vr_spec = importlib.util.spec_from_file_location(
+    "vh_runtime_enroll", os.path.join(SCRIPTS, "vibe_runtime.py"))
+vibe_runtime = importlib.util.module_from_spec(_vr_spec)
+_vr_spec.loader.exec_module(vibe_runtime)
 
 
 class MergeSyncConfigTest(unittest.TestCase):
@@ -486,6 +493,112 @@ class AddProjectToDashboardTest(unittest.TestCase):
                              capture_output=True).stdout.decode("utf-8", "replace")
         self.assertNotIn("S-1-5-32-545", acl)
         self.assertNotIn("Users:", acl)
+
+
+class RegistrationCreatesTheBoardDirTest(unittest.TestCase):
+    """등록이 보드 디렉토리를 만든다.
+
+    예전에는 등록이 `projects.json` 에 경로를 적기만 하고, 서버 시작 루프가 뒤에서
+    만들어 줬다. 그 루프는 사람이 지운 프로젝트까지 되살려서 없앴다(#9).
+    없앤 자리를 등록이 받는다 — 등록은 사람이 명시적으로 하는 일이라 만들 자격이 있다.
+
+    안 만들면 `reconcile` 이 `runs.json` 을 쓸 때 죽고, 그 예외는 프로젝트 단위
+    가드를 통과해 **수집 전체**를 멈춘다.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.repo = os.path.join(self.tmp.name, "myrepo")
+        os.makedirs(self.repo)
+        self.registry = os.path.join(self.tmp.name, "projects.json")
+
+    def test_the_board_dir_exists_after_registering(self):
+        enroll.add_project(self.registry, "fresh", self.repo)
+
+        self.assertTrue(os.path.isdir(os.path.join(self.repo, "vibe-harness")),
+                        "등록했는데 보드 디렉토리가 없다 — 수집이 여기서 죽는다")
+
+    def test_registering_twice_is_still_safe(self):
+        """재실행해도 안전해야 한다 — 이 모듈의 존재 이유다."""
+        enroll.add_project(self.registry, "fresh", self.repo)
+        enroll.add_project(self.registry, "fresh", self.repo)
+
+        self.assertTrue(os.path.isdir(os.path.join(self.repo, "vibe-harness")))
+
+
+class RestrictToOwnerReportsWhatHappenedTest(unittest.TestCase):
+    """"잠갔다" 고 말하려면 잠근 것을 확인해야 한다.
+
+    `restrict_to_owner` 는 icacls 의 결과를 한 번도 보지 않았고 아무것도 돌려주지
+    않았다. 그런데 enroll 은 Windows 면 **무조건** "상속을 끊고 현재 계정만
+    남겼다" 고 출력했다 — icacls 가 0 아닌 코드로 끝나도, USERNAME/USER 가 비어
+    icacls 를 아예 실행하지 않아도 같은 줄이 나왔다. 그 파일에는 개인 토큰이 든다.
+    잠기지 않았는데 잠갔다고 말하면 사용자가 확인할 이유를 잃는다.
+
+    실측(Windows 10, 2026-09-15): 없는 사용자로 `/grant:r` 를 실패시키면 icacls 는
+    **52** 로 끝나고 ACL 은 손대지 않은 채 남았다. 즉 반환코드만 보면 충분하고,
+    "`/inheritance:r` 만 적용돼 DACL 이 비는" 상태는 이 실패 모양에서 나오지 않았다.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.path = os.path.join(self.tmp.name, "sync.json")
+        with open(self.path, "w", encoding="utf-8") as fh:
+            fh.write("{}")
+
+    @unittest.skipUnless(os.name == "nt", "Windows ACL 전용 경로")
+    def test_a_failing_icacls_is_reported_as_failure(self):
+        from unittest import mock
+
+        refused = types.SimpleNamespace(returncode=52, stdout="", stderr="no such user")
+        with mock.patch.object(vibe_runtime.subprocess, "run", return_value=refused):
+            self.assertFalse(vibe_runtime.restrict_to_owner(self.path))
+
+    @unittest.skipUnless(os.name == "nt", "Windows ACL 전용 경로")
+    def test_a_missing_username_is_reported_as_failure(self):
+        from unittest import mock
+
+        env = {k: v for k, v in os.environ.items() if k not in ("USERNAME", "USER")}
+        called = []
+        with (mock.patch.dict(os.environ, env, clear=True),
+              mock.patch.object(vibe_runtime.subprocess, "run",
+                                    side_effect=lambda *a, **k: called.append(a))):
+            self.assertFalse(vibe_runtime.restrict_to_owner(self.path))
+        self.assertEqual([], called, "icacls 를 안 부르고도 성공이라 답했다")
+
+    @unittest.skipUnless(os.name == "nt", "Windows ACL 전용 경로")
+    def test_a_missing_icacls_binary_is_reported_as_failure(self):
+        from unittest import mock
+
+        with mock.patch.object(vibe_runtime.subprocess, "run",
+                               side_effect=OSError("icacls 없음")):
+            self.assertFalse(vibe_runtime.restrict_to_owner(self.path))
+
+    def test_the_real_call_succeeds_on_this_machine(self):
+        """막되 끄지 않는다 — 정상 경로는 True 여야 한다."""
+        self.assertTrue(vibe_runtime.restrict_to_owner(self.path))
+
+    def test_enroll_does_not_claim_success_without_checking(self):
+        """성공 문구가 `restrict_to_owner` 의 결과 안에 있어야 한다.
+
+        실행이 아니라 배선을 본다 — 이 경로는 POSIX CI 에서 아예 돌지 않는다.
+        """
+        with open(os.path.join(SCRIPTS, "enroll.py"), encoding="utf-8") as fh:
+            tree = ast.parse(fh.read())
+
+        guarded = False
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.If):
+                continue
+            if "restrict_to_owner" not in ast.unparse(node.test):
+                continue
+            if any("현재 계정만" in ast.unparse(b) for b in node.body):
+                guarded = True
+
+        self.assertTrue(guarded,
+                        "권한 성공 문구가 restrict_to_owner 결과 밖에 있다")
 
 
 class FlushDashboardSnapshotTest(unittest.TestCase):

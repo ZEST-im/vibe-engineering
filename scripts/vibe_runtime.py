@@ -85,19 +85,27 @@ def restrict_to_owner(path):
     chmod 실패는 그대로 올린다. 호출부마다 정책이 다르고(enroll 은 중단, server 는
     무시) 여기서 삼키면 그 구분이 사라진다. icacls 는 best-effort 다 — 실패하면
     상속 ACL 로 남을 뿐이라 고치기 전과 같다.
+
+    **좁혔는지를 돌려준다.** 예전에는 아무것도 돌려주지 않아서, 호출부가 결과를
+    알 방법이 없는데도 "남겼다" 고 출력했다. 시크릿이 든 파일이라 잠기지 않았는데
+    잠갔다고 말하면 사용자가 확인할 이유를 잃는다. 삼키는 것은 그대로 두되(여기서
+    올리면 enroll 이 멈춘다) 무슨 일이 있었는지는 말한다.
+
+    POSIX 는 True — chmod 가 실패하면 예외로 올라가므로 여기 도달했으면 성공이다.
     """
     os.chmod(path, 0o600)
     if os.name != "nt":
-        return
+        return True
     user = os.environ.get("USERNAME") or os.environ.get("USER")
     if not user:
-        return
+        return False
     try:
-        subprocess.run(["icacls", path, "/inheritance:r", "/grant:r", user + ":F"],
-                       capture_output=True, text=True, encoding="utf-8",
-                       errors="replace", timeout=15, check=False)
+        done = subprocess.run(["icacls", path, "/inheritance:r", "/grant:r", user + ":F"],
+                              capture_output=True, text=True, encoding="utf-8",
+                              errors="replace", timeout=15, check=False)
     except (OSError, subprocess.SubprocessError):
-        pass
+        return False
+    return done.returncode == 0
 
 
 # Windows 에는 fcntl 이 없다. 그동안 잠금을 그냥 포기했고, 그 결과 병렬 편집에서

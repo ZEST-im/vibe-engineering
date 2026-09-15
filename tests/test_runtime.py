@@ -321,8 +321,6 @@ class NullPositionTest(unittest.TestCase):
         self.assertIsInstance(claim, tuple)
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 class ExecutionWorkdirTest(unittest.TestCase):
@@ -372,3 +370,6 @@ class ExecutionWorkdirTest(unittest.TestCase):
                        check=True, capture_output=True)
         self.assertEqual(os.path.realpath(wt),
                          server._execution_workdir(self.kanban, wt))
+
+if __name__ == "__main__":
+    unittest.main()

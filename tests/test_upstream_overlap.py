@@ -236,8 +236,6 @@ class MessageTest(OverlapTestCase):
         self.assertIsNotNone(text)
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 class FetchPolicyTest(OverlapTestCase):
@@ -304,3 +302,6 @@ class FetchPolicyTest(OverlapTestCase):
         self.assertTrue(found["fetch_failed"])
         self.assertFalse(self.check.conflict_fails_gate(found),
                          "모름을 실패로 바꾸면 오프라인에서 커밋을 못 한다")
+
+if __name__ == "__main__":
+    unittest.main()

@@ -188,6 +188,35 @@ def validate_kanban_dir(kanban_dir, roots=None):
     return False, "kanban_dir must be inside an allowed project root"
 
 
+def init_registered_projects():
+    """등록된 프로젝트의 보드를 준비한다. **없는 디렉토리는 만들지 않는다.**
+
+    예전에는 `kanban_dir` 의 **부모**만 있으면 `init_kanban()` 으로 디렉토리와 빈
+    보드를 만들었다. 그래서 죽은 워크트리를 git 에서 제대로 정리해도 다음 서버
+    시작에서 **다시 생겼고**, `GET /api/projects` 는 `exists: true` 로 답했다 —
+    조회가 자기가 방금 만들어놓은 것을 보고 "있다" 고 답한 것이다.
+
+    지운 것이 되살아나면 사람은 자기가 잘못 지웠다고 생각하고 다시 지운다. 그리고
+    화면에 `exists: true` 로 보이니 죽은 등록이 드러나지도 않는다 — 이 저장소의
+    기준으로 "못 본 것과 깨끗한 것은 다르다" 의 정반대다.
+
+    생성은 **명시적 등록**(`register_project`)에서만 한다. 준비한 디렉토리를
+    돌려주므로 호출부가 무엇이 건너뛰어졌는지 셀 수 있다.
+    """
+    prepared = []
+    for _key, info in load_projects().items():
+        kdir = info.get("kanban_dir", "")
+        # Backward compat: convert old db_path
+        if not kdir and "db_path" in info:
+            kdir = os.path.dirname(info["db_path"])
+        # **부모가 아니라 디렉토리 자체가 있어야 한다.** 이 한 글자가 되살리기와
+        # 되살리지 않기를 가른다.
+        if kdir and os.path.isdir(kdir):
+            init_kanban(kdir)
+            prepared.append(kdir)
+    return prepared
+
+
 def register_project(key, name, kanban_dir):
     projects = load_projects()
     projects[key] = {"name": name, "kanban_dir": os.path.abspath(kanban_dir)}
@@ -3029,15 +3058,7 @@ def main():
         register_project(key, name, kanban_dir)
         print(f"Auto-registered: {key} ({name})")
 
-    # Init all registered projects
-    projects = load_projects()
-    for _key, info in projects.items():
-        kdir = info.get("kanban_dir", "")
-        # Backward compat: convert old db_path
-        if not kdir and "db_path" in info:
-            kdir = os.path.dirname(info["db_path"])
-        if kdir and os.path.exists(os.path.dirname(kdir)):
-            init_kanban(kdir)
+    init_registered_projects()
 
     server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
 

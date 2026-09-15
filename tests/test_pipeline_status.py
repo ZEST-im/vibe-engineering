@@ -188,8 +188,6 @@ class HookAgreesWithServerTest(unittest.TestCase):
                               env=env, cwd=home).stdout
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 class TestsMustNotTouchRealStateTest(unittest.TestCase):
@@ -235,3 +233,6 @@ class TestsMustNotTouchRealStateTest(unittest.TestCase):
                 offenders.append(os.path.basename(path))
         self.assertEqual([], offenders,
                          "--all 을 돌리면서 상태 경로를 격리하지 않는 파일: " + ", ".join(offenders))
+
+if __name__ == "__main__":
+    unittest.main()

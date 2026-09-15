@@ -2,6 +2,7 @@ import importlib.util
 import os
 import sys
 import tempfile
+import types
 import unittest
 
 
@@ -123,8 +124,6 @@ class CopySkillFilesTest(unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(self.skills_root, "vibe-design")))
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 class UpgradeFileListTest(unittest.TestCase):
@@ -145,3 +144,62 @@ class UpgradeFileListTest(unittest.TestCase):
 
         missing = {n for n in installed if n != "SKILL.md" and f'"{n}"' not in setup_src}
         self.assertEqual(set(), missing, f"setup.py upgrade 가 빠뜨린 파일: {missing}")
+
+class UpgradeAlwaysSaysItFinishedTest(unittest.TestCase):
+    """완료 메시지는 **재시작이 어느 갈래로 갔는지와 무관하게** 나와야 한다.
+
+    `restart_server()` 를 추출할 때 끝의 두 줄이 같이 딸려 들어가, 그 함수의
+    마지막 갈래(POSIX · 서버 돌던 중 · kill 성공 · launchd plist 없음)에서만
+    출력됐다. 나머지 갈래는 전부 그 앞에서 return 한다.
+
+    그래서 기본 macOS 설치는 "RESTARTED server via launchd." 로 끝나고 완료
+    메시지 없이 조용히 멈춘 것처럼 보였다 — 사용자가 업그레이드가 끝났는지
+    알아차릴 유일한 줄이다.
+
+    여기서는 가장 값싼 조기 return 갈래(서버가 안 돌고 있음)로 확인한다.
+    누가 이 두 줄을 `restart_server()` 안으로 되돌리면 이 검사가 빨개진다.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.saved = {k: getattr(setup, k) for k in ("DEST", "SKILLS_ROOT")}
+        setup.DEST = os.path.join(self.tmp.name, "dest")
+        setup.SKILLS_ROOT = os.path.join(self.tmp.name, "skills")
+
+        def restore():
+            for k, v in self.saved.items():
+                setattr(setup, k, v)
+        self.addCleanup(restore)
+
+    def test_the_completion_line_survives_an_early_return_from_restart(self):
+        import contextlib
+        import io as _io
+        import urllib.request
+        from unittest import mock
+
+        buf = _io.StringIO()
+
+        @contextlib.contextmanager
+        def fake_download(*_a, **_kw):
+            """네트워크로 나가지 않는다.
+
+            **전부 실패시키면 안 된다** — `upgrade()` 는 받은 파일이 0이면
+            "Check your network connection." 로 재시작 전에 돌아간다. 그러면
+            검사하려는 갈래를 밟지도 못한 채 초록이 될 수 있다.
+            """
+            yield types.SimpleNamespace(read=lambda: b"# fake" + b"\n")
+
+        with (mock.patch.object(urllib.request, "urlopen", fake_download),
+              mock.patch.object(setup, "server_pids", return_value=[]),
+              contextlib.redirect_stdout(buf)):
+            setup.upgrade()
+
+        out = buf.getvalue()
+        self.assertIn("No running server", out, "조기 return 갈래를 안 밟았다")
+        self.assertIn("Upgrade complete!", out,
+                      "재시작이 일찍 돌아가면 완료 메시지가 사라진다")
+
+
+if __name__ == "__main__":
+    unittest.main()
