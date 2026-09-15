@@ -2496,3 +2496,29 @@ class PhaseNumberCollisionTest(unittest.TestCase):
 
         self.assertEqual({}, gh.duplicate_phases(body),
                          "같은 Phase 번호가 둘 이상이다 — 두 머신이 각자 열었다")
+
+    def test_a_heading_quoted_in_a_code_fence_is_not_a_collision(self):
+        """오탐이 나면 장치가 꺼진다.
+
+        이 저장소는 사고를 문서에 자세히 적는다 — "이렇게 헤딩이 둘 생겼다" 를
+        설명하려면 코드블록에 그 헤딩을 그대로 인용하게 된다. 인용까지 세면
+        **맞게 쓴 문서에서 CI 가 빨개진다.** 저장소 스스로 "간헐적으로 빨간
+        게이트는 곧 무시된다" 고 적어 뒀다.
+        """
+        quoted = (
+            "## PHASE_PMF16 ✅ DONE (2026-09-20)\n> 진짜\n\n"
+            "그때 이런 헤딩이 하나 더 생겼다:\n\n"
+            "```\n## PHASE_PMF16 🚧 다른 머신이 연 것\n```\n")
+
+        self.assertEqual({}, gh.duplicate_phases(quoted),
+                         "코드펜스 안의 인용을 충돌로 셌다")
+
+    def test_a_real_collision_outside_a_fence_still_counts(self):
+        """막되 끄지 않는다 — 펜스를 건너뛰느라 진짜를 놓치면 안 된다."""
+        mixed = (
+            "## PHASE_PMF16 ✅ DONE (2026-09-20)\n> 진짜\n\n"
+            "```\n예시 코드\n```\n\n"
+            "## PHASE_PMF16 🚧 진행 중 — 다른 머신\n> 진짜 충돌\n")
+
+        self.assertEqual({"PHASE_PMF16": 2}, gh.duplicate_phases(mixed))
+

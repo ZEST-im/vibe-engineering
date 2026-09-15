@@ -63,6 +63,25 @@ class MissingToolFile(RuntimeError):
     """
 
 
+def _outside_code_fences(body):
+    """코드펜스(```/~~~) 안을 걷어낸 본문.
+
+    이 저장소는 사고를 문서에 자세히 적는다 — "이렇게 헤딩이 둘 생겼다" 를 설명하려면
+    코드블록에 그 헤딩을 그대로 인용하게 된다. 인용까지 세면 **맞게 쓴 문서에서 CI 가
+    빨개진다.** 오탐으로 빨개지는 게이트는 곧 무시되고, 그러면 장치가 있으나 마나다.
+
+    인용구(`> `)는 줄 앞에 `> ` 가 붙어 `^##` 에 안 걸리므로 따로 다루지 않는다.
+    """
+    out, inside = [], False
+    for line in (body or "").splitlines():
+        if line.startswith(("```", "~~~")):
+            inside = not inside
+            continue
+        if not inside:
+            out.append(line)
+    return "\n".join(out)
+
+
 def duplicate_phases(body):
     """같은 Phase 번호로 열린 헤딩이 둘 이상인가. `{이름: 횟수}` 를 돌려준다.
 
@@ -83,7 +102,7 @@ def duplicate_phases(body):
     것만 세면 정확히 그 사고를 놓친다.
     """
     counts = {}
-    for m in ANY_PHASE.finditer(body or ""):
+    for m in ANY_PHASE.finditer(_outside_code_fences(body)):
         counts[m.group(1)] = counts.get(m.group(1), 0) + 1
     return {name: n for name, n in counts.items() if n > 1}
 
