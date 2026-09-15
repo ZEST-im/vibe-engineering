@@ -234,8 +234,6 @@ class CliTest(unittest.TestCase):
         self.assertNotIn("def _mint_id", body, "id 발급을 여기서 다시 구현하면 안 된다")
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 class ConfigIsolationTest(unittest.TestCase):
@@ -259,3 +257,6 @@ class ConfigIsolationTest(unittest.TestCase):
 
         task = board(kdir)["tasks"][-1]
         self.assertIsInstance(task["id"], int)
+
+if __name__ == "__main__":
+    unittest.main()

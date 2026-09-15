@@ -287,10 +287,6 @@ class WindowsGuidanceTest(unittest.TestCase):
         self.assertIn("schtasks", str(caught.exception))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TranscriptPathTest(unittest.TestCase):
     r"""Windows 경로에서 transcript 디렉터리를 아예 못 찾던 것.
 
@@ -975,3 +971,5 @@ class ConcurrentBoardWriteTest(unittest.TestCase):
 
         self.assertEqual(0, failures)
 
+if __name__ == "__main__":
+    unittest.main()
