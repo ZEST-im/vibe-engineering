@@ -119,8 +119,36 @@ When the user types `qq` (wrap-up without push):
 
 When the user types `cc` (commit + push):
 1. All of the above
-2. `git add` + `git commit` (Korean commit message summarizing changes)
-3. `git push origin main`
+2. `git add` + `git commit` (Korean commit message summarizing changes) — one commit per
+   cause, not one big commit
+3. `git push` to a **work branch**, never to `main`
+
+---
+
+## Merge / PR Rules
+
+**Merge once, when a whole feature is done — not after every fix.** Opening and merging a
+PR per fix moves `main` through half-finished states, and makes it impossible to tell where
+one unit of work begins and ends when you need to revert.
+
+| | |
+|---|---|
+| Commits | **Many.** One per cause. Say what changed, why, and which mutation proved the check works |
+| PR | **One.** One PR per feature / batch of work. Keep related work on one branch |
+| Merge | **Once, at the very end** — and only after everything below passes |
+
+Before merging — if any of these is missing, do not merge:
+
+1. `python3 scripts/check.py` — all six gates green
+2. PR CI green. Check the run **for that commit** — the top of `gh run list` may be the
+   previous one
+3. A self review was run and **its findings were fixed too**
+4. A human approved. Direct pushes to `main` are forbidden
+   (`docs/OUTCOME_BASED_ENGINEERING_ASSIGNMENTS.md`)
+
+If several PRs are open, **actually merge them locally first.** Two PRs can touch the same
+region of the same file even when their file lists look disjoint — never claim "no overlap"
+from the file list alone.
 
 ---
 
