@@ -585,20 +585,56 @@ class HookCommandPathTest(unittest.TestCase):
     directory" 가 툴 호출마다 찍혔다. 조용한 실패가 아니라 훅 5개 전원 정지다.
     """
 
-    def test_no_backslash_in_any_registered_hook_command(self):
-        bad = [e["hooks"][0]["command"] for _, _, e in setup.HOOKS
-               if "\\" in e["hooks"][0]["command"]]
+    # 이 아래 둘은 POSIX 에서 헛돌았다. `HOOKS_DIR` 이 이미 슬래시 경로라
+    # **역슬래시가 든 문자열을 한 번도 만들지 않았고**, 검사할 대상이 없으니
+    # `hook_cmd` 의 `.replace()` 를 통째로 지워도 59개 전부 초록이었다.
+    # CI 가 ubuntu 전용이라 그 상태로는 되돌아가도 아무 데서도 빨간불이 안 켜진다.
+    # 그래서 입력을 직접 역슬래시로 만들어, 어느 플랫폼에서든 같은 것을 본다.
 
-        self.assertEqual([], bad, "훅 명령에 역슬래시 — bash 가 먹는다")
+    WINDOWS_HOOKS_DIR = "C:" + chr(92) + "Users" + chr(92) + "t" + chr(92) + "hooks"
 
     def test_hook_cmd_converts_a_windows_path(self):
-        """이 머신이 POSIX 여도 규칙이 고정되어야 한다 — 그래서 문자열로 직접 본다."""
-        self.assertNotIn("\\", setup.hook_cmd("x.sh").replace(setup.HOOKS_DIR, ""))
-        self.assertTrue(setup.hook_cmd("x.sh").endswith("/x.sh"))
+        saved = setup.HOOKS_DIR
+        setup.HOOKS_DIR = self.WINDOWS_HOOKS_DIR
+        try:
+            got = setup.hook_cmd("x.sh")
+        finally:
+            setup.HOOKS_DIR = saved
 
+        self.assertNotIn(chr(92), got, "역슬래시가 남았다 — bash 가 먹는다")
+        self.assertTrue(got.endswith("/x.sh"), got)
+        self.assertEqual("C:/Users/t/hooks/x.sh", got)
 
-if __name__ == "__main__":
-    unittest.main()
+    def test_every_registered_hook_command_goes_through_hook_cmd(self):
+        """실행이 아니라 **배선**을 본다.
+
+        위 검사는 `hook_cmd` 하나만 지킨다. 누가 `HOOKS` 항목에 경로를 직접
+        조립해 넣으면 그 항목만 조용히 역슬래시를 갖게 된다 — 그래서 소스에서
+        모든 항목이 `hook_cmd(...)` 를 거치는지 확인한다. 플랫폼과 무관하다.
+        """
+        with io.open(os.path.join(SCRIPTS, "setup.py"), encoding="utf-8") as fh:
+            tree = ast.parse(fh.read())
+        hooks = next(n.value for n in ast.walk(tree)
+                     if isinstance(n, ast.Assign)
+                     and any(getattr(t, "id", "") == "HOOKS" for t in n.targets))
+
+        commands = [kv for entry in hooks.elts
+                    for dct in ast.walk(entry) if isinstance(dct, ast.Dict)
+                    for key, kv in zip(dct.keys, dct.values, strict=True)
+                    if isinstance(key, ast.Constant) and key.value == "command"]
+        self.assertEqual(len(setup.HOOKS), len(commands), "훅 명령을 다 찾지 못했다")
+
+        bad = [ast.unparse(c) for c in commands
+               if not (isinstance(c, ast.Call)
+                       and getattr(c.func, "id", "") == "hook_cmd")]
+        self.assertEqual([], bad, "hook_cmd 를 안 거치는 훅 명령 — 역슬래시가 샌다")
+
+    def test_the_runtime_commands_have_no_backslash_on_this_machine(self):
+        """이 머신에서 실제로 만들어진 값도 본다 — Windows 에서만 뜻이 있다."""
+        bad = [e["hooks"][0]["command"] for _, _, e in setup.HOOKS
+               if chr(92) in e["hooks"][0]["command"]]
+
+        self.assertEqual([], bad, "훅 명령에 역슬래시 — bash 가 먹는다")
 
 
 NETSTAT_SAMPLE = """
