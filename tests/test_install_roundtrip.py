@@ -88,6 +88,16 @@ def load_setup(home):
                 os.environ[key] = value
     mod.subprocess = FakeSubprocess()
 
+    # **레지스트리도 같이 갈아끼운다.** 위 HOME 격리는 *경로* 만 막는다. Windows
+    # 자동시작은 `HKCU\...\Run` 이라 임시 HOME 밖에 있고, 설치 경로가 부르는
+    # `remove_windows_run_key()` 가 **이 머신의 진짜 자동시작 항목을 지웠다** —
+    # 센티넬을 심고 스위트를 돌려 실측했다. `launchctl` 과 같은 처방이다:
+    # 부르지 않고, 무엇을 부르려 했는지만 남긴다.
+    mod.registry_calls = []
+    mod.install_windows_run_key = lambda: mod.registry_calls.append("install") or True
+    # 없는 키를 지우려 할 때 진짜 함수가 돌려주는 값이 False 다 — 그대로 흉내낸다.
+    mod.remove_windows_run_key = lambda: mod.registry_calls.append("remove") or False
+
     # **이 파일의 안전장치.** 아래를 통과하지 못하면 모듈을 넘겨주지 않는다.
     #
     # 처음에는 이것을 테스트(`test_the_temp_home_is_actually_used`)로만 뒀다.
@@ -175,6 +185,23 @@ class InstallRoundTripTest(unittest.TestCase):
                      self.mod.SKILLS_ROOT, self.mod.LAUNCH_AGENTS):
             self.assertTrue(path.startswith(self.home),
                             "임시 HOME 밖을 가리킨다: %s" % path)
+
+    @unittest.skipUnless(os.name == "nt", "Windows 에서만 레지스트리를 쓴다")
+    def test_the_real_registry_is_never_touched(self):
+        """HOME 격리가 안 덮는 자원이 하나 있었다.
+
+        `install_windows_server_task()` 는 성공 경로에서도
+        `remove_windows_run_key()` 를 부른다(두 경로가 동시에 서버를 띄우지
+        않게 한다). 그 함수는 HKCU 의 Run 키를 직접 연다 — 임시 HOME 밖이다.
+        센티넬을 심고 이 파일을 돌리자 **값이 사라졌다.**
+        """
+        import winreg
+        from unittest import mock
+
+        boom = mock.Mock(side_effect=AssertionError("실제 레지스트리를 건드렸다"))
+        with mock.patch.object(winreg, "CreateKeyEx", boom),                 mock.patch.object(winreg, "OpenKey", boom):
+            self.install()
+            self.uninstall()
 
     def test_uninstall_restores_home(self):
         before = snapshot(self.home)
