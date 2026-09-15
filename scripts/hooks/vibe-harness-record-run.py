@@ -210,7 +210,13 @@ def already_recorded(kanban_dir, session_id, agent):
 
 
 def append_direct(kanban_dir, run):
-    """Append run to runs.json (atomic) and sync the task's tokens_used."""
+    """Append run to runs.json (atomic) and sync the task's tokens_used.
+
+    Returns True only if the run actually landed in runs.json. The caller
+    prints "recorded ... via file", and that line must not appear when
+    nothing was written — this hook exists to count tokens, so a silent
+    over-report is worse than no line at all.
+    """
     rp = os.path.join(kanban_dir, "runs.json")
     data = {"version": 1, "runs": []}
     if os.path.exists(rp):
@@ -228,7 +234,7 @@ def append_direct(kanban_dir, run):
             # 전부를 잃는 것 중에서는 전자를 고른다.
             print(f"runs.json 을 읽지 못해 이번 run 을 적지 않는다: {exc}",
                   file=sys.stderr)
-            return
+            return False
     data.setdefault("runs", []).append(run)
     tmp = tmp_name(rp)
     with open(tmp, "w", encoding="utf-8") as f:
@@ -243,9 +249,11 @@ def append_direct(kanban_dir, run):
         kp = os.path.join(kanban_dir, "kanban.json")
         if os.path.exists(kp):
             try:
-                kd = json.load(open(kp, encoding="utf-8"))
+                with open(kp, encoding="utf-8") as fh:
+                    kd = json.load(fh)
             except Exception:
-                return
+                # runs.json 은 이미 썼다 — 기록은 됐고 보드 합계만 못 맞춘 것이다.
+                return True
             total = sum(_safe_int(r.get("tokens")) for r in data["runs"] if r.get("task_id") == tid)
             task = next((t for t in kd["tasks"] if t.get("id") == tid), None)
             if task is not None:
@@ -258,6 +266,7 @@ def append_direct(kanban_dir, run):
                     f.flush(); os.fsync(f.fileno())
                     fcntl.flock(f, fcntl.LOCK_UN)
                 atomic_replace(tmp, kp)
+    return True
 
 
 def post_server(key, run):
@@ -336,9 +345,17 @@ def main():
     }
 
     via = "server" if post_server(key, run) else None
-    if not via:
-        append_direct(kanban_dir, run)
+    if not via and append_direct(kanban_dir, run):
         via = "file"
+
+    if not via:
+        # **적지 못했으면 적었다고 말하지 않는다.** 왜 실패했는지는 append_direct 가
+        # 이미 stderr 에 남겼다. 종료코드는 0 으로 둔다 — SessionEnd 훅이 0 이 아니면
+        # 세션 종료가 시끄러워지고, 그러면 훅 자체가 꺼진다.
+        if not args.quiet:
+            print(f"vibe-harness: {args.agent} run NOT recorded "
+                  f"({tokens:,} tokens) → {key}", file=sys.stderr)
+        return 0
 
     if not args.quiet:
         print(f"vibe-harness: recorded {args.agent} run ({tokens:,} tokens) "

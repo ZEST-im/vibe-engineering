@@ -3,6 +3,7 @@
 CLAUDE.md 가 규정한 규율(id 재사용 금지, 완료 시 details·lines 필수,
 runs.json append-only)은 문서에만 있고 어디서도 강제되지 않았다. 여기서 강제한다.
 """
+import ast
 import builtins
 import importlib.util
 import json
@@ -286,6 +287,48 @@ class RecorderNeverWipesTheRecordTest(unittest.TestCase):
 
         with open(self.path, encoding="utf-8") as fh:
             self.assertEqual(before, fh.read(), "읽지 못한 runs.json 이 덮어써졌다")
+
+    def test_it_reports_that_it_did_not_write(self):
+        """**적지 못했으면 적었다고 말하지 않는다.**
+
+        읽기 실패에서 돌아가도록 고친 뒤, 호출부가 그 결과를 안 보고 `via="file"`
+        로 고정해 "recorded ... via file" 을 그대로 찍고 있었다 — 이 훅은 토큰을
+        세려고 있는 것이라, 조용한 과다 보고는 줄이 아예 없는 것보다 나쁘다.
+        #7 에서 고친 "잠그지 않고 잠갔다고 출력" 과 같은 결함을 다른 파일에
+        만들었던 것이다.
+        """
+        with open(self.path, "w", encoding="utf-8") as fh:
+            fh.write('{"version": 1, "runs": [{"tokens": 42')
+
+        wrote = self.rr.append_direct(
+            self.dir, {"agent": "claude", "tokens": 1, "task_id": None})
+
+        self.assertFalse(wrote, "안 적고도 적었다고 답했다")
+
+    def test_it_reports_that_it_did_write(self):
+        """막되 끄지 않는다 — 정상 경로는 True 여야 "recorded" 줄이 나온다."""
+        with open(self.path, "w", encoding="utf-8") as fh:
+            json.dump({"version": 1, "runs": []}, fh)
+
+        self.assertTrue(self.rr.append_direct(
+            self.dir, {"agent": "claude", "tokens": 1, "task_id": None}))
+
+    def test_the_caller_actually_uses_the_result(self):
+        """값을 돌려줘도 호출부가 안 보면 아무것도 달라지지 않는다.
+
+        실행이 아니라 배선을 본다 — 이 경로는 서버가 떠 있으면 아예 안 밟힌다.
+        `append_direct(...)` 가 결과를 버리는 단독 문장으로 서 있으면 빨강이다.
+        """
+        path = os.path.join(SCRIPTS, "hooks", "vibe-harness-record-run.py")
+        with open(path, encoding="utf-8") as fh:
+            tree = ast.parse(fh.read(), path)
+
+        discarded = [n.lineno for n in ast.walk(tree)
+                     if isinstance(n, ast.Expr) and isinstance(n.value, ast.Call)
+                     and getattr(n.value.func, "id", "") == "append_direct"]
+
+        self.assertEqual([], discarded,
+                         "append_direct 의 결과를 버린다 — 안 적고도 적었다고 말하게 된다")
 
     def test_a_readable_file_still_gets_the_run(self):
         """막되 끄지 않는다 — 정상 경로는 그대로 기록돼야 한다."""

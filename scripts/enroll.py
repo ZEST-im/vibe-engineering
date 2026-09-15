@@ -104,6 +104,9 @@ def write_sync_config(path, cfg):
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(cfg, fh, ensure_ascii=False, indent=2)
         fh.write("\n")
+    # 결과를 여기서 보지 않는 것은 의도다 — `main()` 이 마지막에 **완성된 파일**로
+    # 한 번 더 부르고 그 결과를 사람에게 말한다. 임시 파일의 성패를 여기서 보고해도
+    # 사용자가 확인할 대상(`sync.json`)과 다르다.
     restrict_to_owner(tmp)
     atomic_replace(tmp, path)
 
@@ -238,8 +241,13 @@ def parse_project_arg(pair):
     return key.strip(), path.strip()
 
 
-def add_project(registry_path, key, repo_path):
-    """수집 대상 프로젝트를 등록한다.
+def add_project(registry_path, key, repo_path, dry_run=False):
+    """수집 대상 프로젝트를 등록한다. `dry_run` 이면 **검증만 하고 아무것도 쓰지 않는다.**
+
+    dry_run 을 여기서 받는 이유: 호출부에서 "쓰기만 건너뛰자" 고 하면 경로 규칙
+    (`<repo>/vibe-harness`, 구분자는 "/")과 검증(리포 존재, 키 중복)이 두 곳에
+    갈라진다. 그러면 미리보기가 실제와 다른 값을 보여주거나, **실제 실행에서만
+    나는 실패를 미리보기가 숨긴다** — 미리보기의 존재 이유와 정반대다.
 
     수집은 projects.json 에 등록된 프로젝트만 훑는다. 손으로 JSON 을 고치게 하면
     빠뜨리고, 빠뜨리면 조용히 0건이 된다. 키는 대시보드가 참조하는 공유 프로젝트 키를
@@ -276,7 +284,11 @@ def add_project(registry_path, key, repo_path):
     # 그대로 넣으면 JSON 이스케이프가 필요해지고 같은 파일 안에서 머신마다 표기가
     # 갈린다. 읽는 쪽은 전부 os.path.abspath 를 거치므로 "/" 로 적어도 Windows 에서
     # 그대로 동작한다.
-    data[key] = {"name": key, "kanban_dir": kdir.replace(os.sep, "/")}
+    entry = {"name": key, "kanban_dir": kdir.replace(os.sep, "/")}
+    if dry_run:
+        return entry
+
+    data[key] = entry
     # **등록이 디렉토리를 만든다.** 예전에는 서버 시작 루프가 뒤에서 만들어 줬는데,
     # 그 루프가 지운 프로젝트까지 되살리고 있어서 없앴다(#9). 없앤 자리를 여기가
     # 받는다 — 등록은 사람이 명시적으로 하는 일이라 만들 자격이 있다.
@@ -646,10 +658,20 @@ def main(argv=None):
                   f", id_prefix={cfg.get('id_prefix') or '(없음 → 정수 발급)'}")
 
     # 2.5) 프로젝트 등록 — 수집(projects.json) + 대시보드 노출(sync.json) 둘 다
+    #
+    # **이 절만 `--dry-run` 을 보지 않고 있었다.** main() 의 다른 단계는 전부 보는데
+    # 여기만 빠져서, 미리보기라고 부른 실행이 파일 둘(projects.json·sync.json)을 쓰고
+    # `flush_dashboard_snapshot()` 으로 **중앙 서버까지 밀었다.** 예상 못 한 쓰기보다
+    # 예상 못 한 네트워크 전송이 더 나쁘다 — 되돌릴 자리가 이 머신이 아니다.
     dashboard_changed = False
     for pair in (a.add_project or []):
         key, repo = parse_project_arg(pair)
-        info = add_project(PROJECTS_CONFIG, key, repo)
+        info = add_project(PROJECTS_CONFIG, key, repo, dry_run=a.dry_run)
+        if a.dry_run:
+            print(f"projects  : 예정 → {key} = {info['kanban_dir']}")
+            print(f"dashboard : 예정 → {key} 를 {DEFAULT_DASHBOARD} 목록에"
+                  " (이미 있으면 그대로)")
+            continue
         print(f"projects  : {key} → {info['kanban_dir']}")
         if add_project_to_dashboard(SYNC_CONFIG, key):
             dashboard_changed = True

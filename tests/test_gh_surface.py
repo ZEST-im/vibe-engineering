@@ -2522,3 +2522,44 @@ class PhaseNumberCollisionTest(unittest.TestCase):
 
         self.assertEqual({"PHASE_PMF16": 2}, gh.duplicate_phases(mixed))
 
+    def test_a_fenced_done_heading_is_not_a_release(self):
+        """절을 뽑는 쪽도 같은 기준을 써야 한다.
+
+        중복 세기만 펜스를 건너뛰면 "중복은 없다는데 절은 둘" 이 된다.
+        그리고 인용일 뿐인 헤딩으로 **태그와 릴리스가 실제로 생긴다.**
+        """
+        doc = (
+            "## PHASE_PMF16 ✅ DONE (2026-09-20)\n> 진짜\n\n"
+            "예전 릴리스는 이렇게 적혀 있었다:\n\n"
+            "```\n## PHASE_PMF17 ✅ DONE (2026-01-01)\n> 인용일 뿐\n```\n")
+
+        self.assertEqual(["PHASE_PMF16"], list(gh.phase_sections(doc)),
+                         "코드펜스 안의 헤딩으로 릴리스가 생긴다")
+
+    def test_a_code_block_inside_a_section_survives(self):
+        """**펜스를 걷어낸 본문으로 자르면 안 된다.**
+
+        절 본문은 그대로 릴리스 노트가 된다. 세는 기준만 펜스를 건너뛰고, 자르는
+        것은 원본에서 한다 — 안 그러면 노트에서 코드블록이 사라진다.
+        """
+        doc = ("## PHASE_PMF16 ✅ DONE (2026-09-20)\n> 요약\n\n"
+               "```\n$ vibe-harness tag\n```\n")
+
+        body = gh.phase_sections(doc)["PHASE_PMF16"]["body"]
+
+        self.assertIn("$ vibe-harness tag", body, "노트에서 코드블록이 사라졌다")
+
+    def test_an_unclosed_fence_swallows_the_rest(self):
+        """여는 표시만 있고 안 닫혔으면 그 아래는 사람이 코드로 적은 것이다."""
+        doc = ("## PHASE_PMF16 ✅ DONE (2026-09-20)\n> 요약\n\n"
+               "```\n## PHASE_PMF17 ✅ DONE (2026-01-01)\n> 안 닫힌 펜스 안\n")
+
+        self.assertEqual(["PHASE_PMF16"], list(gh.phase_sections(doc)))
+
+    def test_an_indented_fence_still_counts_as_a_fence(self):
+        """CommonMark 는 펜스를 3칸까지 들여쓸 수 있게 한다."""
+        doc = ("## PHASE_PMF16 ✅ DONE (2026-09-20)\n> 요약\n\n"
+               "  ```\n## PHASE_PMF16 🚧 인용\n  ```\n")
+
+        self.assertEqual({}, gh.duplicate_phases(doc))
+
