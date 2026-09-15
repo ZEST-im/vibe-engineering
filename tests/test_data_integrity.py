@@ -3,11 +3,15 @@
 CLAUDE.md 가 규정한 규율(id 재사용 금지, 완료 시 details·lines 필수,
 runs.json append-only)은 문서에만 있고 어디서도 강제되지 않았다. 여기서 강제한다.
 """
+import builtins
 import importlib.util
 import json
 import os
+import shutil
 import sys
+import tempfile
 import unittest
+from unittest import mock
 
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -229,6 +233,71 @@ class DecisionsIntegrityTest(unittest.TestCase):
             self.skipTest("decisions.json 없음")
         data = load("decisions.json")
         self.assertIsInstance(data, dict)
+
+
+class RecorderNeverWipesTheRecordTest(unittest.TestCase):
+    """runs.json 은 append-only 다 — 읽지 못했다는 이유로 비워져선 안 된다.
+
+    `append_direct` 는 파일을 읽어 dict 로 들고 있다가 append 한 뒤 원자 교체로
+    통째로 덮는다. 읽기가 실패해도 빈 기본값으로 이어가고 있었으므로, **한 번의
+    읽기 실패가 기록 전체를 지웠다.** 실패는 드물지 않다: Windows 는 다른
+    프로세스가 교체 중인 파일의 열린 핸들에 PermissionError 를 낸다.
+
+    같은 함수의 kanban.json 쪽은 이미 같은 상황에서 return 했다. 처방이 한
+    함수 안에서 갈라져 있었고, 갈라진 쪽이 더 중요한 파일이었다.
+    """
+
+    def setUp(self):
+        spec = importlib.util.spec_from_file_location(
+            "vh_recorder", os.path.join(SCRIPTS, "hooks", "vibe-harness-record-run.py"))
+        self.rr = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.rr)
+        self.dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.dir, ignore_errors=True)
+        self.path = os.path.join(self.dir, "runs.json")
+
+    def test_a_corrupt_runs_file_is_left_alone(self):
+        broken = '{"version": 1, "runs": [{"tokens": 42'   # 잘린 JSON
+        with open(self.path, "w", encoding="utf-8") as fh:
+            fh.write(broken)
+
+        self.rr.append_direct(self.dir, {"agent": "claude", "tokens": 1, "task_id": None})
+
+        with open(self.path, encoding="utf-8") as fh:
+            self.assertEqual(broken, fh.read(),
+                             "읽지 못한 runs.json 을 덮어썼다 — 기록이 사라진다")
+
+    def test_an_unreadable_runs_file_is_left_alone(self):
+        """깨진 내용이 아니라 **열리지 않는** 경우 — Windows 의 실제 실패 모양이다."""
+        with open(self.path, "w", encoding="utf-8") as fh:
+            json.dump({"version": 1, "runs": [{"tokens": 42}]}, fh)
+        with open(self.path, encoding="utf-8") as fh:
+            before = fh.read()
+
+        real_open = builtins.open
+
+        def refuse(path, *a, **kw):
+            if os.path.abspath(path) == os.path.abspath(self.path) and "w" not in "".join(a[:1]):
+                raise PermissionError(13, "다른 프로세스가 교체 중")
+            return real_open(path, *a, **kw)
+
+        with mock.patch.object(builtins, "open", refuse):
+            self.rr.append_direct(self.dir, {"agent": "claude", "tokens": 1, "task_id": None})
+
+        with open(self.path, encoding="utf-8") as fh:
+            self.assertEqual(before, fh.read(), "읽지 못한 runs.json 이 덮어써졌다")
+
+    def test_a_readable_file_still_gets_the_run(self):
+        """막되 끄지 않는다 — 정상 경로는 그대로 기록돼야 한다."""
+        with open(self.path, "w", encoding="utf-8") as fh:
+            json.dump({"version": 1, "runs": []}, fh)
+
+        self.rr.append_direct(self.dir, {"agent": "claude", "tokens": 7, "task_id": None})
+
+        with open(self.path, encoding="utf-8") as fh:
+            runs = json.load(fh)["runs"]
+        self.assertEqual(1, len(runs))
+        self.assertEqual(7, runs[0]["tokens"])
 
 
 if __name__ == "__main__":

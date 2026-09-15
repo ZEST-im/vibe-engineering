@@ -200,9 +200,20 @@ def append_direct(kanban_dir, run):
     data = {"version": 1, "runs": []}
     if os.path.exists(rp):
         try:
-            data = json.load(open(rp, encoding="utf-8"))
-        except Exception:
-            pass
+            with open(rp, encoding="utf-8") as fh:
+                data = json.load(fh)
+        except Exception as exc:
+            # **읽기 실패에서 빈 기본값으로 이어가면 안 된다.** 아래는 이 dict 를
+            # runs.json 위에 원자 교체로 덮는다 — 한 번의 읽기 실패로 기록 전체가
+            # 사라진다. 이 파일은 모듈 docstring 이 "the source of record" 라고
+            # 부르는 그 파일이고, 실패는 드물지 않다: 다른 프로세스가 교체 중이면
+            # Windows 는 열려 있는 핸들에 PermissionError 를 낸다.
+            # 두 줄 아래 kanban.json 쪽은 이미 같은 상황에서 return 한다 —
+            # 같은 함수 안에서 처방이 갈라져 있었다. 한 run 을 잃는 것과
+            # 전부를 잃는 것 중에서는 전자를 고른다.
+            print(f"runs.json 을 읽지 못해 이번 run 을 적지 않는다: {exc}",
+                  file=sys.stderr)
+            return
     data.setdefault("runs", []).append(run)
     tmp = tmp_name(rp)
     with open(tmp, "w", encoding="utf-8") as f:
