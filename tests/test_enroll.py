@@ -232,12 +232,12 @@ class WriteSyncConfigTest(unittest.TestCase):
 
     def test_second_write_is_byte_identical(self):
         enroll.write_sync_config(self.path, {"secret": "tok-1", "enabled": True})
-        with open(self.path) as fh:
+        with open(self.path, encoding="utf-8") as fh:
             first = fh.read()
 
         enroll.write_sync_config(self.path, {"secret": "tok-1", "enabled": True})
 
-        with open(self.path) as fh:
+        with open(self.path, encoding="utf-8") as fh:
             self.assertEqual(first, fh.read())
 
     def test_round_trips_the_config(self):
@@ -245,7 +245,7 @@ class WriteSyncConfigTest(unittest.TestCase):
 
         enroll.write_sync_config(self.path, cfg)
 
-        with open(self.path) as fh:
+        with open(self.path, encoding="utf-8") as fh:
             self.assertEqual(cfg, json.load(fh))
 
 
@@ -260,26 +260,26 @@ class BootstrapProjectsTest(unittest.TestCase):
     def test_creates_empty_registry_when_absent(self):
         enroll.bootstrap_projects(self.path)
 
-        with open(self.path) as fh:
+        with open(self.path, encoding="utf-8") as fh:
             self.assertEqual({}, json.load(fh))
 
     def test_does_not_clobber_existing_registry(self):
-        with open(self.path, "w") as fh:
+        with open(self.path, "w", encoding="utf-8") as fh:
             json.dump({"codebook": {"name": "CodeBook", "kanban_dir": "/x"}}, fh)
 
         enroll.bootstrap_projects(self.path)
 
-        with open(self.path) as fh:
+        with open(self.path, encoding="utf-8") as fh:
             self.assertIn("codebook", json.load(fh))
 
     def test_leaves_corrupt_registry_untouched(self):
-        with open(self.path, "w") as fh:
+        with open(self.path, "w", encoding="utf-8") as fh:
             fh.write("{broken")
 
         with self.assertRaises(SystemExit):
             enroll.bootstrap_projects(self.path)
 
-        with open(self.path) as fh:
+        with open(self.path, encoding="utf-8") as fh:
             self.assertEqual("{broken", fh.read())
 
 
@@ -297,7 +297,7 @@ class AddProjectTest(unittest.TestCase):
         self.tmp.cleanup()
 
     def read(self):
-        with open(self.path) as fh:
+        with open(self.path, encoding="utf-8") as fh:
             return json.load(fh)
 
     def test_registers_key_with_kanban_dir_under_repo(self):

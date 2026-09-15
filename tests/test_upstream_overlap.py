@@ -51,7 +51,7 @@ def git(repo, *args, check=True):
     done = subprocess.run(
         ["git", "-c", "user.email=t@example.test", "-c", "user.name=t",
          "-c", "commit.gpgsign=false", "-C", repo, *args],
-        capture_output=True, text=True)
+        capture_output=True, text=True, encoding="utf-8")
     if check and done.returncode != 0:
         raise AssertionError("git %s 실패: %s" % (" ".join(args), done.stderr))
     return done.stdout

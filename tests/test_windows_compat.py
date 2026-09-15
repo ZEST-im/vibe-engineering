@@ -745,9 +745,14 @@ class NoImplicitEncodingInSourceTest(unittest.TestCase):
             bad.append("%s:%d" % (relpath, node.lineno))
         return bad
 
+    # subprocess 쪽과 같은 이유로 `tests` 도 본다 — 규칙이 `scripts` 만 보는 동안
+    # 테스트가 36곳에서 로케일로 열고 있었다. 한글 픽스처를 쓰는 순간 같은 자리에서
+    # 터진다. 스캔은 소스를 보므로 아직 안 터진 것도 지금 잡힌다.
+    DIRS = ("scripts", os.path.join("scripts", "hooks"), "tests")
+
     def test_no_script_opens_text_without_an_encoding(self):
         bad = []
-        for d in ("scripts", os.path.join("scripts", "hooks")):
+        for d in self.DIRS:
             for name in sorted(os.listdir(os.path.join(ROOT, d))):
                 if name.endswith(".py"):
                     bad += self._offenders(os.path.join(d, name))
@@ -780,9 +785,14 @@ class NoImplicitSubprocessEncodingTest(unittest.TestCase):
                 bad.append("%s:%d" % (relpath, node.lineno))
         return bad
 
+    # `tests` 도 같이 본다. 스캔이 `scripts` 만 보는 동안 테스트 헬퍼 8곳이
+    # encoding 없이 남아 있었고, 그중 `test_gh_surface._git` 이 한글 커밋 제목을
+    # 읽다 이 머신에서 35건을 터뜨렸다 — 고치는 규칙은 같은데 보는 범위만 좁았다.
+    DIRS = ("scripts", os.path.join("scripts", "hooks"), "tests")
+
     def test_no_script_decodes_subprocess_output_with_the_locale(self):
         bad = []
-        for d in ("scripts", os.path.join("scripts", "hooks")):
+        for d in self.DIRS:
             for name in sorted(os.listdir(os.path.join(ROOT, d))):
                 if name.endswith(".py"):
                     bad += self._offenders(os.path.join(d, name))

@@ -70,7 +70,7 @@ class PushBase(unittest.TestCase):
 
     def write_transcript(self, session_id, entries):
         path = os.path.join(self.transcripts, session_id + ".jsonl")
-        with open(path, "a") as fh:
+        with open(path, "a", encoding="utf-8") as fh:
             for ts, tok in entries:
                 fh.write(json.dumps({
                     "timestamp": ts,
@@ -290,7 +290,7 @@ class LocalFileTest(PushBase):
 
         self.run_reconcile(Sender())
 
-        with open(os.path.join(self.kanban, "runs.json")) as fh:
+        with open(os.path.join(self.kanban, "runs.json"), encoding="utf-8") as fh:
             runs = json.load(fh)["runs"]
         self.assertEqual(1, len(runs))
         self.assertNotIn("date", runs[0])

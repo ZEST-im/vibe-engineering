@@ -52,7 +52,8 @@ def gh_json(args, timeout=20):
     드러나야 할 진짜 실패다.
     """
     try:
-        done = subprocess.run(["gh", *args], capture_output=True, text=True, timeout=timeout)
+        done = subprocess.run(["gh", *args], capture_output=True, text=True,
+                              encoding="utf-8", timeout=timeout)
     except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
         return None
     if done.returncode != 0:

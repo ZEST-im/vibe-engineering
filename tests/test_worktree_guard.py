@@ -42,7 +42,7 @@ def git(repo, *args, check=True):
     env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
                GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
     return subprocess.run(["git", "-C", repo, *args], capture_output=True,
-                          text=True, env=env, check=check)
+                          text=True, encoding="utf-8", env=env, check=check)
 
 
 def make_repo():
@@ -138,13 +138,13 @@ class ClaimsOnlyWhatItCanProveTest(unittest.TestCase):
     def test_index_lock_is_reported_as_certain(self):
         """이건 추정이 아니다 — 다른 git 프로세스가 지금 돌고 있다는 뜻이다."""
         repo = make_repo()
-        open(os.path.join(repo, ".git", "index.lock"), "w").close()
+        open(os.path.join(repo, ".git", "index.lock"), "w", encoding="utf-8").close()
         self.assertIn("🔴", wg.message(wg.survey(repo), session_start=True))
 
     def test_index_lock_alone_still_warns(self):
         """트리가 깨끗해도 잠금이 있으면 말해야 한다 — 지금 누가 쓰고 있다."""
         repo = make_repo()
-        open(os.path.join(repo, ".git", "index.lock"), "w").close()
+        open(os.path.join(repo, ".git", "index.lock"), "w", encoding="utf-8").close()
         self.assertIsNotNone(wg.message(wg.survey(repo), session_start=True))
 
     def test_ownership_is_claimed_only_at_session_start(self):

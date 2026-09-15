@@ -26,7 +26,7 @@ class CopySkillFilesTest(unittest.TestCase):
         for name in setup.SKILLS:
             d = os.path.join(self.repo_skills, name)
             os.makedirs(d)
-            with open(os.path.join(d, "SKILL.md"), "w") as fh:
+            with open(os.path.join(d, "SKILL.md"), "w", encoding="utf-8") as fh:
                 fh.write("# " + name + "\n")
 
         self.orig_root = setup.SKILLS_ROOT
@@ -56,7 +56,7 @@ class CopySkillFilesTest(unittest.TestCase):
         """스킬이 references/ 같은 부속 파일을 가질 수 있어야 한다."""
         ref_dir = os.path.join(self.repo_skills, "vibe-design", "references")
         os.makedirs(ref_dir)
-        with open(os.path.join(ref_dir, "design-systems.md"), "w") as fh:
+        with open(os.path.join(ref_dir, "design-systems.md"), "w", encoding="utf-8") as fh:
             fh.write("# catalog\n")
 
         setup.copy_skill_files()
@@ -72,7 +72,7 @@ class CopySkillFilesTest(unittest.TestCase):
         """
         ref_dir = os.path.join(self.repo_skills, "vibe-design", "references")
         os.makedirs(ref_dir)
-        with open(os.path.join(ref_dir, "old.md"), "w") as fh:
+        with open(os.path.join(ref_dir, "old.md"), "w", encoding="utf-8") as fh:
             fh.write("stale")
         setup.copy_skill_files()
         installed_old = os.path.join(self.skills_root, "vibe-design", "references", "old.md")
@@ -86,9 +86,9 @@ class CopySkillFilesTest(unittest.TestCase):
     def test_does_not_copy_pycache_or_backups(self):
         d = os.path.join(self.repo_skills, "vibe-design", "__pycache__")
         os.makedirs(d)
-        with open(os.path.join(d, "junk.pyc"), "w") as fh:
+        with open(os.path.join(d, "junk.pyc"), "w", encoding="utf-8") as fh:
             fh.write("x")
-        with open(os.path.join(self.repo_skills, "vibe-design", "SKILL.md.bak"), "w") as fh:
+        with open(os.path.join(self.repo_skills, "vibe-design", "SKILL.md.bak"), "w", encoding="utf-8") as fh:
             fh.write("old")
 
         setup.copy_skill_files()
@@ -113,7 +113,7 @@ class CopySkillFilesTest(unittest.TestCase):
 
     def test_uninstall_keeps_vibe_harness_dir(self):
         setup.copy_skill_files()
-        with open(os.path.join(self.skills_root, "vibe-harness", "projects.json"), "w") as fh:
+        with open(os.path.join(self.skills_root, "vibe-harness", "projects.json"), "w", encoding="utf-8") as fh:
             fh.write("{}")
 
         setup.remove_added_skills()

@@ -158,7 +158,7 @@ class LockBehaviourTest(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             with kanban_edit.kanban_lock(kdir):
                 raise RuntimeError("중단")
-        probe = open(os.path.join(kdir, kanban_edit.LOCK_NAME), "a+")
+        probe = open(os.path.join(kdir, kanban_edit.LOCK_NAME), "a+", encoding="utf-8")
         try:
             _f.flock(probe, _f.LOCK_EX | _f.LOCK_NB)   # 아직 잡혀 있으면 BlockingIOError
             _f.flock(probe, _f.LOCK_UN)
@@ -174,7 +174,7 @@ class LockBehaviourTest(unittest.TestCase):
         import fcntl as _f
         kdir = fresh_board()
         with kanban_edit.kanban_lock(kdir):
-            probe = open(os.path.join(kdir, kanban_edit.LOCK_NAME), "a+")
+            probe = open(os.path.join(kdir, kanban_edit.LOCK_NAME), "a+", encoding="utf-8")
             try:
                 with self.assertRaises(BlockingIOError):
                     _f.flock(probe, _f.LOCK_EX | _f.LOCK_NB)
