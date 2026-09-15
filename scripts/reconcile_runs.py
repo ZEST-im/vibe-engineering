@@ -164,28 +164,61 @@ def _transcript_dir(cwd):
 
 
 def _summarize(path):
+    """transcript 한 개의 토큰 합계. **깨진 줄 하나가 그 뒤를 버리면 안 된다.**
+
+    줄 단위 `try` 가 `json.loads` **만** 감싸고 있었다. 그래서 파싱은 되는데 dict 가
+    아닌 줄(`[1,2,3]`, `"hello"`)은 바로 다음 `m.get(...)` 에서 AttributeError 를 내고,
+    그 예외가 바깥 `except Exception: pass` 로 빠져 **파일 순회가 통째로 중단**됐다.
+    `usage` 값이 숫자가 아닐 때의 `int()` 도 같은 자리로 샌다.
+    `isinstance(msg, dict)` 검사는 `m.get` **다음**이라 막지 못한다.
+
+    결과는 조용한 under-counting 이다. 실측: 정상 3줄 600 토큰짜리 파일의 가운데에
+    `[1,2,3]` 한 줄을 넣으면 600 이 아니라 **200** 이 나온다. 에러도 로그도 없다.
+
+    세 가지를 바꾼다.
+
+    - 레코드 처리를 **줄 단위 `try` 안으로** 넣는다 — 깨진 줄은 그 줄만 건너뛴다
+    - 바깥은 `OSError` 로 좁힌다 — 파일을 못 열거나 읽다 끊긴 경우만이다.
+      나머지를 계속 삼키면 같은 종류의 침묵이 다시 생긴다
+    - 건너뛴 줄이 있으면 **말한다.** 덜 센 것을 조용히 덜 센 채로 두지 않는다
+    """
     tot = inp = out = cr = cw = 0
     model = ""
+    skipped = 0
     try:
         with open(path, encoding="utf-8", errors="ignore") as fh:
             for line in fh:
                 try:
                     m = json.loads(line)
+                except json.JSONDecodeError:
+                    # **이건 정상이다.** 지금 쓰이고 있는 transcript 는 마지막 줄이
+                    # 잘려 있다. 세지 않고 조용히 넘어간다 — 여기서 경고하면 활성
+                    # 세션마다 매 수집에 한 줄씩 나오고, 그 소음이 아래의 진짜
+                    # 경고를 덮는다.
+                    continue
+                try:
+                    msg = m.get("message") or m
+                    if not isinstance(msg, dict):
+                        continue
+                    u = msg.get("usage")
+                    if u:
+                        i = int(u.get("input_tokens") or 0)
+                        o = int(u.get("output_tokens") or 0)
+                        a = int(u.get("cache_read_input_tokens") or 0)
+                        b = int(u.get("cache_creation_input_tokens") or 0)
+                        inp += i; out += o; cr += a; cw += b; tot += i + o + a + b
+                        model = msg.get("model", model) or model
                 except Exception:
-                    continue
-                msg = m.get("message") or m
-                if not isinstance(msg, dict):
-                    continue
-                u = msg.get("usage")
-                if u:
-                    i = int(u.get("input_tokens") or 0)
-                    o = int(u.get("output_tokens") or 0)
-                    a = int(u.get("cache_read_input_tokens") or 0)
-                    b = int(u.get("cache_creation_input_tokens") or 0)
-                    inp += i; out += o; cr += a; cw += b; tot += i + o + a + b
-                    model = msg.get("model", model) or model
-    except Exception:
-        pass
+                    skipped += 1
+    except OSError as exc:
+        # 못 열거나 읽다 끊긴 파일. 여기까지 센 값을 그대로 돌려준다 —
+        # 한 파일 때문에 나머지 transcript 수집을 멈추지 않는다.
+        print(f"  WARN transcript 를 끝까지 읽지 못했다: {path} ({exc})",
+              file=sys.stderr)
+    if skipped:
+        # 파싱은 됐는데 모양이 예상과 다른 줄. 흔한 일이 아니라서 말할 값어치가 있다.
+        print(f"  WARN {os.path.basename(path)}: 모양이 예상과 다른 줄 {skipped}개 —"
+              " 그만큼 덜 셌다", file=sys.stderr)
     return tot, inp, out, cr, cw, model
 
 
@@ -679,11 +712,7 @@ def reconcile(project, kanban_dir, transcripts, dry_run=False, push=False,
     # `except SystemExit` 뿐이다. 다른 예외는 거기를 통과해 **나머지 프로젝트의
     # 수집까지 멈춘다.** 실제로 `open(runs.json, "w")` 의 FileNotFoundError 가
     # 그렇게 샜다.
-    if not os.path.isdir(kanban_dir):
-        raise SystemExit(
-            f"보드 디렉토리가 없다: {kanban_dir}\n"
-            "  등록만 있고 디렉토리가 없는 상태다. 지운 프로젝트면 등록을 지우고,\n"
-            "  쓰던 것이면 `enroll.py --add-project` 로 다시 등록한다.")
+    board_missing = not os.path.isdir(kanban_dir)
 
     # 프로젝트 cwd = kanban_dir 의 부모. Codex 세션을 이 프로젝트로 가리는 기준이다.
     runs = collect_runs(transcripts, cwd=os.path.dirname(os.path.abspath(kanban_dir)))
@@ -697,8 +726,30 @@ def reconcile(project, kanban_dir, transcripts, dry_run=False, push=False,
             byday[r["ts"][:10]] = byday.get(r["ts"][:10], 0) + r["tokens"]
         for d, v in sorted(byday.items())[-14:]:
             print(f"    {d}: {v:,}")
+        if board_missing:
+            # **미리보기는 둘 다 말해야 한다** — 무엇이 기록될지와, 실제로는 못
+            # 한다는 것. 여기서 그냥 실패시키면 토큰 미리보기를 잃고, 반대로
+            # 조용히 넘어가면 "기록될 예정" 만 보여주고 실제 실행이 죽는다.
+            # dry-run 은 아무것도 바꾸지 않으므로 실패로 세지 않는다 —
+            # 종료코드를 흔들지 않고 화면으로 말한다.
+            print(f"  WARN 보드 디렉토리가 없다 — 실제 실행은 여기서 멈춘다: {kanban_dir}")
         print("  [dry-run] 변경/전송 없음")
         return
+    if board_missing:
+        # 여기서부터는 쓴다. 쓸 자리가 없으면 **이 프로젝트만** 건너뛴다.
+        #
+        # 만들면 안 되는 이유: transcript 는 리포가 아니라 `~/.claude/projects/` 에
+        # 산다. 지운 프로젝트도 transcript 는 남으므로, 여기서 `makedirs` 하면 사람이
+        # 지운 보드를 수집이 되살린다 — #9 에서 서버가 하던 바로 그 짓이다.
+        #
+        # `SystemExit` 이어야 하는 이유: `_run_all` 의 프로젝트 단위 가드가
+        # `except SystemExit` 뿐이다. 다른 예외는 거기를 통과해 **나머지 프로젝트의
+        # 수집까지 멈춘다.** 실제로 `open(runs.json, "w")` 의 FileNotFoundError 가
+        # 그렇게 샜다.
+        raise SystemExit(
+            f"보드 디렉토리가 없다: {kanban_dir}\n"
+            "  등록만 있고 디렉토리가 없는 상태다. 지운 프로젝트면 등록을 지우고,\n"
+            "  쓰던 것이면 `enroll.py --add-project` 로 다시 등록한다.")
     if not runs:
         print("  재구성할 run 없음 — skip")
         return

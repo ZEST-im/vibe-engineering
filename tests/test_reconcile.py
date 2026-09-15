@@ -1,6 +1,9 @@
+import contextlib
 import importlib.util
+import io
 import json
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -319,6 +322,119 @@ class MissingBoardDirIsSkippedNotCrashedTest(unittest.TestCase):
         reconcile_runs.reconcile("fresh", self.kanban, self.transcripts)
 
         self.assertTrue(os.path.exists(os.path.join(self.kanban, "runs.json")))
+
+
+class OneOddLineDoesNotEatTheRestTest(unittest.TestCase):
+    """깨진 줄 하나가 그 뒤 전부를 버리던 것 — 조용한 under-counting.
+
+    줄 단위 `try` 가 `json.loads` **만** 감싸고 있었다. 파싱은 되는데 dict 가 아닌
+    줄(`[1,2,3]`, `"hello"`)은 바로 다음 `m.get(...)` 에서 AttributeError 를 내고,
+    그 예외가 바깥 `except Exception: pass` 로 빠져 **파일 순회가 통째로 중단**됐다.
+    `isinstance(msg, dict)` 검사는 `m.get` 다음이라 막지 못한다.
+
+    실측: 정상 3줄(600 토큰) 가운데에 `[1,2,3]` 을 넣으면 **200** 이 나왔다 —
+    첫 줄만 세고 멈춘 것이다. 에러도 로그도 없다.
+    """
+
+    GOOD = json.dumps({"message": {"model": "claude-fable-5",
+                                   "usage": {"input_tokens": 100,
+                                             "output_tokens": 100}}})
+
+    def _file(self, lines):
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, ignore_errors=True)
+        path = os.path.join(d, "s.jsonl")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("\n".join(lines) + "\n")
+        return path
+
+    def _summarize(self, lines):
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            total = reconcile_runs._summarize(self._file(lines))[0]
+        return total, err.getvalue()
+
+    def test_a_line_that_is_not_an_object_only_costs_that_line(self):
+        total, _err = self._summarize([self.GOOD, "[1,2,3]", self.GOOD])
+
+        self.assertEqual(400, total, "깨진 줄 뒤의 줄까지 버렸다")
+
+    def test_a_non_numeric_usage_only_costs_that_record(self):
+        odd = json.dumps({"message": {"usage": {"input_tokens": "많음"}}})
+        total, _err = self._summarize([self.GOOD, odd, self.GOOD])
+
+        self.assertEqual(400, total)
+
+    def test_it_says_how_much_it_could_not_count(self):
+        """덜 센 것을 조용히 덜 센 채로 두지 않는다."""
+        _total, err = self._summarize([self.GOOD, "[1,2,3]", self.GOOD])
+
+        self.assertIn("WARN", err)
+
+    def test_a_transcript_being_written_stays_quiet(self):
+        """**소음을 만들면 안 된다.**
+
+        지금 쓰이고 있는 transcript 는 마지막 줄이 잘려 있다 — 정상이다.
+        여기서 경고하면 활성 세션마다 매 수집에 한 줄씩 나오고, 그 소음이 위의
+        진짜 경고를 덮는다.
+        """
+        total, err = self._summarize([self.GOOD, self.GOOD, '{"messa'])
+
+        self.assertEqual(400, total)
+        self.assertEqual("", err, "쓰이는 중인 파일에 경고를 냈다")
+
+
+class DryRunShowsBothThePreviewAndTheProblemTest(unittest.TestCase):
+    """미리보기는 둘 다 말해야 한다 — 무엇이 기록될지와, 실제로는 못 한다는 것.
+
+    보드 디렉토리 가드를 함수 맨 앞에 두자 dry-run 이 토큰 미리보기를 잃고 바로
+    실패했다. 반대로 조용히 넘어가면 "기록될 예정" 만 보여주고 실제 실행이 죽는다 —
+    미리보기가 성공처럼 보이는 것이 이 저장소가 반복해 싸워 온 실패다.
+
+    dry-run 은 아무것도 바꾸지 않으므로 실패로 세지 않는다. 종료코드를 흔들지 않고
+    화면으로 말한다.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.repo = os.path.join(self.tmp.name, "myrepo")
+        self.kanban = os.path.join(self.repo, "vibe-harness")   # 만들지 않는다
+        self.transcripts = os.path.join(self.tmp.name, "t")
+        os.makedirs(self.repo)
+        os.makedirs(self.transcripts)
+        with open(os.path.join(self.transcripts, "s1.jsonl"), "w",
+                  encoding="utf-8") as fh:
+            fh.write(json.dumps({"sessionId": "s1", "cwd": self.repo,
+                                 "message": {"model": "claude-fable-5",
+                                             "usage": {"input_tokens": 500,
+                                                       "output_tokens": 500}}}) + "\n")
+
+    def _dry_run(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            reconcile_runs.reconcile("dead", self.kanban, self.transcripts,
+                                     dry_run=True)
+        return out.getvalue()
+
+    def test_dry_run_does_not_fail(self):
+        """아무것도 바꾸지 않는 실행을 실패로 세면 종료코드가 흔들린다."""
+        self._dry_run()   # SystemExit 이면 이 검사가 터진다
+
+    def test_dry_run_still_shows_the_token_preview(self):
+        self.assertIn("1,000", self._dry_run(), "미리보기를 잃었다")
+
+    def test_dry_run_says_the_real_run_would_stop(self):
+        self.assertIn("WARN", self._dry_run(),
+                      "실제 실행이 죽을 것을 미리보기가 숨겼다")
+
+    def test_the_real_run_still_refuses(self):
+        """막되 끄지 않는다 — 쓰는 쪽은 여전히 멈춰야 한다."""
+        with contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                reconcile_runs.reconcile("dead", self.kanban, self.transcripts)
+
+        self.assertFalse(os.path.isdir(self.kanban), "수집이 보드를 되살렸다")
 
 
 if __name__ == "__main__":
