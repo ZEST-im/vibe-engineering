@@ -28,6 +28,7 @@ import importlib.util
 import io
 import json
 import os
+import shutil
 import socket
 import sys
 import tempfile
@@ -288,6 +289,61 @@ class NoRequestEndsInSilenceTest(ServedOverHttpTest):
         """한 요청이 터졌다고 다음 요청까지 죽으면 그건 다른 종류의 고장이다."""
         self.call("POST", "/api/demo/tasks", b"{broken")
         self.assertEqual(200, self.call("GET", "/api/demo/context")[0])
+
+
+class DeletedProjectsStayDeletedTest(ServedOverHttpTest):
+    """지운 디렉토리가 서버 시작에서 되살아나면 안 된다.
+
+    등록이 살아 있으면 `init_kanban()` 이 디렉토리와 빈 보드를 다시 만들었다.
+    죽은 워크트리를 git 에서 제대로 정리해도 다음 실행에서 다시 생겼고, 조회는
+    **자기가 방금 만들어놓고 "있다" 고 답했다.** 사람은 자기가 잘못 지웠다고
+    생각하고 같은 정리를 반복한다.
+    """
+
+    def setUp(self):
+        # 부모 클래스는 `load_projects` 를 고정 람다로 갈아끼워 뒀다(등록 격리).
+        # 이 검사가 다루는 것이 **등록 목록 자체**라 진짜 로더를 되돌리고,
+        # 부모가 이미 임시로 바꿔 둔 `CONFIG_PATH` 에 파일로 준다.
+        patched = server.load_projects
+        server.load_projects = type(self)._projects
+        self.addCleanup(setattr, server, "load_projects", patched)
+
+        self.dead = os.path.join(self.tmp, "gone", "vibe-harness")
+        os.makedirs(self.dead, exist_ok=True)
+        server._write_kanban(self.dead, {"version": 1, "next_id": 1, "tasks": []})
+        server.save_projects({
+            "demo": {"name": "Demo", "kanban_dir": self.kanban},
+            "gone": {"name": "gone", "kanban_dir": self.dead},
+        })
+        shutil.rmtree(self.dead)
+
+    def test_startup_does_not_recreate_a_deleted_project(self):
+        server.init_registered_projects()
+
+        self.assertFalse(os.path.exists(self.dead),
+                         "지운 디렉토리가 서버 시작에서 되살아났다")
+
+    def test_a_dead_registration_is_reported_as_missing(self):
+        """죽은 등록이 목록에 드러나야 사람이 지울 수 있다."""
+        server.init_registered_projects()
+
+        _s, body, _h = self.call("GET", "/api/projects")
+        gone = next(r for r in json.loads(body) if r["key"] == "gone")
+        self.assertFalse(gone["exists"],
+                         "없는 프로젝트를 exists: true 로 보고했다")
+
+    def test_a_live_project_still_gets_its_board(self):
+        """막되 끄지 않는다 — 살아 있는 등록은 그대로 준비돼야 한다."""
+        live = os.path.join(self.tmp, "still-here", "vibe-harness")
+        os.makedirs(live, exist_ok=True)
+        projects = server.load_projects()
+        projects["stillHere"] = {"name": "still", "kanban_dir": live}
+        server.save_projects(projects)
+
+        prepared = server.init_registered_projects()
+
+        self.assertIn(live, prepared)
+        self.assertTrue(os.path.exists(os.path.join(live, "kanban.json")))
 
 
 if __name__ == "__main__":
