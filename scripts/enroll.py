@@ -666,9 +666,22 @@ def main(argv=None):
                   f"{a.interval}초 간격으로 직접 걸어야 한다")
     print(f"agent     : {result} → {script}")
 
-    if os.name == "nt":
-        print("권한      : Windows 는 모드 비트가 없어 icacls 로 sync.json 의 상속을"
-              " 끊고 현재 계정만 남겼다. SYSTEM·Administrators 는 남는다(POSIX 의 root 와 같다).")
+    if os.name == "nt" and not a.dry_run and os.path.exists(SYNC_CONFIG):
+        # **결과를 보고 적는다.** 예전에는 이 줄이 무조건 나왔다 — icacls 가 0 이
+        # 아닌 코드로 끝나도, USERNAME/USER 가 비어 icacls 를 **아예 실행하지
+        # 않아도** "남겼다" 고 말했다. 그 파일에는 개인 토큰이 들어 있다.
+        # 잠기지 않았는데 잠갔다고 말하면 사용자가 확인할 이유를 잃는다.
+        #
+        # 여기서 한 번 더 부르는 이유: sync.json 을 쓰는 경로가 둘이라
+        # (`--token` 갱신, `--add-project` 의 대시보드 등록) 어느 쪽이 돌았는지
+        # 세는 것보다 지금 상태를 다시 확인하는 쪽이 짧고 정확하다. 멱등이다.
+        if restrict_to_owner(SYNC_CONFIG):
+            print("권한      : Windows 는 모드 비트가 없어 icacls 로 sync.json 의 상속을"
+                  " 끊고 현재 계정만 남겼다. SYSTEM·Administrators 는 남는다(POSIX 의 root 와 같다).")
+        else:
+            print("권한      : WARN sync.json 의 ACL 을 좁히지 못했다 — 상속 권한 그대로다."
+                  " 개인 토큰이 든 파일이니 직접 확인한다:")
+            print('            icacls "%s"' % SYNC_CONFIG)
 
     print("\n확인:  python3 %s --all --dry-run" % script)
     return 0
