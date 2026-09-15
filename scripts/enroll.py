@@ -277,6 +277,12 @@ def add_project(registry_path, key, repo_path):
     # 갈린다. 읽는 쪽은 전부 os.path.abspath 를 거치므로 "/" 로 적어도 Windows 에서
     # 그대로 동작한다.
     data[key] = {"name": key, "kanban_dir": kdir.replace(os.sep, "/")}
+    # **등록이 디렉토리를 만든다.** 예전에는 서버 시작 루프가 뒤에서 만들어 줬는데,
+    # 그 루프가 지운 프로젝트까지 되살리고 있어서 없앴다(#9). 없앤 자리를 여기가
+    # 받는다 — 등록은 사람이 명시적으로 하는 일이라 만들 자격이 있다.
+    # 이걸 안 하면 `reconcile` 이 `runs.json` 을 쓸 때 FileNotFoundError 로 죽고,
+    # 그 예외는 프로젝트 단위 가드(`except SystemExit`)에 안 걸려 **수집 전체**가 멈춘다.
+    os.makedirs(kdir, exist_ok=True)
     parent = os.path.dirname(registry_path)
     if parent:
         os.makedirs(parent, exist_ok=True)

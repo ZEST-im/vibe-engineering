@@ -669,6 +669,22 @@ def collect_runs(transcripts, cwd=None, codex_sessions=None):
 
 def reconcile(project, kanban_dir, transcripts, dry_run=False, push=False,
               sender=None, force_full=False):
+    # **없으면 만들지 않고 이 프로젝트만 건너뛴다.**
+    #
+    # 만들면 안 되는 이유: transcript 는 리포가 아니라 `~/.claude/projects/` 에 산다.
+    # 지운 프로젝트도 transcript 는 남아 있으므로, 여기서 `makedirs` 하면 사람이
+    # 지운 보드를 수집이 되살린다 — #9 에서 서버가 하던 바로 그 짓이다.
+    #
+    # `SystemExit` 이어야 하는 이유: `_run_all` 의 프로젝트 단위 가드가
+    # `except SystemExit` 뿐이다. 다른 예외는 거기를 통과해 **나머지 프로젝트의
+    # 수집까지 멈춘다.** 실제로 `open(runs.json, "w")` 의 FileNotFoundError 가
+    # 그렇게 샜다.
+    if not os.path.isdir(kanban_dir):
+        raise SystemExit(
+            f"보드 디렉토리가 없다: {kanban_dir}\n"
+            "  등록만 있고 디렉토리가 없는 상태다. 지운 프로젝트면 등록을 지우고,\n"
+            "  쓰던 것이면 `enroll.py --add-project` 로 다시 등록한다.")
+
     # 프로젝트 cwd = kanban_dir 의 부모. Codex 세션을 이 프로젝트로 가리는 기준이다.
     runs = collect_runs(transcripts, cwd=os.path.dirname(os.path.abspath(kanban_dir)))
     total = sum(r["tokens"] for r in runs)

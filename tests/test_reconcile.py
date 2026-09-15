@@ -264,5 +264,62 @@ class ReconcileAllTest(unittest.TestCase):
             self.assertEqual(1, len(json.load(fh)["runs"]))
 
 
+class MissingBoardDirIsSkippedNotCrashedTest(unittest.TestCase):
+    """보드 디렉토리가 없을 때 — 만들지도, 전체를 멈추지도 않는다.
+
+    서버 시작 루프가 등록된 경로를 뒤에서 만들어 주고 있었다. 그 루프는 사람이
+    지운 프로젝트까지 되살려서 없앴는데(#9), 없앤 뒤 `reconcile` 이
+    `open(runs.json, "w")` 에서 `FileNotFoundError` 로 죽는 자리가 열렸다.
+
+    그리고 그 예외는 `_run_all` 의 프로젝트 단위 가드(`except SystemExit`)를
+    **통과한다** — 프로젝트 하나 때문에 나머지 전부의 수집이 멈춘다. 이 저장소가
+    반복해 싸워 온 "조용한 수집 정지" 와 같은 모양이다.
+
+    여기서 `makedirs` 로 만들면 안 된다: transcript 는 리포가 아니라
+    `~/.claude/projects/` 에 살아서, 지운 프로젝트도 transcript 는 남는다.
+    만들면 수집이 보드를 되살린다 — #9 에서 서버가 하던 바로 그 짓이다.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.repo = os.path.join(self.tmp.name, "myrepo")
+        self.kanban = os.path.join(self.repo, "vibe-harness")   # 만들지 않는다
+        self.transcripts = os.path.join(self.tmp.name, "transcripts")
+        os.makedirs(self.repo)
+        os.makedirs(self.transcripts)
+        with open(os.path.join(self.transcripts, "s1.jsonl"), "w",
+                  encoding="utf-8") as fh:
+            fh.write(json.dumps({"sessionId": "s1", "cwd": self.repo,
+                                 "message": {"model": "claude-fable-5",
+                                             "usage": {"input_tokens": 5,
+                                                       "output_tokens": 5}}}) + "\n")
+
+    def test_it_raises_system_exit_not_a_bare_oserror(self):
+        """**등급이 중요하다.** `_run_all` 은 `SystemExit` 만 프로젝트 단위로 잡는다.
+
+        다른 예외면 거기를 통과해 나머지 프로젝트의 수집까지 멈춘다.
+        """
+        with self.assertRaises(SystemExit) as caught:
+            reconcile_runs.reconcile("fresh", self.kanban, self.transcripts)
+
+        self.assertIn(self.kanban, str(caught.exception))
+
+    def test_it_does_not_resurrect_the_board(self):
+        with self.assertRaises(SystemExit):
+            reconcile_runs.reconcile("fresh", self.kanban, self.transcripts)
+
+        self.assertFalse(os.path.isdir(self.kanban),
+                         "수집이 지운 보드를 되살렸다")
+
+    def test_an_existing_board_still_collects(self):
+        """막되 끄지 않는다."""
+        os.makedirs(self.kanban)
+
+        reconcile_runs.reconcile("fresh", self.kanban, self.transcripts)
+
+        self.assertTrue(os.path.exists(os.path.join(self.kanban, "runs.json")))
+
+
 if __name__ == "__main__":
     unittest.main()

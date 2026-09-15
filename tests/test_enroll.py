@@ -495,6 +495,38 @@ class AddProjectToDashboardTest(unittest.TestCase):
         self.assertNotIn("Users:", acl)
 
 
+class RegistrationCreatesTheBoardDirTest(unittest.TestCase):
+    """등록이 보드 디렉토리를 만든다.
+
+    예전에는 등록이 `projects.json` 에 경로를 적기만 하고, 서버 시작 루프가 뒤에서
+    만들어 줬다. 그 루프는 사람이 지운 프로젝트까지 되살려서 없앴다(#9).
+    없앤 자리를 등록이 받는다 — 등록은 사람이 명시적으로 하는 일이라 만들 자격이 있다.
+
+    안 만들면 `reconcile` 이 `runs.json` 을 쓸 때 죽고, 그 예외는 프로젝트 단위
+    가드를 통과해 **수집 전체**를 멈춘다.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.repo = os.path.join(self.tmp.name, "myrepo")
+        os.makedirs(self.repo)
+        self.registry = os.path.join(self.tmp.name, "projects.json")
+
+    def test_the_board_dir_exists_after_registering(self):
+        enroll.add_project(self.registry, "fresh", self.repo)
+
+        self.assertTrue(os.path.isdir(os.path.join(self.repo, "vibe-harness")),
+                        "등록했는데 보드 디렉토리가 없다 — 수집이 여기서 죽는다")
+
+    def test_registering_twice_is_still_safe(self):
+        """재실행해도 안전해야 한다 — 이 모듈의 존재 이유다."""
+        enroll.add_project(self.registry, "fresh", self.repo)
+        enroll.add_project(self.registry, "fresh", self.repo)
+
+        self.assertTrue(os.path.isdir(os.path.join(self.repo, "vibe-harness")))
+
+
 class RestrictToOwnerReportsWhatHappenedTest(unittest.TestCase):
     """"잠갔다" 고 말하려면 잠근 것을 확인해야 한다.
 
