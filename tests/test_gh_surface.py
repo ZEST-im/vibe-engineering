@@ -238,7 +238,7 @@ def _git(repo, *args):
     env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
                GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
     return subprocess.run(["git", "-C", repo, *args], capture_output=True,
-                          text=True, env=env, check=True)
+                          text=True, encoding="utf-8", env=env, check=True)
 
 
 def _repo(*subjects):

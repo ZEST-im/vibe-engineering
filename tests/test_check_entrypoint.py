@@ -180,7 +180,7 @@ class SaysWhatItCouldNotCheckTest(unittest.TestCase):
         notes = check.unverified_here()
         dirty = subprocess.run(
             ["git", "-C", ROOT, "status", "--porcelain"],
-            capture_output=True, text=True).stdout.strip()
+            capture_output=True, text=True, encoding="utf-8").stdout.strip()
         if dirty:
             self.assertTrue(any("커밋되지 않은" in n for n in notes),
                             "미커밋 변경이 있는데 유보에 없다")
@@ -248,7 +248,7 @@ class CloneStateTest(unittest.TestCase):
         env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
                    GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
         return sp.run(["git", "-C", repo, *args], capture_output=True, text=True,
-                      env=env, check=kw.get("check", True))
+                      encoding="utf-8", env=env, check=kw.get("check", True))
 
     def make_pair(self):
         """origin 과 그것을 추적하는 클론.

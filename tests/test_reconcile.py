@@ -142,12 +142,12 @@ class ReconcileWriteTest(unittest.TestCase):
 
     def write_transcript(self, session_id, usage):
         path = os.path.join(self.transcripts, session_id + ".jsonl")
-        with open(path, "w") as fh:
+        with open(path, "w", encoding="utf-8") as fh:
             fh.write(json.dumps({"message": {"model": "claude-fable-5", "usage": usage}}) + "\n")
         return path
 
     def read_runs(self):
-        with open(os.path.join(self.kanban, "runs.json")) as fh:
+        with open(os.path.join(self.kanban, "runs.json"), encoding="utf-8") as fh:
             return json.load(fh)
 
     def test_write_leaves_file_byte_identical_when_nothing_new(self):
@@ -157,9 +157,9 @@ class ReconcileWriteTest(unittest.TestCase):
                                                input_tokens=10 ** 9, output_tokens=10 ** 9,
                                                cache_read_tokens=10 ** 9, cache_write_tokens=10 ** 9,
                                                cost_usd=10 ** 9)]}
-        with open(path, "w") as fh:
+        with open(path, "w", encoding="utf-8") as fh:
             json.dump(doc, fh, indent=2, ensure_ascii=False)
-        with open(path) as fh:
+        with open(path, encoding="utf-8") as fh:
             before = fh.read()
         self.write_transcript("7d886a6b", {
             "input_tokens": 1, "output_tokens": 1,
@@ -168,11 +168,11 @@ class ReconcileWriteTest(unittest.TestCase):
 
         reconcile_runs.reconcile("proj", self.kanban, self.transcripts)
 
-        with open(path) as fh:
+        with open(path, encoding="utf-8") as fh:
             self.assertEqual(before, fh.read())
 
     def test_write_keeps_run_missing_from_transcripts(self):
-        with open(os.path.join(self.kanban, "runs.json"), "w") as fh:
+        with open(os.path.join(self.kanban, "runs.json"), "w", encoding="utf-8") as fh:
             json.dump({"version": 1, "runs": [hook_run()]}, fh)
         self.write_transcript("7d886a6b", {
             "input_tokens": 100, "output_tokens": 200,
@@ -193,7 +193,7 @@ class CorruptRunsFileTest(unittest.TestCase):
         self.transcripts = os.path.join(self.tmp.name, "transcripts")
         os.makedirs(self.kanban)
         os.makedirs(self.transcripts)
-        with open(os.path.join(self.transcripts, "7d886a6b.jsonl"), "w") as fh:
+        with open(os.path.join(self.transcripts, "7d886a6b.jsonl"), "w", encoding="utf-8") as fh:
             fh.write(json.dumps({"message": {"model": "claude-fable-5", "usage": {
                 "input_tokens": 1, "output_tokens": 1,
                 "cache_read_input_tokens": 1, "cache_creation_input_tokens": 1}}}) + "\n")
@@ -204,19 +204,19 @@ class CorruptRunsFileTest(unittest.TestCase):
     def test_does_not_overwrite_runs_file_it_could_not_parse(self):
         path = os.path.join(self.kanban, "runs.json")
         corrupt = '{"version": 1, "runs": [{"tokens": 999'   # 잘린 JSON
-        with open(path, "w") as fh:
+        with open(path, "w", encoding="utf-8") as fh:
             fh.write(corrupt)
 
         with self.assertRaises(SystemExit):
             reconcile_runs.reconcile("proj", self.kanban, self.transcripts)
 
-        with open(path) as fh:
+        with open(path, encoding="utf-8") as fh:
             self.assertEqual(corrupt, fh.read())
 
     def test_writes_normally_when_runs_file_is_absent(self):
         reconcile_runs.reconcile("proj", self.kanban, self.transcripts)
 
-        with open(os.path.join(self.kanban, "runs.json")) as fh:
+        with open(os.path.join(self.kanban, "runs.json"), encoding="utf-8") as fh:
             self.assertEqual(1, len(json.load(fh)["runs"]))
 
 
@@ -227,7 +227,7 @@ class ReconcileAllTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.transcripts = os.path.join(self.tmp.name, "transcripts")
         os.makedirs(self.transcripts)
-        with open(os.path.join(self.transcripts, "7d886a6b.jsonl"), "w") as fh:
+        with open(os.path.join(self.transcripts, "7d886a6b.jsonl"), "w", encoding="utf-8") as fh:
             fh.write(json.dumps({"message": {"model": "claude-fable-5", "usage": {
                 "input_tokens": 1, "output_tokens": 1,
                 "cache_read_input_tokens": 1, "cache_creation_input_tokens": 1}}}) + "\n")
@@ -236,7 +236,7 @@ class ReconcileAllTest(unittest.TestCase):
         self.healthy = os.path.join(self.tmp.name, "healthy", "vibe-harness")
         os.makedirs(self.broken)
         os.makedirs(self.healthy)
-        with open(os.path.join(self.broken, "runs.json"), "w") as fh:
+        with open(os.path.join(self.broken, "runs.json"), "w", encoding="utf-8") as fh:
             fh.write('{"runs": [')
 
         self.orig_projects = reconcile_runs._projects
@@ -260,7 +260,7 @@ class ReconcileAllTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             reconcile_runs.main()
 
-        with open(os.path.join(self.healthy, "runs.json")) as fh:
+        with open(os.path.join(self.healthy, "runs.json"), encoding="utf-8") as fh:
             self.assertEqual(1, len(json.load(fh)["runs"]))
 
 

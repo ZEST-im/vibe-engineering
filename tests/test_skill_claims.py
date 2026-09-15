@@ -65,7 +65,7 @@ def public_docs():
     전부가 항상 통과한다.
     """
     out = subprocess.run(["git", "ls-files", "*.md"], cwd=ROOT,
-                         capture_output=True, text=True, check=True)
+                         capture_output=True, text=True, encoding="utf-8", check=True)
     return [p for p in out.stdout.splitlines() if p.strip()]
 
 

@@ -42,7 +42,7 @@ class BuildDailyRunsTest(unittest.TestCase):
 
     def write(self, session_id, messages):
         path = os.path.join(self.transcripts, session_id + ".jsonl")
-        with open(path, "w") as fh:
+        with open(path, "w", encoding="utf-8") as fh:
             for m in messages:
                 fh.write(json.dumps(m) + "\n")
         return path
@@ -154,7 +154,7 @@ class BuildDailyRunsTest(unittest.TestCase):
     def test_subagent_transcripts_in_subdirectories_are_included(self):
         sub = os.path.join(self.transcripts, "sess", "subagents")
         os.makedirs(sub)
-        with open(os.path.join(sub, "agent-x.jsonl"), "w") as fh:
+        with open(os.path.join(sub, "agent-x.jsonl"), "w", encoding="utf-8") as fh:
             fh.write(json.dumps(self.msg("2026-08-19T10:00:00+09:00")) + "\n")
 
         rows = reconcile_runs.build_daily_runs(self.transcripts)
