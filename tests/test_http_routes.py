@@ -290,8 +290,6 @@ class NoRequestEndsInSilenceTest(ServedOverHttpTest):
         self.assertEqual(200, self.call("GET", "/api/demo/context")[0])
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 class BrowserCannotReachTheServerTest(ServedOverHttpTest):
@@ -420,3 +418,6 @@ class RegisteringAProjectIsNotAFileWritePrimitiveTest(ServedOverHttpTest):
                                      {"key": "ok-project",
                                       "kanban_dir": os.path.join(good, "vibe-harness")})
         self.assertEqual(201, status, f"정상 등록이 막혔다: {body}")
+
+if __name__ == "__main__":
+    unittest.main()

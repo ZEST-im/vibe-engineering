@@ -224,8 +224,6 @@ class ShippedWithTheToolTest(unittest.TestCase):
             self.assertIn(".check-venv", fh.read())
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 class CloneStateTest(unittest.TestCase):
@@ -470,3 +468,40 @@ class PrivateFreeRunTest(unittest.TestCase):
         fast = body[body.index("if a.fast:"):body.index("else:", body.index("if a.fast:"))]
         self.assertIn("private", fast,
                       "--fast 가 private-free 단계를 건너뛴 사실을 말하지 않는다")
+
+class NoTestsHideBehindMainTest(unittest.TestCase):
+    """`unittest.main()` 블록 **뒤에** 테스트 클래스가 오면 안 된다.
+
+    그 블록은 파일을 직접 실행했을 때 거기서 스위트를 돌리고 끝낸다. 뒤에 붙은
+    클래스는 정의조차 되지 않은 채 **"OK" 가 출력된다.** `python -m unittest
+    discover` 는 import 만 하고 블록을 실행하지 않으므로 CI 에서는 다 도는데,
+    사람이 파일 하나만 빠르게 돌려볼 때는 초록을 보고 통과했다고 믿게 된다.
+
+    실측: 9개 파일에서 **85개**가 그렇게 숨어 있었다. 하필 가장 많이 숨은 곳이
+    `test_windows_compat.py`(38개)로, Windows 배선 스캔 전부가 거기 있었다.
+
+    이 저장소의 기준으로 "못 본 것과 깨끗한 것은 다르다".
+    """
+
+    def test_no_test_file_has_code_after_its_main_block(self):
+        tests_dir = os.path.join(ROOT, "tests")
+        bad = []
+        for name in sorted(os.listdir(tests_dir)):
+            if not name.endswith(".py"):
+                continue
+            with open(os.path.join(tests_dir, name), encoding="utf-8") as fh:
+                tree = ast.parse(fh.read(), name)
+            mains = [b for b in tree.body if isinstance(b, ast.If)
+                     and "unittest.main()" in ast.unparse(b)]
+            for m in mains:
+                after = [b for b in tree.body
+                         if b not in mains and b.lineno > m.end_lineno]
+                if after:
+                    bad.append("%s:%d (뒤에 %d개)" % (name, m.lineno, len(after)))
+
+        self.assertEqual([], bad,
+                         "unittest.main() 뒤의 정의는 직접 실행에서 조용히 사라진다")
+
+
+if __name__ == "__main__":
+    unittest.main()

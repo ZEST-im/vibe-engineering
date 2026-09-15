@@ -123,8 +123,6 @@ class CopySkillFilesTest(unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(self.skills_root, "vibe-design")))
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 class UpgradeFileListTest(unittest.TestCase):
@@ -145,3 +143,6 @@ class UpgradeFileListTest(unittest.TestCase):
 
         missing = {n for n in installed if n != "SKILL.md" and f'"{n}"' not in setup_src}
         self.assertEqual(set(), missing, f"setup.py upgrade 가 빠뜨린 파일: {missing}")
+
+if __name__ == "__main__":
+    unittest.main()
