@@ -558,6 +558,14 @@ def upgrade():
 
     restart_server()
 
+    # **`restart_server()` 안이 아니라 여기가 자리다.** 추출할 때 이 두 줄이 같이
+    # 딸려 들어가 재시작 갈래 하나에서만 출력됐다 — 나머지 갈래는 전부 그 앞에서
+    # return 한다. 기본 macOS 설치(launchd plist 있음)는 "RESTARTED server via
+    # launchd." 로 끝나고 완료 메시지 없이 조용히 멈춘 것처럼 보였다.
+    # 업그레이드가 끝났다는 사실은 재시작이 어느 갈래로 갔는지와 무관하다.
+    print()
+    print("Upgrade complete!")
+
 
 SERVER_PORT = 4242
 
@@ -647,9 +655,6 @@ def restart_server():
         return
     print("  Restart the server manually: %s %s/server.py serve &"
           % (sys.executable, DEST))
-
-    print()
-    print("Upgrade complete!")
 
 
 def main():
