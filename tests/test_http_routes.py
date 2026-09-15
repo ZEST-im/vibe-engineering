@@ -397,8 +397,13 @@ class RegisteringAProjectIsNotAFileWritePrimitiveTest(ServedOverHttpTest):
         real = os.path.join(self.tmp, "realdir")
         link = os.path.join(self.tmp, "linkdir")
         os.makedirs(real, exist_ok=True)
-        if not os.path.islink(link):
-            os.symlink(real, link)
+        try:
+            if not os.path.islink(link):
+                os.symlink(real, link)
+        except OSError as exc:
+            # Windows 는 개발자 모드나 관리자 권한이 있어야 링크를 만든다.
+            # 없으면 이 테스트가 볼 것이 없다 — 실패가 아니라 건너뛴다.
+            self.skipTest(f"심볼릭 링크를 만들 수 없다: {exc}")
         submitted = os.path.join(link, "vibe-harness")
         status, body, _h = self.call("POST", "/api/projects",
                                      {"key": "viaLink", "kanban_dir": submitted})
