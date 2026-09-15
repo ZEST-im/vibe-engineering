@@ -383,5 +383,59 @@ class OneOddLineDoesNotEatTheRestTest(unittest.TestCase):
         self.assertEqual(400, total)
         self.assertEqual("", err, "쓰이는 중인 파일에 경고를 냈다")
 
+
+class DryRunShowsBothThePreviewAndTheProblemTest(unittest.TestCase):
+    """미리보기는 둘 다 말해야 한다 — 무엇이 기록될지와, 실제로는 못 한다는 것.
+
+    보드 디렉토리 가드를 함수 맨 앞에 두자 dry-run 이 토큰 미리보기를 잃고 바로
+    실패했다. 반대로 조용히 넘어가면 "기록될 예정" 만 보여주고 실제 실행이 죽는다 —
+    미리보기가 성공처럼 보이는 것이 이 저장소가 반복해 싸워 온 실패다.
+
+    dry-run 은 아무것도 바꾸지 않으므로 실패로 세지 않는다. 종료코드를 흔들지 않고
+    화면으로 말한다.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.repo = os.path.join(self.tmp.name, "myrepo")
+        self.kanban = os.path.join(self.repo, "vibe-harness")   # 만들지 않는다
+        self.transcripts = os.path.join(self.tmp.name, "t")
+        os.makedirs(self.repo)
+        os.makedirs(self.transcripts)
+        with open(os.path.join(self.transcripts, "s1.jsonl"), "w",
+                  encoding="utf-8") as fh:
+            fh.write(json.dumps({"sessionId": "s1", "cwd": self.repo,
+                                 "message": {"model": "claude-fable-5",
+                                             "usage": {"input_tokens": 500,
+                                                       "output_tokens": 500}}}) + "\n")
+
+    def _dry_run(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            reconcile_runs.reconcile("dead", self.kanban, self.transcripts,
+                                     dry_run=True)
+        return out.getvalue()
+
+    def test_dry_run_does_not_fail(self):
+        """아무것도 바꾸지 않는 실행을 실패로 세면 종료코드가 흔들린다."""
+        self._dry_run()   # SystemExit 이면 이 검사가 터진다
+
+    def test_dry_run_still_shows_the_token_preview(self):
+        self.assertIn("1,000", self._dry_run(), "미리보기를 잃었다")
+
+    def test_dry_run_says_the_real_run_would_stop(self):
+        self.assertIn("WARN", self._dry_run(),
+                      "실제 실행이 죽을 것을 미리보기가 숨겼다")
+
+    def test_the_real_run_still_refuses(self):
+        """막되 끄지 않는다 — 쓰는 쪽은 여전히 멈춰야 한다."""
+        with contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                reconcile_runs.reconcile("dead", self.kanban, self.transcripts)
+
+        self.assertFalse(os.path.isdir(self.kanban), "수집이 보드를 되살렸다")
+
+
 if __name__ == "__main__":
     unittest.main()

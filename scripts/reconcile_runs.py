@@ -712,11 +712,7 @@ def reconcile(project, kanban_dir, transcripts, dry_run=False, push=False,
     # `except SystemExit` 뿐이다. 다른 예외는 거기를 통과해 **나머지 프로젝트의
     # 수집까지 멈춘다.** 실제로 `open(runs.json, "w")` 의 FileNotFoundError 가
     # 그렇게 샜다.
-    if not os.path.isdir(kanban_dir):
-        raise SystemExit(
-            f"보드 디렉토리가 없다: {kanban_dir}\n"
-            "  등록만 있고 디렉토리가 없는 상태다. 지운 프로젝트면 등록을 지우고,\n"
-            "  쓰던 것이면 `enroll.py --add-project` 로 다시 등록한다.")
+    board_missing = not os.path.isdir(kanban_dir)
 
     # 프로젝트 cwd = kanban_dir 의 부모. Codex 세션을 이 프로젝트로 가리는 기준이다.
     runs = collect_runs(transcripts, cwd=os.path.dirname(os.path.abspath(kanban_dir)))
@@ -730,8 +726,30 @@ def reconcile(project, kanban_dir, transcripts, dry_run=False, push=False,
             byday[r["ts"][:10]] = byday.get(r["ts"][:10], 0) + r["tokens"]
         for d, v in sorted(byday.items())[-14:]:
             print(f"    {d}: {v:,}")
+        if board_missing:
+            # **미리보기는 둘 다 말해야 한다** — 무엇이 기록될지와, 실제로는 못
+            # 한다는 것. 여기서 그냥 실패시키면 토큰 미리보기를 잃고, 반대로
+            # 조용히 넘어가면 "기록될 예정" 만 보여주고 실제 실행이 죽는다.
+            # dry-run 은 아무것도 바꾸지 않으므로 실패로 세지 않는다 —
+            # 종료코드를 흔들지 않고 화면으로 말한다.
+            print(f"  WARN 보드 디렉토리가 없다 — 실제 실행은 여기서 멈춘다: {kanban_dir}")
         print("  [dry-run] 변경/전송 없음")
         return
+    if board_missing:
+        # 여기서부터는 쓴다. 쓸 자리가 없으면 **이 프로젝트만** 건너뛴다.
+        #
+        # 만들면 안 되는 이유: transcript 는 리포가 아니라 `~/.claude/projects/` 에
+        # 산다. 지운 프로젝트도 transcript 는 남으므로, 여기서 `makedirs` 하면 사람이
+        # 지운 보드를 수집이 되살린다 — #9 에서 서버가 하던 바로 그 짓이다.
+        #
+        # `SystemExit` 이어야 하는 이유: `_run_all` 의 프로젝트 단위 가드가
+        # `except SystemExit` 뿐이다. 다른 예외는 거기를 통과해 **나머지 프로젝트의
+        # 수집까지 멈춘다.** 실제로 `open(runs.json, "w")` 의 FileNotFoundError 가
+        # 그렇게 샜다.
+        raise SystemExit(
+            f"보드 디렉토리가 없다: {kanban_dir}\n"
+            "  등록만 있고 디렉토리가 없는 상태다. 지운 프로젝트면 등록을 지우고,\n"
+            "  쓰던 것이면 `enroll.py --add-project` 로 다시 등록한다.")
     if not runs:
         print("  재구성할 run 없음 — skip")
         return
