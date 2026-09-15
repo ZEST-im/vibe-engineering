@@ -495,6 +495,73 @@ class AddProjectToDashboardTest(unittest.TestCase):
         self.assertNotIn("Users:", acl)
 
 
+class AddProjectRespectsDryRunTest(unittest.TestCase):
+    """`--dry-run` 인데 쓰고 밀던 것.
+
+    `main()` 의 다른 단계는 전부 `a.dry_run` 을 보는데 프로젝트 등록 절만 빠져
+    있었다. 그래서 미리보기라고 부른 실행이 `projects.json` 과 `sync.json` 을 쓰고,
+    `flush_dashboard_snapshot()` 으로 **중앙 서버까지 밀었다.** 예상 못 한 쓰기보다
+    예상 못 한 전송이 나쁘다 — 되돌릴 자리가 이 머신이 아니다.
+
+    `dry_run` 은 `add_project` 안에서 받는다. 호출부에서 "쓰기만 건너뛰자" 로 하면
+    경로 규칙과 검증이 두 곳으로 갈라지고, 그러면 **실제 실행에서만 나는 실패를
+    미리보기가 숨긴다** — 미리보기의 존재 이유와 정반대다.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.repo = os.path.join(self.tmp.name, "myrepo")
+        os.makedirs(self.repo)
+        self.registry = os.path.join(self.tmp.name, "projects.json")
+
+    def test_dry_run_writes_nothing(self):
+        enroll.add_project(self.registry, "k", self.repo, dry_run=True)
+
+        self.assertFalse(os.path.exists(self.registry), "projects.json 을 썼다")
+        self.assertFalse(os.path.isdir(os.path.join(self.repo, "vibe-harness")),
+                         "보드 디렉토리를 만들었다")
+
+    def test_dry_run_still_validates(self):
+        """실제 실행에서만 나는 실패를 미리보기가 숨기면 안 된다."""
+        with self.assertRaises(ValueError):
+            enroll.add_project(self.registry, "k",
+                               os.path.join(self.tmp.name, "no-such-repo"),
+                               dry_run=True)
+
+    def test_dry_run_shows_what_the_real_run_would_write(self):
+        """두 값이 다르면 미리보기가 거짓말을 하는 것이다."""
+        preview = enroll.add_project(self.registry, "k", self.repo, dry_run=True)
+        real = enroll.add_project(self.registry, "k", self.repo)
+
+        self.assertEqual(preview, real)
+
+    def test_the_loop_passes_dry_run_through(self):
+        """배선을 본다 — `main()` 을 돌리면 이 머신의 설치본과 네트워크를 건드린다.
+
+        그리고 대시보드 등록·스냅샷 push 는 **분기 뒤**에 있어야 한다. 이쪽이
+        중앙으로 나가는 쪽이라 실수의 대가가 이 머신 밖이다.
+        """
+        with open(os.path.join(SCRIPTS, "enroll.py"), encoding="utf-8") as fh:
+            tree = ast.parse(fh.read())
+        main = next(n for n in ast.walk(tree)
+                    if isinstance(n, ast.FunctionDef) and n.name == "main")
+        loop = next(n for n in ast.walk(main)
+                    if isinstance(n, ast.For) and "add_project(" in ast.unparse(n))
+        src = ast.unparse(loop)
+
+        self.assertIn("dry_run=a.dry_run", src,
+                      "add_project 에 dry_run 을 넘기지 않는다")
+
+        guard = next(n for n in loop.body
+                     if isinstance(n, ast.If) and "dry_run" in ast.unparse(n.test))
+        self.assertTrue(any(isinstance(n, ast.Continue) for n in ast.walk(guard)),
+                        "dry_run 분기가 이어서 진행한다 — 뒤의 쓰기가 그대로 돈다")
+        after = [ast.unparse(n) for n in loop.body if n.lineno > guard.end_lineno]
+        self.assertTrue([x for x in after if "add_project_to_dashboard(" in x],
+                        "대시보드 등록이 분기 뒤에 없다 — 배선이 바뀌었다")
+
+
 class RegistrationCreatesTheBoardDirTest(unittest.TestCase):
     """등록이 보드 디렉토리를 만든다.
 
