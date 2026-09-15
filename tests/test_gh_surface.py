@@ -2439,3 +2439,60 @@ class PromoteRefusedRunDoesNotReadAsSuccessTest(unittest.TestCase):
         self.assertEqual(0, code)
         self.assertIn("생성 + 칸반 기록 완료", out)
         self.assertIn("생성 1, 갱신 0, 실패 0", out)
+
+
+class PhaseNumberCollisionTest(unittest.TestCase):
+    """같은 Phase 번호를 두 머신이 각자 열어도 아무것도 막지 않았다.
+
+    2026-09-12 에 실제로 났다. 한쪽은 "공개 표면", 다른 쪽은 "동시성" 으로
+    `PHASE_PMF14` 를 각각 열었고, 같은 번호의 헤딩이 둘 생겼는데 **두 헤딩이 파일의
+    다른 구역에 있어 자동 병합이 충돌로 보지 않았다.** 수습에 하루가 들었다.
+
+    번호 발급 자체를 공유하려면 `PHASES.md` 를 공개해야 하는데 그 안에 내부 기록이
+    있어 그럴 수 없다. 그래서 **발급을 막는 대신 충돌을 소리나게 만든다** — 도구가
+    중복 위에서 진행하지 않고, 추적되는 문서는 검사가 본다.
+    """
+
+    INCIDENT = (
+        "## PHASE_PMF14 ✅ DONE (2026-09-08)\n> 공개 표면\n\n"
+        "## PHASE_PMF14 🚧 진행 중 — 동시성\n> 동시성\n")
+
+    def test_it_finds_the_2026_09_12_collision(self):
+        self.assertEqual({"PHASE_PMF14": 2}, gh.duplicate_phases(self.INCIDENT))
+
+    def test_an_open_phase_counts_too(self):
+        """실제 사고에서 한쪽은 `🚧 진행 중` 이었다.
+
+        완료된 것만 세면 정확히 그 사고를 놓친다 — `DONE_PHASE` 로는 하나만 잡힌다.
+        """
+        self.assertEqual(1, len(gh.phase_sections(self.INCIDENT)),
+                         "DONE 파서는 둘 중 하나만 본다 — 이것이 놓친 이유다")
+        self.assertIn("PHASE_PMF14", gh.duplicate_phases(self.INCIDENT))
+
+    def test_a_clean_plan_has_no_duplicates(self):
+        """막되 끄지 않는다."""
+        self.assertEqual({}, gh.duplicate_phases(PHASES))
+
+    def test_the_parser_silently_drops_one_of_them(self):
+        """왜 따로 세야 하는지 — `phase_sections()` 는 이름을 키로 쓰는 dict 다.
+
+        같은 번호가 둘이면 뒤엣것만 남는다. **파서가 충돌을 지워버린다.** 그 상태로
+        태그를 그으면 한쪽 Phase 의 노트가 통째로 사라진 채 공개된다.
+        """
+        got = gh.phase_sections(self.INCIDENT)
+
+        self.assertEqual(["PHASE_PMF14"], list(got))
+        self.assertEqual(2, self.INCIDENT.count("## PHASE_PMF14"),
+                         "픽스처에 둘이 있어야 이 검사가 뜻이 있다")
+
+    def test_the_tracked_progress_log_has_no_duplicate_phase_numbers(self):
+        """추적되는 문서를 실제로 본다 — 사고가 남은 자리가 여기다.
+
+        `PHASES.md` 는 머신마다 따로 있어 CI 가 못 본다. `docs/PROGRESS.md` 는
+        추적되므로, 두 머신의 작업이 합쳐지는 순간 이 검사가 그 자리에서 잡는다.
+        """
+        with io.open(os.path.join(ROOT, "docs", "PROGRESS.md"), encoding="utf-8") as fh:
+            body = fh.read()
+
+        self.assertEqual({}, gh.duplicate_phases(body),
+                         "같은 Phase 번호가 둘 이상이다 — 두 머신이 각자 열었다")

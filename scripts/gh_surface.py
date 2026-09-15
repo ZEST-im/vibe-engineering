@@ -45,6 +45,8 @@ _GH_ISSUE_CREATE_TIMEOUT = 60   # `gh issue create` — 쓰기. 멈추면 번호
 _GH_ISSUE_EDIT_TIMEOUT = 60     # `gh issue edit` — 쓰기(갱신)
 
 DONE_PHASE = re.compile(r"^##\s+(PHASE_\w+)\s+✅\s*DONE\s*\(([0-9-]+)\)\s*$", re.M)
+# 상태와 무관하게 Phase 헤딩을 잡는다 — 번호 충돌은 완료 전에 난다.
+ANY_PHASE = re.compile(r"^##\s+(PHASE_\w+)", re.M)
 
 
 class MissingToolFile(RuntimeError):
@@ -59,6 +61,31 @@ class MissingToolFile(RuntimeError):
     아닌 코드로 끝낸다. 파일을 옮겨서 설치본에서도 돌게 만들지 않는다: 검사 규칙이
     없는 채로 공개 표면에 쓰는 것이 이 도구가 막으려는 바로 그 일이다.
     """
+
+
+def duplicate_phases(body):
+    """같은 Phase 번호로 열린 헤딩이 둘 이상인가. `{이름: 횟수}` 를 돌려준다.
+
+    2026-09-12 에 두 머신이 같은 날 `PHASE_PMF14` 를 각각 열었다. 한쪽은 "공개
+    표면", 다른 쪽은 "동시성". `docs/PROGRESS.md` 에 같은 번호의 헤딩이 둘 생겼는데
+    **두 헤딩이 파일의 다른 구역에 있어 자동 병합이 충돌로 보지 않았다.** 나중에
+    사람이 읽다가 발견했고 수습에 하루가 들었다.
+
+    원인은 `PHASES.md` 가 gitignore 대상이라 **머신마다 따로 있다**는 것이다 —
+    다음 번호가 무엇인지 아는 공유된 자리가 없다. 태스크 id 는 접두어로 머신을
+    갈라 이미 막고 있는데 Phase 번호에는 그 장치가 없다.
+
+    번호 발급 자체를 공유하려면 `PHASES.md` 를 공개해야 하는데 그 안에 내부 기록이
+    있어 그럴 수 없다. 그래서 **발급을 막는 대신 충돌을 소리나게 만든다** — 추적되는
+    파일에서 중복을 세고, 검사가 그것을 잡는다. 조용히 지나가지 않는 것이 목표다.
+
+    `✅ DONE` 만 보지 않는다. 실제 사고에서 한쪽은 `🚧 진행 중` 이었다 — 완료된
+    것만 세면 정확히 그 사고를 놓친다.
+    """
+    counts = {}
+    for m in ANY_PHASE.finditer(body or ""):
+        counts[m.group(1)] = counts.get(m.group(1), 0) + 1
+    return {name: n for name, n in counts.items() if n > 1}
 
 
 def phase_sections(body):
@@ -1021,6 +1048,17 @@ def main(argv=None, root=None):
             "추측해서 빈 계획으로 진행하지 않고 멈춘다.")
     with open(phases_path, encoding="utf-8") as fh:
         phases_body = fh.read()
+
+    # **중복 번호 위에서는 진행하지 않는다.** `phase_sections()` 가 이름을 키로 쓰는
+    # dict 라 같은 번호가 둘이면 뒤엣것만 남는다 — 파서가 충돌을 지워버린다.
+    # 그 상태로 태그를 그으면 한쪽 Phase 의 노트가 통째로 사라진 채 공개된다.
+    dupes = duplicate_phases(phases_body)
+    if dupes:
+        raise SystemExit(
+            "같은 Phase 번호가 둘 이상이다: "
+            + ", ".join(f"{k}×{v}" for k, v in sorted(dupes.items()))
+            + f"\n  {phases_path}\n"
+            "  두 머신이 같은 번호를 각자 열면 이렇게 된다. 번호를 갈라 적고 다시 돌린다.")
 
     plan = tag_plan(phases_body, _log_lines(base))
     return _run_tag(plan, base, apply=a.apply)
