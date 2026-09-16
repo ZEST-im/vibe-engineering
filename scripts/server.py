@@ -2177,15 +2177,28 @@ def _managed_done_allowed(kanban_dir, task):
 
 
 def _runtime_reaper():
+    """5초마다 등록된 보드의 만료된 lease 를 거둔다.
+
+    **없는 디렉토리는 건너뛴다.** `init_registered_projects()` 와 같은 규칙이다.
+    시작 경로만 고쳤을 때 되살리기가 멎지 않았던 이유가 여기다 — 이 루프는 5초마다
+    돌고, `_runtime_view()` 가 잠금 파일을 만들면서 디렉토리를 되살린다. 지운 지
+    5초 만에 다시 생기니 사람은 자기가 잘못 지웠다고 생각한다.
+
+    시작에서 한 번 되살리는 것과 5초마다 되살리는 것은 같은 고장이고, 고친 것은
+    앞의 절반뿐이었다.
+    """
     while True:
-        for info in load_projects().values():
+        for key, info in load_projects().items():
             kanban_dir = info.get("kanban_dir", "")
-            if not kanban_dir:
+            if not kanban_dir or not os.path.isdir(kanban_dir):
                 continue
             try:
                 _runtime_view(kanban_dir)
             except Exception as exc:
-                print(f"  Runtime reaper warning: {type(exc).__name__}", file=sys.stderr)
+                # 어느 프로젝트인지 없으면 고칠 수가 없다. 예전에는 예외 이름만
+                # 찍혀 같은 줄이 로그를 채웠고 어느 보드가 깨졌는지 알 수 없었다.
+                print(f"  Runtime reaper warning: {key}: {type(exc).__name__}",
+                      file=sys.stderr)
         threading.Event().wait(5)
 
 
@@ -3070,7 +3083,7 @@ def main():
         register_project(key, name, kanban_dir)
         print(f"Auto-registered: {key} ({name})")
 
-    init_registered_projects()
+    prepared = init_registered_projects()
 
     server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
 
@@ -3081,7 +3094,17 @@ def main():
     signal.signal(signal.SIGTERM, shutdown)
 
     print(f"Vibe Engineering v5 — http://localhost:{port}/kanban")
+    # 시작 루프를 `init_registered_projects()` 로 꺼내면서 이 이름이 같이 사라졌고,
+    # 배너는 아직 쓰고 있었다 — `serve` 경로에서 **한 번도 대입되지 않아** 서버가
+    # 시작마다 죽었다. 떠 있던 프로세스가 옛 코드로 돌던 동안은 보이지 않았다.
+    projects = load_projects()
     print(f"  Projects: {', '.join(projects.keys()) if projects else '(none)'}")
+    # 준비한 디렉토리 수와 등록 수가 다르면 **디렉토리가 없는 등록**이 있다는 뜻이다.
+    # 되살리기를 멈춘 대가로 그 등록은 조용해졌으므로, 시작에서 한 번 소리를 낸다 —
+    # 못 본 것과 깨끗한 것은 다르다.
+    missing = len(projects) - len(prepared)
+    if missing:
+        print(f"  Dead registrations: {missing} (등록은 있으나 디렉토리가 없다)")
     print("  Storage: JSON (git-friendly)")
     if _load_sync_config():
         print(f"  Remote sync: enabled ({SYNC_CONFIG_PATH})")

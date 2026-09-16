@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "next_id": 126,
+  "next_id": 127,
   "tasks": [
     {
       "id": "hg98",
@@ -758,6 +758,28 @@
       "review": "",
       "created_by": "hoarchi",
       "assigned_to": ""
+    },
+    {
+      "id": "hgB126",
+      "title": "서버가 시작마다 죽었다 + 되살리기를 5초마다 되돌리던 reaper",
+      "description": "",
+      "details": "`main` 이 서버를 띄울 수 없는 상태였다. 되살리기 고장도 절반만 고쳐져 있었다.\n\n## 1. 서버가 시작마다 죽었다 (main 회귀)\n\n`133ff5f` 가 시작 루프를 `init_registered_projects()` 로 꺼내면서 `projects =\nload_projects()` 가 같이 사라졌는데, 바로 아래 배너 줄이 아직 그 이름을 썼다.\n\n    UnboundLocalError: local variable 'projects' referenced before assignment\n\n`serve` 경로에서 한 번도 대입되지 않으므로 **서버가 뜰 때마다 죽는다.** 이미 떠\n있던 프로세스가 옛 코드로 돌던 동안은 보이지 않았고, 재설치로 launchd 가 재시작한\n순간 드러났다. 로그인·배포·설치 직후에만 나는 고장이다.\n\n`init_registered_projects()` 에는 검사가 셋 있었고 셋 다 통과했다 — **추출한 함수는\n검사하고 호출부는 검사하지 않았다.**\n\n## 2. 되살리기는 시작 경로만 막혀 있었다\n\n진짜로 되살리는 것은 `_runtime_reaper()` 였다. 5초마다 등록 전체를 돌면서\n`_runtime_view()` 를 부르고, 그 안의 잠금 파일 생성이 디렉토리를 다시 만든다.\n디렉토리 존재를 확인하지 않았다.\n\n그래서 #9 를 고친 뒤에도 지운 폴더가 **5초 만에** 돌아왔다. 사용자가 실제로 겪었고\n(pante_bde·pante-bde), 시작 경로도 reconcile 도 시각이 맞지 않아 원인을 못 찾고\n있었다. 새로 쓴 부팅 검사가 이것을 잡았다.\n\n## 변경\n\n- `scripts/server.py`\n  - `main()`: `projects = load_projects()` 복구 — 배너 크래시 수정\n  - `main()`: `init_registered_projects()` 의 반환값을 받아 **디렉토리가 없는\n    등록 수**를 시작에서 출력 (`Dead registrations: N`). 되살리기를 멈추면 죽은\n    등록은 아무 흔적도 남기지 않는다 — 조용해진 것이지 사라진 것이 아니다.\n    함수 docstring 이 \"호출부가 무엇이 건너뛰어졌는지 셀 수 있다\" 고 적어둔 것을\n    실제로 쓴다\n  - `_runtime_reaper()`: `os.path.isdir(kanban_dir)` 가 아니면 건너뛴다 —\n    `init_registered_projects()` 와 같은 규칙\n  - `_runtime_reaper()`: 경고에 프로젝트 key 를 넣는다. 예전에는 예외 이름만 찍혀\n    (`Runtime reaper warning: JSONDecodeError`) 어느 보드가 깨졌는지 알 수 없었고\n    같은 줄이 로그를 채웠다\n- `tests/test_server_boot.py` (신규, 4건)\n  - 서버를 **프로세스로 띄워** 확인한다. 임시 HOME, 빈 포트, 원격 동기화 off\n  - 못 뜨면 서버 출력을 실패 메시지에 함께 싣는다 — \"안 떴다\" 만으로는 못 고친다\n  - 되살리기 검사는 reaper 주기(5초)를 **넘겨서** 본다. 첫 패스만 보면 놓친다\n\n## 검증\n\n- 수정 전 신규 검사 3/3 빨강, 트레이스백까지 재현\n- reaper 수정 전 되살리기 검사 빨강 → 수정 후 초록 (위반 주입 확인됨)\n- 전체 990 tests OK (python3.13, CI 매트릭스 버전) · 8 skipped\n- 설치본 갱신 + launchd 재시작 → 서버 정상 (23 프로젝트, 죽은 등록 0)\n\n## 사용자 쪽 처리 (같은 세션)\n\n- `projects.json` 에서 `pante_bde` · `pante-bde` 등록 제거 (25 → 23).\n  같은 레포가 `_`/`-` 로 갈려 이중 등록돼 있었다 — 9/14 키 드리프트와 같은 계열\n- 빈 폴더 2개 삭제. `push-state.json` 의 해당 항목은 **남겼다** (재등록 시\n  중앙 중복 전송 방지)\n\n## 후속\n\n- 로컬 `/usr/bin/python3` 은 3.9 라 `tests/test_windows_compat.py` 의\n  `zip(strict=True)` 에서 에러가 난다. CI(3.11~3.13)에서는 문제없다. 다만\n  **launchd 서버가 쓰는 인터프리터가 그 3.9 다** — 서버 코드에 3.10+ 문법이\n  들어가면 이 머신에서 조용히 죽는다. 최소 버전을 검사로 못박을지 판단할 것\n- `_runtime_reaper` 는 `load_projects()` 를 5초마다 디스크에서 다시 읽는다.\n  등록 25개 × 매 5초. 지금은 문제되지 않지만 수가 늘면 볼 자리",
+      "status": "review",
+      "priority": "high",
+      "category": "backend",
+      "target_date": "",
+      "started_at": "",
+      "completed_at": "",
+      "lines_added": "221",
+      "lines_removed": "4",
+      "tokens_used": 0,
+      "created_at": "2026-09-16T18:58:03+09:00",
+      "updated_at": "2026-09-16T18:58:38+09:00",
+      "position": 0,
+      "phase": "PHASE_PMF15",
+      "review": "",
+      "created_by": "hogun",
+      "assigned_to": "hogun"
     }
   ]
 }
