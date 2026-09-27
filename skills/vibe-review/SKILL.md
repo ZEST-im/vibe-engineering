@@ -390,6 +390,53 @@ priority order.
 Write the conditions so that **starting does not count as finishing** — "begin five days
 of continuous operation" is met by beginning it, and that is usually not what was meant.
 
+### Next month's goals are decided with the person, not for them
+
+This is the half of the monthly review that actually changes what happens next, and it is
+the half a reviewer most easily gets wrong — by writing the goals alone and calling the
+result a baseline.
+
+**A baseline nobody agreed to is why next month has no record of approved goals.** That
+absence is a finding this review already knows how to make; producing it yourself, one
+month in advance, is the failure mode to avoid. The reconciliation table at the top of the
+next review is only answerable if a human chose what it reconciles against.
+
+So: draft the candidates from evidence, then **ask, one question at a time**, and let the
+answers decide. Use `AskUserQuestion` where the harness has it; elsewhere ask one plain
+question per message and wait. The conventions are the same ones `vibe-planning` uses,
+and for the same reason:
+
+- **One question per message**, at most four options, each with a short description of
+  *why the question matters* and what it costs. A month has room for a few outcomes; the
+  options must make the trade visible — what gets dropped if this is chosen.
+- **Never invent a priority.** If you did not ask whether something is must-have, it has
+  none. "Priority not yet decided" is a real answer; a guessed grade is not.
+- **Offer the evidence with the question, not after it.** "Carried for the second month,
+  blocks installation" belongs in the option, because the person answering did not just
+  spend an hour reading the repo and you did.
+
+Ask about the things a month actually turns on, and no more:
+
+1. **What the month is judged by** — the one outcome that decides met or not met.
+2. **What to do with the carried-over items** — close them, schedule them, or drop them
+   on purpose. Dropping on purpose is a legitimate answer and must be recorded as one.
+3. **What gets sacrificed** if the top goal is at risk. Deciding this in advance is worth
+   more than any other answer here, because it is the decision nobody makes calmly later.
+
+Then write the agreed goals in **checkable form** — numbers, state transitions, observable
+signals. Not "improve monitoring" but "a disconnected database turns a health endpoint red
+within one minute, demonstrated once". The next review reads this file and rules on it; a
+goal it cannot rule on will be ruled met.
+
+Record the decision in the document: what was chosen, **what was rejected and why**, who
+decided, and on what date. The rejected options are the part that saves an argument later,
+because next month someone will ask why the obvious thing was not done.
+
+**Do not write the baseline before the answers exist.** If the person is unavailable,
+publish the review with the goals section marked as proposed and unapproved, and say so in
+the document — an unapproved draft that admits it is one is honest; the same draft
+presented as a baseline is the fabricated record this skill exists to prevent.
+
 ### The baseline document is the part agents read
 
 The HTML belongs to the series; a person opens it, compares it to the last one, and moves
@@ -467,4 +514,8 @@ is a judgment someone can act on. "Underperformed" is not.
 | "The monthly needs its own format, it's a bigger review" | Then `6 → 4` stops being legible. Same axes, same series, wider span. |
 | "It's in `docs/`, so agents will find it" | Nothing points at it. Add the pointer where the project's instructions live. |
 | "Starting the five-day run counts as meeting it" | Write conditions that starting cannot satisfy. |
+| "I read the whole repo, so I know what next month should be" | You know the candidates. Which one the month is judged by is theirs to choose. |
+| "I'll write the baseline now and confirm it later" | Later is the next review, and by then it was never approved. Ask first. |
+| "Obviously the carried-over item continues" | Dropping it on purpose is a legitimate answer. Ask, and record the answer. |
+| "No need to write down the options they rejected" | That is the part that answers 'why wasn't the obvious thing done' next month. |
 | "This is harsh for a self-review" | Being readable is not the goal. Being true is. |
