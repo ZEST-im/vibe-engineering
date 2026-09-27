@@ -365,6 +365,46 @@ def missing_share_note(tasks):
             if t.get("share") and not (t.get("share_note") or "").strip()]
 
 
+_STALE_DAYS = 14
+
+
+def stale_issues(issues, today, stale_days=_STALE_DAYS):
+    """열린 이슈를 **나이와 근거**로 가른다. 순수 함수 — 네트워크도 파일도 안 본다.
+
+    ★ 이 함수가 있는 이유. 규약은 「측정 불능이나 숨겨진 실패는 닫을 수 없는 이유다」로
+      **닫을 조건**만 정의하고 *언제 누가 훑는지*를 정하지 않았다. 그래서 한 저장소에서
+      이슈 5건이 15일간 열린 채였고 그중 아무것도 PR 에 연결되지 않았다(2026-09-27 실측).
+      들어가는 법만 있고 나오는 법이 없으면 쌓이기만 한다.
+
+    닫지 **않는다** — 목록만 낸다. 「사람이 확인해야 한다」가 이슈의 뜻이고,
+    에이전트가 대신 확인했다고 선언하면 그 상태가 거짓이 된다.
+    """
+    out = []
+    for it in issues or []:
+        age = (today - it["created"]).days
+        overdue = it.get("due") is not None and today > it["due"]
+        out.append({
+            "number": it["number"],
+            "title": it.get("title") or "",
+            "age_days": age,
+            "stale": age >= stale_days,
+            "overdue": overdue,
+            "linked_prs": list(it.get("linked_prs") or []),
+            # 근거가 없으면 닫을 수도 없고 진행을 주장할 수도 없다 — 그 사실 자체를 낸다
+            "unevidenced": not (it.get("linked_prs") or []),
+        })
+    out.sort(key=lambda r: (-r["age_days"], r["number"]))
+    return out
+
+
+def sweep_verdict(rows):
+    """스윕 한 줄 요약. 「이번 주 N · 2주 이상 M · 근거 없음 K」."""
+    fresh = sum(1 for r in rows if not r["stale"])
+    stale = sum(1 for r in rows if r["stale"])
+    none = sum(1 for r in rows if r["unevidenced"])
+    return {"total": len(rows), "fresh": fresh, "stale": stale, "unevidenced": none}
+
+
 def _run(argv, env=None, timeout=None):
     """`env`/`timeout` 은 기본 호출은 그대로 두고 필요한 곳(네트워크로 나가는 `git
     push`)에만 적용하기 위한 것 — 나머지 로컬 전용 git 호출은 손대지 않는다.
@@ -1071,6 +1111,60 @@ def _run_promote(tasks, root, apply=False, kanban_dir=None,
     return 0 if failed == 0 else 1
 
 
+_GH_ISSUE_LIST_TIMEOUT = 60
+
+
+def _fetch_open_issues(repo=None, runner=None):
+    """`gh` 로 열린 이슈와 **그것을 닫겠다고 연결된 PR** 을 읽는다. 읽기 전용이다."""
+    runner = runner or (lambda argv: _run(argv, timeout=_GH_ISSUE_LIST_TIMEOUT))
+    argv = ["gh", "issue", "list", "--state", "open", "--limit", "200",
+            "--json", "number,title,createdAt,body,closedByPullRequestsReferences"]
+    if repo:
+        argv += ["--repo", repo]
+    code, out, err = runner(argv)
+    if code != 0:
+        raise SystemExit(f"이슈 목록을 읽지 못했다: {err.strip()[:200]}")
+    import datetime as _dt
+    rows = []
+    for it in json.loads(out or "[]"):
+        created = _dt.datetime.fromisoformat(
+            it["createdAt"].replace("Z", "+00:00")).date()
+        # 본문에 적힌 기한(YYYY-MM-DD 까지) 을 읽는다. 없으면 None — 추측하지 않는다.
+        due = None
+        m = re.search(r"(\d{4})-(\d{2})-(\d{2})\s*까지", it.get("body") or "")
+        if m:
+            due = _dt.date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        rows.append({
+            "number": it["number"], "title": it.get("title"),
+            "created": created, "due": due,
+            "linked_prs": [p["number"] for p in
+                           (it.get("closedByPullRequestsReferences") or [])],
+        })
+    return rows
+
+
+def _run_sweep(repo=None, stale_days=_STALE_DAYS, today=None, fetch=None):
+    import datetime as _dt
+    today = today or _dt.date.today()
+    issues = (fetch or _fetch_open_issues)(repo)
+    rows = stale_issues(issues, today, stale_days)
+    v = sweep_verdict(rows)
+    if not rows:
+        print("열린 이슈 없음.")
+        return 0
+    print(f"열린 이슈 {v['total']} — 이번 주 {v['fresh']} · "
+          f"{stale_days}일 이상 {v['stale']} · 연결된 PR 없음 {v['unevidenced']}")
+    print()
+    for r in rows:
+        flag = "🔴" if r["overdue"] else ("🟡" if r["stale"] else "  ")
+        prs = ("PR " + ",".join(f"#{n}" for n in r["linked_prs"])) if r["linked_prs"] else "근거 없음"
+        print(f"  {flag} #{r['number']:<4} {r['age_days']:>3}일  {prs:<14} {r['title'][:52]}")
+    print()
+    print("이 명령은 **닫지 않는다.** 위 목록을 사람에게 제시하고 판단을 받는다 —")
+    print("「닫을까요 / 아직 검증이 필요한 것은 무엇입니까」. 닫을 때는 근거를 코멘트로 남긴다.")
+    return 0
+
+
 def main(argv=None, root=None):
     """`gh_surface.py tag` / `promote` — 어느 쪽이든 기본은 dry-run.
 
@@ -1090,9 +1184,17 @@ def main(argv=None, root=None):
                    help="kanban.json 이 있는 디렉터리 (기본: <root>/vibe-harness)")
     p.add_argument("--apply", action="store_true",
                    help="실제로 만든다. 없으면 무엇이 올라갈지 출력만 한다")
+
+    w = sub.add_parser("sweep", help="열린 이슈를 나이·근거로 훑는다. 읽기 전용 — 닫지 않는다")
+    w.add_argument("--repo", default=None, help="OWNER/NAME (기본: 현재 디렉터리의 레포)")
+    w.add_argument("--stale-days", type=int, default=_STALE_DAYS,
+                   help=f"이 일수 이상이면 묵은 것으로 센다 (기본 {_STALE_DAYS})")
     a = ap.parse_args(argv)
 
     base = root or ROOT
+
+    if a.cmd == "sweep":
+        return _run_sweep(repo=a.repo, stale_days=a.stale_days)
 
     if a.cmd == "promote":
         kanban_dir = a.kanban_dir or os.path.join(base, "vibe-harness")

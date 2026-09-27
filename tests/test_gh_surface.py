@@ -2608,3 +2608,55 @@ class PhaseNumberCollisionTest(unittest.TestCase):
 
         self.assertEqual({}, gh.duplicate_phases(doc))
 
+
+
+# ── 이슈 스윕 ──────────────────────────────────────────────────────────────
+# ★ 규약이 「닫을 조건」만 정하고 언제 훑는지를 안 정해서 이슈 5건이 15일간 열린 채
+#   아무 PR 에도 연결되지 않았다(2026-09-27 실측). 그 상태를 기계가 말하게 한다.
+import datetime as _dt
+
+from scripts.gh_surface import stale_issues, sweep_verdict
+
+_TODAY = _dt.date(2026, 9, 27)
+
+
+def _issue(number, created, due=None, prs=()):
+    return {"number": number, "title": f"issue {number}",
+            "created": created, "due": due, "linked_prs": list(prs)}
+
+
+def test_sweep_marks_age_and_missing_evidence():
+    rows = stale_issues([
+        _issue(20, _dt.date(2026, 9, 12)),                    # 15일 · 근거 없음
+        _issue(30, _dt.date(2026, 9, 25), prs=[41]),          # 2일 · 근거 있음
+    ], _TODAY)
+    by = {r["number"]: r for r in rows}
+    assert by[20]["age_days"] == 15 and by[20]["stale"] and by[20]["unevidenced"]
+    assert by[30]["age_days"] == 2 and not by[30]["stale"] and not by[30]["unevidenced"]
+
+
+def test_sweep_flags_overdue_only_when_body_gave_a_date():
+    rows = stale_issues([
+        _issue(24, _dt.date(2026, 9, 12), due=_dt.date(2026, 9, 18)),
+        _issue(25, _dt.date(2026, 9, 12)),
+    ], _TODAY)
+    by = {r["number"]: r for r in rows}
+    assert by[24]["overdue"] is True
+    # 기한을 안 적은 이슈를 지각으로 세면 거짓이다 — 모르는 것은 모른다고 둔다
+    assert by[25]["overdue"] is False
+
+
+def test_sweep_sorts_oldest_first():
+    rows = stale_issues([
+        _issue(2, _dt.date(2026, 9, 25)),
+        _issue(1, _dt.date(2026, 9, 1)),
+    ], _TODAY)
+    assert [r["number"] for r in rows] == [1, 2]
+
+
+def test_sweep_verdict_counts_three_buckets():
+    rows = stale_issues([
+        _issue(1, _dt.date(2026, 9, 1)),
+        _issue(2, _dt.date(2026, 9, 26), prs=[9]),
+    ], _TODAY)
+    assert sweep_verdict(rows) == {"total": 2, "fresh": 1, "stale": 1, "unevidenced": 1}

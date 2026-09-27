@@ -142,6 +142,33 @@ Then collect from git for the week: commit count, additions, deletions, files to
 how many touched test paths, how many touched migration or delivery config, and how many
 were AI co-authored.
 
+### Sweep the open issues — before anything else
+
+If the project tracks work as issues, **open the review by sweeping them**, because a
+review that only measures the code cannot see the work that was promised and never
+closed. Run the project's own sweep (`scripts/gh_surface.py sweep --repo <OWNER/NAME>`
+where that exists, `gh issue list` otherwise) and report three buckets: **this week**,
+**14 days or older**, and **no linked PR**.
+
+The last bucket is the sharp one. "No linked PR" does not mean no progress — it means
+**no evidence of progress**, and those are different findings. If the work did land and
+nobody linked it, the missing link is itself the defect: the next reader sees an open
+issue and concludes nothing happened.
+
+**Do not close anything.** Present the stale and overdue ones and ask — close, re-date,
+or drop on purpose. Dropping on purpose is a legitimate answer and must be recorded as
+one. An agent that closes an issue it did not verify makes the tracker lie, which is the
+same failure this review exists to catch.
+
+An issue past its due date that survives **two consecutive reviews** goes to the top of
+the lede, whatever else happened. Either the work is genuinely stalled, or the issue is
+false — and both are worth more than anything else the review would otherwise say.
+
+> Measured 2026-09-27: one repo carried a Goal issue and four children open for 15 days,
+> 9 days past their stated deadline, while **1,156 commits landed without one of them
+> referencing an issue**. The rule "every PR closes exactly one issue" was already
+> written down. Nothing checked it, so nothing followed it.
+
 ### Record what you could and could not observe
 
 Before scoring, state the coverage of each evidence source as
