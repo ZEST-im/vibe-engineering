@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "next_id": 130,
+  "next_id": 131,
   "tasks": [
     {
       "id": "hg98",
@@ -846,6 +846,21 @@
       "review": "",
       "created_by": "hogun",
       "assigned_to": "hogun"
+    },
+    {
+      "id": 130,
+      "title": "vibe-review 월간 기준선 파일명·목표 표 규약 고정",
+      "status": "review",
+      "category": "docs",
+      "phase": null,
+      "assigned_to": "zest.hogun",
+      "created_at": "2026-09-27T14:00:00+09:00",
+      "started_at": "2026-09-27T14:00:00+09:00",
+      "updated_at": "2026-09-27T14:00:00+09:00",
+      "completed_at": "2026-09-27T14:00:00+09:00",
+      "lines_added": 29,
+      "lines_removed": 0,
+      "details": "skills/vibe-review/SKILL.md 월간 모드에 「Name and shape the baseline the same way in every project」 절 추가.\n- 경로 docs/team/<PROJECT>_YYYY-MM_BASELINE.md (YYYY-MM=목표 대상 월, 매월 새 파일)\n- `## Goals and weights`(`## 목표와 가중치`) 표: # | Goal | Weight | Due | Cards, 목표 칸 한 줄, 완료 조건은 별도 절\n- 리뷰 HTML·history.json·기준선을 기본 브랜치에 한 push\n\n계기: 2026-09 salpim-maru(목표 표)와 pante_capture(2026-10-BASELINE.md, 완료 조건 표만)가 다른 형식 → zesty-os 조직 웹훅 알림이 pante_capture 목표를 못 읽음. 알림 쪽은 파일명 변형 허용으로 완화(zesty-os).\n테스트 979 통과. 후속: 설치본(~/.claude/skills) 반영은 setup upgrade."
     }
   ]
 }

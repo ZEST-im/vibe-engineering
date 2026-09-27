@@ -453,6 +453,35 @@ could read it" is not the same as an agent reading it.
 The next monthly review opens by reading that file. That is the loop, and it only closes
 if the file is somewhere both a person and an agent will actually land on.
 
+### Name and shape the baseline the same way in every project
+
+Tools read this file too — a notification that the month's goals exist, a dashboard that
+lists them — and a tool cannot guess. Two projects reviewed in the same week produced
+`SALPIM_MARU_2026-10_BASELINE.md` with a goals table and `2026-10-BASELINE.md` with only
+a completion-conditions table; the second was invisible to everything that read the first.
+So the name and the one table are fixed, and everything else in the document is yours:
+
+- **Path**: `docs/team/<PROJECT>_YYYY-MM_BASELINE.md`, where `YYYY-MM` is the month the
+  goals are **for**, not the month the review was written. A new file each month — never
+  overwrite last month's; the next review reconciles against it.
+- **The goals table**, under a heading `## Goals and weights` (`## 목표와 가중치` in a
+  Korean document), columns in this order:
+
+  ```
+  | # | Goal | Weight | Due | Cards |
+  |---|---|---:|---|---|
+  | G1 | Energy — sample check + on-site install | 30% | 10-25 | 66 · 76 |
+  ```
+
+  One row per goal, weights summing to 100, and **the goal cell is one line** — what a
+  person scanning a channel needs to recognise the goal. The checkable completion
+  conditions from "Weight the completion conditions" go in their own section below, one
+  subsection per goal id. A table whose goal cell is the full completion condition reads
+  as a paragraph in every place it is quoted. `Cards` is optional.
+- **Push it with the review.** The HTML, `history.json` and the baseline land on the
+  default branch in the same push. A baseline that arrives on a feature branch has not
+  been published yet.
+
 ### Settle attribution before writing a word
 
 One person often appears as several committers — a work address, a personal address, a
