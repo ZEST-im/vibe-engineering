@@ -20,6 +20,7 @@ class CopySkillFilesTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.skills_root = os.path.join(self.tmp.name, "skills-dest")
+        self.codex_skills_root = os.path.join(self.tmp.name, "codex-skills-dest")
         self.repo_skills = os.path.join(self.tmp.name, "repo", "skills")
         self.scripts_dir = os.path.join(self.tmp.name, "repo", "scripts")
         os.makedirs(self.scripts_dir)
@@ -31,12 +32,15 @@ class CopySkillFilesTest(unittest.TestCase):
                 fh.write("# " + name + "\n")
 
         self.orig_root = setup.SKILLS_ROOT
+        self.orig_codex_root = setup.CODEX_SKILLS_ROOT
         self.orig_src = setup.SRC
         setup.SKILLS_ROOT = self.skills_root
+        setup.CODEX_SKILLS_ROOT = self.codex_skills_root
         setup.SRC = self.scripts_dir
 
     def tearDown(self):
         setup.SKILLS_ROOT = self.orig_root
+        setup.CODEX_SKILLS_ROOT = self.orig_codex_root
         setup.SRC = self.orig_src
         self.tmp.cleanup()
 
@@ -46,6 +50,11 @@ class CopySkillFilesTest(unittest.TestCase):
         for name in setup.SKILLS:
             path = os.path.join(self.skills_root, name, "SKILL.md")
             self.assertTrue(os.path.exists(path), name + " not installed")
+            codex_path = os.path.join(self.codex_skills_root, name, "SKILL.md")
+            self.assertTrue(os.path.exists(codex_path), name + " not installed for Codex")
+            with open(codex_path, encoding="utf-8") as fh:
+                self.assertNotIn("user-invocable:", fh.read(),
+                                 name + " kept Claude-only frontmatter in Codex")
 
     def test_every_declared_skill_exists_in_repo(self):
         """SKILLS 에 있는데 skills/ 에 없으면 설치가 조용히 건너뛴다."""
@@ -122,6 +131,8 @@ class CopySkillFilesTest(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(self.skills_root, "vibe-harness", "projects.json")))
         self.assertFalse(os.path.exists(os.path.join(self.skills_root, "vibe-planning")))
         self.assertFalse(os.path.exists(os.path.join(self.skills_root, "vibe-design")))
+        for name in setup.SKILLS:
+            self.assertFalse(os.path.exists(os.path.join(self.codex_skills_root, name)))
 
 
 
@@ -163,9 +174,11 @@ class UpgradeAlwaysSaysItFinishedTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.saved = {k: getattr(setup, k) for k in ("DEST", "SKILLS_ROOT")}
+        self.saved = {k: getattr(setup, k)
+                      for k in ("DEST", "SKILLS_ROOT", "CODEX_SKILLS_ROOT")}
         setup.DEST = os.path.join(self.tmp.name, "dest")
         setup.SKILLS_ROOT = os.path.join(self.tmp.name, "skills")
+        setup.CODEX_SKILLS_ROOT = os.path.join(self.tmp.name, "codex-skills")
 
         def restore():
             for k, v in self.saved.items():

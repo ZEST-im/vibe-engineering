@@ -108,7 +108,8 @@ def load_setup(home):
     # 보고하는 것과 막는 것은 다르다. 이 레포는 보통 "감지는 만들되 막지 않는다"를
     # 따르지만 그 규칙은 **오탐이 작업을 멈추는 것**을 걱정한 것이고, 여기서 오판의
     # 대가는 사용자 머신의 설치본이다. 그래서 여기서는 막는다.
-    for const in ("DEST", "HOOKS_DIR", "SETTINGS_PATH", "SKILLS_ROOT", "LAUNCH_AGENTS"):
+    for const in ("DEST", "HOOKS_DIR", "SETTINGS_PATH", "SKILLS_ROOT",
+                  "CODEX_SKILLS_ROOT", "LAUNCH_AGENTS"):
         path = getattr(mod, const)
         if not path.startswith(home):
             sys.modules.pop(name, None)
@@ -182,7 +183,8 @@ class InstallRoundTripTest(unittest.TestCase):
         보고만 하면 같은 파일의 다른 테스트가 그대로 실제 HOME 을 건드린다(경험).
         """
         for path in (self.mod.DEST, self.mod.HOOKS_DIR, self.mod.SETTINGS_PATH,
-                     self.mod.SKILLS_ROOT, self.mod.LAUNCH_AGENTS):
+                     self.mod.SKILLS_ROOT, self.mod.CODEX_SKILLS_ROOT,
+                     self.mod.LAUNCH_AGENTS):
             self.assertTrue(path.startswith(self.home),
                             "임시 HOME 밖을 가리킨다: %s" % path)
 

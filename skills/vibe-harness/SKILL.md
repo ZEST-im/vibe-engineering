@@ -1,12 +1,12 @@
 ---
 name: vibe-harness
-description: Vibe-Engineering — Dev progress kanban board for Claude Code. Multi-project support, task tracking with code change stats + web UI.
+description: Vibe Engineering workflow for Claude Code and Codex. Use for the bare commands ss, qq, or cc; /vibe-harness commands; phase scope; kanban task tracking; work reports; and mandatory post-push review.
 user-invocable: true
 ---
 
 # Vibe-Engineering — Dev Progress Kanban Board
 
-Track development progress as a kanban board while coding with Claude Code.
+Track development progress as a kanban board while coding with Claude Code or Codex.
 
 ## References — load only when you need them
 
@@ -103,7 +103,7 @@ python3 scripts/reconcile_runs.py --all --push                           # send 
 python3 scripts/reconcile_runs.py --all --push --force-full-push         # resend everything (recovery)
 ```
 
-Rules Claude must follow here:
+Rules every coding agent must follow here:
 
 - **`--add-project` is not optional.** Collection only walks projects in `projects.json`. A machine
   with an empty registry used to exit 0 having done nothing; it now fails loudly, but the fix is
@@ -298,9 +298,9 @@ commits another's in-flight files; that is how internal figures reached a public
 
 ---
 
-## ⚠️ Code Review (MANDATORY — Claude MUST follow)
+## ⚠️ Code Review (MANDATORY — EVERY CODING AGENT MUST FOLLOW)
 
-**Claude MUST perform a code review immediately after executing `git push` or `gh pr create`.**
+**The coding agent MUST perform a code review immediately after executing `git push` or `gh pr create`.**
 Not optional. Don't skip to the next task. Don't ask the user if they want a review. Just do it.
 
 #### Trigger conditions (ANY of these = review MUST happen)
@@ -429,7 +429,7 @@ Example: `PHASE_MVP01`, `PHASE_PMF02`
 
 The `SCOPE_LOCK_BEGIN` / `SCOPE_LOCK_END` block is machine-readable: the `PreToolUse` scope guard hook reads it automatically and **blocks** any Edit or Write to matching files or directories. Patterns are prefix-matched against the relative path from the project root.
 
-### Phase Rules (Claude MUST follow)
+### Phase Rules (every coding agent MUST follow)
 
 1. **Read `PHASES.md` and `docs/CURRENT_PHASE.md` at session start.**
 2. **Never advance to the next Phase without explicit user instruction.**
@@ -515,7 +515,7 @@ Canonicalize at the point of entry instead. Create an optional machine-local map
 Set the canonical handle here rather than changing `git config user.name`: that name is
 usually global, so changing it rewrites the author on every future commit in every repo.
 
-### Claude Auto-Recording Rules (Multi-User)
+### Agent Auto-Recording Rules (Multi-User)
 
 1. On task creation → set `created_by` to `git config user.name`
 2. On start → set `assigned_to` to current user
@@ -532,4 +532,3 @@ usually global, so changing it rewrites the author on every future commit in eve
 - `~/.claude/skills/vibe-harness/projects.json` stores the project list used by the server
 - Each project's `vibe-harness/` directory should be git-tracked (kanban.json + decisions.json + archive/)
 - JSON writes — both server and direct edits — should use atomic file replacement (write to `.tmp`, then rename) for safety
-

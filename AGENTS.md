@@ -27,7 +27,7 @@ python3 ~/.claude/skills/vibe-harness/server.py serve 4242 &
 
 If this project is not yet registered:
 ```bash
-python3 ~/.claude/skills/vibe-harness/server.py register vibe-harness "Vibe Engineering" "$(pwd)/vibe-harness"
+python3 ~/.claude/skills/vibe-harness/server.py register vibe-engineering "Vibe Engineering" "$(pwd)/vibe-harness"
 ```
 
 When the user types `ss` (sync & status):
@@ -156,19 +156,21 @@ from the file list alone.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/vibe-harness/context` | Current phase, scope, do_not_touch |
-| GET | `/api/vibe-harness/tasks` | All tasks |
-| POST | `/api/vibe-harness/tasks` | Create task |
-| PUT | `/api/vibe-harness/tasks/<id>` | Update task |
-| GET | `/api/vibe-harness/velocity` | Phase burndown + stats |
+| GET | `/api/vibe-engineering/context` | Current phase, scope, do_not_touch |
+| GET | `/api/vibe-engineering/tasks` | All tasks |
+| POST | `/api/vibe-engineering/tasks` | Create task |
+| PUT | `/api/vibe-engineering/tasks/<id>` | Update task |
+| GET | `/api/vibe-engineering/velocity` | Phase burndown + stats |
 
 Board UI: [http://localhost:4242/kanban](http://localhost:4242/kanban)
 
 ---
 
-## What Codex cannot do (Claude-only)
+## Codex hook limitation in this installer
 
-These are enforced automatically for Claude Code but are **best-effort** for Codex:
+Setup installs the skills into `~/.codex/skills/`, so Codex can discover the workflow and
+the `ss` / `qq` / `cc` shorthands. The existing hook installer still targets Claude Code,
+so these four enforcement points remain **best-effort** in Codex:
 
 - `scope-guard` hook — blocks edits to `do_not_touch` files at the tool level
 - `stop-gate` hook — warns when stopping with `in_progress` tasks

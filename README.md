@@ -137,8 +137,9 @@ Four steps, in this order:
 1. **Copies the runtime** → `~/.claude/skills/vibe-harness/` — `server.py`,
    `vibe_runtime.py`, `worker.py`, `kanban.html`, `reconcile_runs.py`, `kanban_edit.py`,
    `search.py`, `review_sync.py`, `enroll.py`, `gh_surface.py`, `setup.py` — plus five skill
-   directories under `~/.claude/skills/`: `vibe-harness`, `vibe-planning`, `vibe-design`,
-   `vibe-review`, `vibe-debug`.
+   directories under both `~/.claude/skills/` and `~/.codex/skills/`: `vibe-harness`,
+   `vibe-planning`, `vibe-design`, `vibe-review`, `vibe-debug`. The `vibe-harness` skill
+   explicitly recognizes the bare `ss`, `qq`, and `cc` commands in Codex.
 2. **Migrates the old project registry**, if you are upgrading from a prior version.
 3. **Installs an auto-start agent** — a macOS LaunchAgent labelled
    `com.vibe-harness.server`, so the server comes up on login at port 4242.
@@ -160,7 +161,7 @@ Two helper scripts are copied to `~/.claude/hooks/` without being registered as 
 (used at session start).
 
 Everything written lives under your home directory: `~/.claude/settings.json`,
-`~/.claude/hooks/`, `~/.claude/skills/`, and one LaunchAgent plist. Nothing else is
+`~/.claude/hooks/`, `~/.claude/skills/`, `~/.codex/skills/`, and one LaunchAgent plist. Nothing else is
 touched, and no data leaves the machine unless you opt into
 [token usage attribution](#token-usage-attribution-opt-in).
 
@@ -218,7 +219,8 @@ python3 scripts/setup.py uninstall
 
 Removes the five hook entries from `~/.claude/settings.json`, the hook scripts and
 helpers from `~/.claude/hooks/`, the auto-start agent, and the `vibe-planning`,
-`vibe-design`, `vibe-review`, and `vibe-debug` skill directories.
+`vibe-design`, `vibe-review`, and `vibe-debug` Claude skill directories. It also removes
+the same four directories installed under `~/.codex/skills/`.
 
 **`~/.claude/skills/vibe-harness/` is left in place on purpose** — your project registry
 (`projects.json`) and the server log live there. Delete that directory yourself if you
