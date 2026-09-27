@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "next_id": 129,
+  "next_id": 130,
   "tasks": [
     {
       "id": "hg98",
@@ -821,6 +821,28 @@
       "updated_at": "2026-09-27T09:20:49+09:00",
       "position": 0,
       "phase": "PHASE_PMF15",
+      "review": "",
+      "created_by": "hogun",
+      "assigned_to": "hogun"
+    },
+    {
+      "id": "hgB129",
+      "title": "PMF16 — superpowers 추출 후 제거, 하네스 경량화",
+      "description": "",
+      "details": "superpowers v6.4.1(15스킬·232파일·2.4MB)을 추출 후 제거했다.\n\n## 측정이 통념과 달랐다\n\n세션마다 주입되는 양은 **912 토큰**으로 싸다. 비용은 `using-superpowers` 의\n강제 조항이었다 — \"even a 1% chance → ABSOLUTELY MUST invoke\",\n\"BEFORE any response or action\". 912토큰짜리 주입이 **모든 응답 앞에 게이트를\n세우고**, 그 게이트가 5k~28k 로드와 다단계 절차를 부른다.\n\n품질이 좋은 이유도 같은 조항이라, 끄면 품질이 아니라 강제력이 사라진다.\n그래서 무엇을 남길지 고르는 일이 이 Phase 의 본체였다.\n\n## 형태가 둘로 갈렸다\n\n- **절차는 스킬로** — 단계가 있어 본문이 길고, 해당 상황에서만 로드되면 평소 비용 0\n- **판단 규칙은 상시 문서로** — 짧고, 언제 적용될지 미리 알 수 없다\n\n| 남긴 것 | 형태 |\n|---|---|\n| systematic-debugging | `vibe-debug` 스킬 (약 160줄, 부속 없음) |\n| receiving-code-review | 전역 `~/.claude/CLAUDE.md` |\n| verification 게이트 | 전역 `~/.claude/CLAUDE.md` |\n\n버린 12개는 전부 대체재가 있었다 — `vibe-planning`, worktree-guard 훅,\n내장 `/code-review`, CLAUDE.md Phase별 커버리지 표, `Workflow`/`Agent` 도구.\n\n## vibe-debug 에 원본에 없던 것 셋을 더했다\n\n전부 이 레포가 실제로 겪은 것이다.\n\n- **같은 일을 하는 다른 경로가 있는가** — 진짜 원인을 고쳐도 절반만 고쳐질 수 있다.\n  디렉토리를 되살리는 경로가 둘인데 시작 경로만 닫혔고, 이슈는 12일간 COMPLETED 였다\n- **밖에서 확인한다** — 서버가 시작마다 죽었는데 그 함수의 검사 셋은 다 통과했다.\n  아무도 프로세스를 띄운 적이 없었다\n- **환경을 비우는 것과 기능을 끄는 것은 다르다** — `env -i` 재현이 통과했는데\n  macOS git 이 identity 를 추측한 것이었다\n\n**자동 발동 강제는 넣지 않았다.** 마지막 절에 「이것은 다른 작업의 게이트가 아니다」\n라고 명시했다 — 모든 것에 발동하는 규칙은 곧 꺼진다.\n\n## 검증을 실제 버그로 했다\n\n계획의 C단계는 「추출본만으로 실제 디버깅 1회」였다. 이슈 #20(태깅 도구가 `✅`\n헤딩을 조용히 버림)을 대상으로 삼았다.\n\n증상 재현 → 원인(`DONE_PHASE` 의 `[0-9-]+`) → 실패 검사 6건 → 구현 →\n**다른 경로 확인** → 증상으로 확인.\n\n다섯 번째에서 실제로 막혔다. `unparsed_done_headings()` 를 만들고 끝낼 뻔했는데,\n**그러면 이 Phase 가 정리한 사고를 그대로 반복하는 것**이었다 — 함수에는 검사가\n있고 호출부는 아무도 안 밟는 상태. `main()` 에 출력을 붙였다.\n\n## 제거\n\n`settings.json` 1줄 → 스위트 확인 → 플러그인 캐시 4.5MB(6.3.0·6.4.1) · 데이터 ·\n**죽은 등록**(`installed_plugins.json` 이 없는 경로를 가리키고 있었다).\n\n`.superpowers/` 의 PMF15 구현 기록 38개는 **지우지 않고** `private/archive/` 로\n옮겼다 — 리뷰 diff 는 git 에서 복원되지만 태스크 보고서는 복원되지 않는다.\n`settings.json` 의 항목은 `false` 로 남겼다(의도 기록), 등록은 지웠다(현실 반영).\n\n복구 경로: 버전 `6.4.1`, sha `5bf4e78011075bcfc0dc295f0724994cd123ee71`.\n\n## 곁들여 고친 것\n\n`REMOVABLE_SKILLS` 가 손으로 관리되는 **두 번째 목록**이었다. 항목을 추가하는 대신\n`SKILLS` 에서 파생시켰다 — 스킬을 더하면 설치는 되는데 제거는 안 되는 상태가\n조용히 생기고, 이 레포는 설치 목록이 세 군데로 갈렸던 사고를 이미 겪었다.\n기존 검사(uninstall 왕복)가 그것을 잡아줬다.\n\n## 측정\n\n| | 개시 | 종료 |\n|---|---|---|\n| 테스트 | 1000 | 1006 |\n| superpowers 스킬 | 15 · 232파일 · 2.4MB | 0 |\n| 세션마다 무조건 주입 | 912 토큰 | 0 |\n\n## 남은 것\n\n- **전역 CLAUDE.md 는 버전관리 밖이다.** 머신 간 동기화는 여전히 수동이고\n  이 Phase 로 닫히지 않았다\n- **자동 리뷰는 범위 밖으로 뒀다**(사용자 결정). 조사 결과는 계획서에 남겼다 —\n  5시간 소비량은 트랜스크립트로 계산되지만 **한도(분모)가 로컬에 없다**.\n  다시 할 때의 출발점은 유휴 + 창 경계다",
+      "status": "review",
+      "priority": "high",
+      "category": "infra",
+      "target_date": "",
+      "started_at": "",
+      "completed_at": "",
+      "lines_added": 264,
+      "lines_removed": 5,
+      "tokens_used": 0,
+      "created_at": "2026-09-27T12:19:48+09:00",
+      "updated_at": "2026-09-27T12:19:56+09:00",
+      "position": 0,
+      "phase": "PHASE_PMF16",
       "review": "",
       "created_by": "hogun",
       "assigned_to": "hogun"

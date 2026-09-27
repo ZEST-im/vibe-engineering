@@ -52,10 +52,14 @@ SKILL_RUNTIME_FILES = (
 )
 
 # 설치 대상 스킬 디렉토리 — repo skills/<name>/SKILL.md 가 원본
-SKILLS = ["vibe-harness", "vibe-planning", "vibe-design", "vibe-review"]
+SKILLS = ["vibe-harness", "vibe-planning", "vibe-design", "vibe-review", "vibe-debug"]
 # 언인스톨 시 디렉토리째 지워도 되는 스킬
 # (vibe-harness 는 projects.json/server.log 가 함께 살아서 제외)
-REMOVABLE_SKILLS = ["vibe-planning", "vibe-design", "vibe-review"]
+# **`SKILLS` 에서 파생한다.** 손으로 적힌 두 번째 목록이었고, 스킬을 하나 더하면
+# 설치는 되는데 제거는 안 되는 상태가 조용히 생긴다 — 설치 파일 목록이 세 군데로
+# 갈렸던 것과 같은 사고다. `vibe-harness` 만 뺀다: 거기에 `projects.json` 과
+# 서버 로그가 같이 살아서, 제거하면 사용자의 프로젝트 등록이 함께 사라진다.
+REMOVABLE_SKILLS = [name for name in SKILLS if name != "vibe-harness"]
 
 def hook_cmd(name):
     """settings.json 에 적을 훅 명령 경로.

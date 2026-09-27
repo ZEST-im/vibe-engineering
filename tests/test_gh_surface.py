@@ -56,6 +56,51 @@ class PhaseSectionsTest(unittest.TestCase):
         self.assertNotIn("링크 엔지니어링", body)
 
 
+class UnparsedDoneHeadingsTest(unittest.TestCase):
+    """`✅` 라고 적혀 있는데 파서가 못 읽은 헤딩은 **말해야 한다.**
+
+    실측 2026-09-27: 종료일 괄호에 `(2026-09-27, 개시 2026-09-12)` 라고 적었더니
+    `DONE_PHASE` 의 날짜 그룹 `[0-9-]+` 에 걸려 매치가 실패했다. 그 실패가
+    **"완료가 아니다"** 로 조용히 번역됐고, 그 Phase 는 출력에도 총계 분모에도
+    나타나지 않았다. 사람은 「태그가 왜 안 생기지」가 아니라 「아, 6개구나」 하고
+    넘어간다.
+
+    `ANY_PHASE` 가 같은 파일에 이미 있다 — 도구는 그 헤딩의 존재를 **볼 수 있는데도**
+    두 목록을 비교하지 않았다. 못 보는 것이 아니라 보고도 말하지 않는 것이다.
+
+    **막지 않고 알리기만 한다.** 형식이 틀렸다고 태깅을 멈추면 그 검사는 곧 꺼진다.
+    """
+
+    GOOD = "## PHASE_PMF13 ✅ DONE (2026-09-08)\n> 끝난 것\n"
+    MALFORMED = "## PHASE_PMF15 ✅ DONE (2026-09-27, 개시 2026-09-12)\n> 끝난 것\n"
+    ACTIVE = "## PHASE_PMF16 🚧 IN PROGRESS (개시 2026-09-27)\n> 하는 중\n"
+
+    def test_a_malformed_done_heading_is_reported(self):
+        got = gh.unparsed_done_headings(self.MALFORMED)
+        self.assertEqual(["PHASE_PMF15"], [name for name, _line in got])
+
+    def test_a_well_formed_done_heading_is_not_reported(self):
+        self.assertEqual([], gh.unparsed_done_headings(self.GOOD))
+
+    def test_an_in_progress_phase_is_not_reported(self):
+        """진행 중은 형식 오류가 아니다. 그것까지 신고하면 매번 시끄럽다."""
+        self.assertEqual([], gh.unparsed_done_headings(self.ACTIVE))
+
+    def test_it_reports_the_line_so_the_person_can_fix_it(self):
+        """이름만 주면 어디를 고쳐야 할지 또 찾아야 한다."""
+        _name, line = gh.unparsed_done_headings(self.MALFORMED)[0]
+        self.assertIn("개시 2026-09-12", line)
+
+    def test_the_real_phases_file_is_clean(self):
+        """지금 이 저장소의 `PHASES.md` 에는 형식이 틀린 헤딩이 없다."""
+        self.assertEqual([], gh.unparsed_done_headings(PHASES))
+
+    def test_mixed_document(self):
+        body = self.GOOD + "\n" + self.MALFORMED + "\n" + self.ACTIVE
+        self.assertEqual(["PHASE_PMF15"],
+                         [name for name, _line in gh.unparsed_done_headings(body)])
+
+
 class ReleaseNotesTest(unittest.TestCase):
     def test_notes_carry_the_summary_and_the_body(self):
         notes = gh.release_notes(PHASES, "PHASE_PMF14")
