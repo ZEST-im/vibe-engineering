@@ -1133,7 +1133,7 @@ def main(argv=None, root=None):
     for name, line in unparsed_done_headings(phases_body):
         print(f"  ⚠ {name}: ✅ 인데 형식이 달라 읽지 못했다 — 아래 총계에서 빠진다")
         print(f"      {line}")
-        print(f"      종료일 괄호는 숫자와 하이픈만 받는다: `(YYYY-MM-DD)`")
+        print("      종료일 괄호는 숫자와 하이픈만 받는다: `(YYYY-MM-DD)`")
 
     plan = tag_plan(phases_body, _log_lines(base))
     return _run_tag(plan, base, apply=a.apply)
