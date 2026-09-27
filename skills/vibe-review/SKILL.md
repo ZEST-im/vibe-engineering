@@ -1,6 +1,6 @@
 ---
 name: vibe-review
-description: Reviews your own work the way a CTO reviews a team member — evidence-based, unsparing, tracking repeated failures across weeks. Weekly scored review plus a short daily pass on yesterday's output. Use at the start of a day, at the end of a week, or when you want an outside read on what you have actually shipped.
+description: Reviews your own work the way a CTO reviews a team member — evidence-based, unsparing, tracking repeated failures across weeks. Weekly scored review, a short daily pass on yesterday's output, and a monthly review left in the project as markdown so later sessions and agents can read it. Use at the start of a day, at the end of a week, at the end of a month, or when you want an outside read on what you have actually shipped.
 user-invocable: true
 ---
 
@@ -47,14 +47,28 @@ Four rules keep the review honest:
 4. **Never soften a repeat.** A problem in its third consecutive week is worse than a new
    one of the same size, and the review must say so in those terms.
 
-## Two modes
+## Three modes
 
 | | When | Output | Scores |
 |---|---|---|---|
 | **Daily** | First session of the day | Screen only, no file | No |
 | **Weekly** | End of an ISO week | `docs/developer-reviews/<handle>/YYYY-Www.html` + `history.json` | Yes |
+| **Monthly** | End of a multi-week span | Same series: `.../YYYY-Www~Www.html` + `history.json`, plus a baseline document | Yes, same nine |
 
 Scope is **the current repo**. Do not widen it without being asked.
+
+**Daily** compares claims to artifacts. **Weekly** scores a week. **Monthly** is the same
+apparatus over a longer span — the same nine axes, the same `history.json`, the same
+self-contained HTML in the same directory — plus the one thing a week cannot do:
+**reconcile what was delivered against the baseline the previous review set.**
+
+Do not invent a second format or a second scoring system for it. The value of the monthly
+review is that its score sits in the same series as the ones before it, so `6 → 4` is
+legible at a glance. A parallel document with its own scale would break exactly that.
+
+In practice a team that reviews monthly does not also review every week; the span label
+carries whatever the cadence actually was (`2026-W34~W37`). Label the span you reviewed,
+not the span you wish you had.
 
 Daily mode is wired into the `ss` (sync & status) ritual in the `vibe-harness` skill, so
 it runs at session start without being asked for. **If nothing has landed since the last
@@ -241,7 +255,10 @@ verdict.
 
 ### `history.json`
 
-Append to `docs/developer-reviews/<handle>/history.json`:
+Append to `docs/developer-reviews/<handle>/history.json`. **Monthly reviews append here
+too** — one series, so the score trend stays readable across whatever cadence the team
+actually ran. A span entry carries the span in its label (`"2026-W34~W37"`) and the real
+dates in `start`/`end`; nothing else about the entry changes.
 
 ```json
 {
@@ -301,10 +318,177 @@ should dominate the lede, whatever else happened.
 
 ### The HTML
 
-Self-contained: no CDN, no external fonts, no remote assets. It sits in git and gets
-opened months later. Light and dark via `prefers-color-scheme`, readable on a phone.
-Keep the layout stable across weeks — the reader is comparing, and a redesign every week
-destroys that.
+**Start from `references/review-template.html`.** It carries the section order, the markup
+classes, and a palette that works in both themes — copy it, replace the placeholders, and
+delete the sections this review does not have. Writing the page from scratch each time is
+how the layout drifts, and a layout that drifts destroys the comparison the series exists
+for.
+
+Self-contained: no CDN, no external fonts, no remote assets, no script. It sits in git and
+gets opened months later. Light and dark via `prefers-color-scheme`, readable on a phone —
+tables get their own `overflow-x` container so the page body never scrolls sideways.
+Keep the layout stable across reviews; the reader is comparing.
+
+Two details in the template are load-bearing rather than decorative. Numbers use
+`tabular-nums`, so a column of scores lines up and a changed digit is visible. And the
+severity colour lives on the finding's left border, not in its text, so a page of findings
+shows its own shape before any of it is read.
+
+---
+
+## Monthly mode
+
+Everything in **Weekly mode** applies — the same evidence-first gathering, the same nine
+axes, the same anchors, the same `history.json`, the same self-contained HTML. What
+follows is only what changes when the window is a month instead of a week.
+
+### Count the span, not the calendar
+
+The label is the span you actually reviewed (`2026-W34~W37`), with the real dates beside
+it. And **the quantitative window starts where the last review stopped counting.** If the
+previous review covered through the 11th, commits and line counts start on the 12th — say
+so in the subtitle. Two reviews that both count the same fortnight produce a month that
+looks twice as productive as it was, and the second one is the easier place to notice.
+
+The narrative window is wider than the quantitative one. Something opened six weeks ago
+and still open is this review's problem even though its commits belong to the last one.
+
+### Reconcile against the baseline the last review set
+
+This is the section a week cannot have, and it is the reason to write a monthly review at
+all. The previous review ended by setting what this month had to show. Go get that
+document and answer it, **week by week**, in a table: what was promised, what is observed,
+and a verdict.
+
+Write verdicts in words, not percentages — `met`, `partially met`, `missed`,
+`red risk`, `no-go, evidence needed`. A percentage implies a denominator you usually do
+not have, and it flattens the difference between four small things done and one large
+thing not done.
+
+**Judge by the standard the plan set for itself.** If the baseline defined what counts as
+red risk, and the state matches that definition, the review says red risk — in the
+baseline's own words. Importing a fresh standard at review time lets the plan off its own
+hook.
+
+**If there is no canonical record of what was approved, do not manufacture a rate.** A
+draft proposal is not an approved goal. Say the record does not exist, review against what
+does, and make the missing record a completion condition. An invented denominator is worse
+than an admitted gap, because it survives into the next review as a number.
+
+**If a goal became physically unreachable inside the window, do not roll it over as
+though it were still on track.** Prove the no-go, name what blocked it, and set the
+shortest honest re-verification schedule.
+
+### Weight the completion conditions
+
+Weekly mode asks for numbered, verifiable conditions. Monthly asks for the same list with
+a **percentage weight on each, summing to 100**. A month has room for five things and not
+fifteen, and the weights are where you say which one you would keep if you could only keep
+one. Unweighted lists get worked top to bottom, which is not the same as being worked in
+priority order.
+
+Write the conditions so that **starting does not count as finishing** — "begin five days
+of continuous operation" is met by beginning it, and that is usually not what was meant.
+
+### Next month's goals are decided with the person, not for them
+
+This is the half of the monthly review that actually changes what happens next, and it is
+the half a reviewer most easily gets wrong — by writing the goals alone and calling the
+result a baseline.
+
+**A baseline nobody agreed to is why next month has no record of approved goals.** That
+absence is a finding this review already knows how to make; producing it yourself, one
+month in advance, is the failure mode to avoid. The reconciliation table at the top of the
+next review is only answerable if a human chose what it reconciles against.
+
+So: draft the candidates from evidence, then **ask, one question at a time**, and let the
+answers decide. Use `AskUserQuestion` where the harness has it; elsewhere ask one plain
+question per message and wait. The conventions are the same ones `vibe-planning` uses,
+and for the same reason:
+
+- **One question per message**, at most four options, each with a short description of
+  *why the question matters* and what it costs. A month has room for a few outcomes; the
+  options must make the trade visible — what gets dropped if this is chosen.
+- **Never invent a priority.** If you did not ask whether something is must-have, it has
+  none. "Priority not yet decided" is a real answer; a guessed grade is not.
+- **Offer the evidence with the question, not after it.** "Carried for the second month,
+  blocks installation" belongs in the option, because the person answering did not just
+  spend an hour reading the repo and you did.
+
+Ask about the things a month actually turns on, and no more:
+
+1. **What the month is judged by** — the one outcome that decides met or not met.
+2. **What to do with the carried-over items** — close them, schedule them, or drop them
+   on purpose. Dropping on purpose is a legitimate answer and must be recorded as one.
+3. **What gets sacrificed** if the top goal is at risk. Deciding this in advance is worth
+   more than any other answer here, because it is the decision nobody makes calmly later.
+
+Then write the agreed goals in **checkable form** — numbers, state transitions, observable
+signals. Not "improve monitoring" but "a disconnected database turns a health endpoint red
+within one minute, demonstrated once". The next review reads this file and rules on it; a
+goal it cannot rule on will be ruled met.
+
+Record the decision in the document: what was chosen, **what was rejected and why**, who
+decided, and on what date. The rejected options are the part that saves an argument later,
+because next month someone will ask why the obvious thing was not done.
+
+**Do not write the baseline before the answers exist.** If the person is unavailable,
+publish the review with the goals section marked as proposed and unapproved, and say so in
+the document — an unapproved draft that admits it is one is honest; the same draft
+presented as a baseline is the fabricated record this skill exists to prevent.
+
+### The baseline document is the part agents read
+
+The HTML belongs to the series; a person opens it, compares it to the last one, and moves
+on. The forward half — next month's milestones, the completion judgment, the go/no-go
+conditions — also belongs somewhere an agent will find it **while doing the work**, not at
+the next review.
+
+So write that half as markdown in the project's own documents (`docs/team/` or wherever
+the project already keeps team documents), and **put one line pointing at it wherever the
+project keeps its agent-facing instructions** — `CLAUDE.md`, `AGENTS.md`, or the docs
+index. A document nothing points at is not a document an agent will find, and "an agent
+could read it" is not the same as an agent reading it.
+
+The next monthly review opens by reading that file. That is the loop, and it only closes
+if the file is somewhere both a person and an agent will actually land on.
+
+### Settle attribution before writing a word
+
+One person often appears as several committers — a work address, a personal address, a
+GitHub `noreply` address, a machine that was set up once and never corrected. Resolve
+which identities are this person's, **say so in the document**, and say who confirmed it.
+
+Getting this wrong in either direction ruins the review: split identities undercount the
+work, and merging someone else's identity in credits or blames the wrong person. If you
+cannot confirm an identity, list it as unresolved rather than guessing. Over a month the
+error compounds — a whole machine's output can go missing.
+
+### Extra sections, in the weekly order
+
+Keep the weekly structure and insert two things:
+
+- **Goal reconciliation** — the table above, right after "change vs last review", because
+  every score below it is read in light of whether the month did what it said it would.
+- **Board and codebase shape** in the evidence section — tasks done in the span against
+  the board total, production versus test lines and their ratio, migrations, delivery
+  config. A month is long enough for these to have moved.
+
+Two habits from the weekly review matter more here, not less:
+
+- **Credit an improvement without over-crediting it.** "The 52 cards closed in this span
+  all have completion records; the 24 older empty ones remain" is the true sentence. Drop
+  the second clause and the finding disappears from the next review.
+- **Put the repeat count in the finding's title**, not in its body. A baseline missed for
+  the second consecutive month is a different finding from a new one and must not read the
+  same.
+
+### The role verdict
+
+A month is long enough to say something about the role, and short enough that the sentence
+must be precise. Separate capability from what actually went wrong: "the problem is not
+capability, it is that substitute output was prioritized over the agreed product outcome"
+is a judgment someone can act on. "Underperformed" is not.
 
 ---
 
@@ -323,4 +507,15 @@ destroys that.
 | "I couldn't check CI, so operations is a 1" | Unverified is not zero. Say `unverified` and score what you saw. |
 | "I'll start at 5 and adjust" | Pick the highest anchor the artifacts satisfy. Nudging from the middle hides the reasoning. |
 | "A daily score would show the trend" | One day is noise. Daily mode finds claim-versus-reality gaps, not trends. |
+| "Every goal was approved, so it was a strong month" | Approval says what shipped. Count what review found after approval. |
+| "No record of approved goals, so call it 4 of 5" | An invented denominator outlives the gap it hid. Say the record is missing. |
+| "The month's numbers should cover the whole month" | The last review already counted half of it. Start where it stopped. |
+| "Carry the unfinished milestone into next month" | If it became unreachable, prove the no-go. Rolling it over hides when it died. |
+| "The monthly needs its own format, it's a bigger review" | Then `6 → 4` stops being legible. Same axes, same series, wider span. |
+| "It's in `docs/`, so agents will find it" | Nothing points at it. Add the pointer where the project's instructions live. |
+| "Starting the five-day run counts as meeting it" | Write conditions that starting cannot satisfy. |
+| "I read the whole repo, so I know what next month should be" | You know the candidates. Which one the month is judged by is theirs to choose. |
+| "I'll write the baseline now and confirm it later" | Later is the next review, and by then it was never approved. Ask first. |
+| "Obviously the carried-over item continues" | Dropping it on purpose is a legitimate answer. Ask, and record the answer. |
+| "No need to write down the options they rejected" | That is the part that answers 'why wasn't the obvious thing done' next month. |
 | "This is harsh for a self-review" | Being readable is not the goal. Being true is. |

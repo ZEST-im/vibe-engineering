@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{Project} — {Name} engineering review · {span}</title>
+<!--
+  Structural template for weekly and monthly reviews.
+
+  Replace every {placeholder} and delete the sections a given review does not have.
+  Keep the markup classes: they are what makes two reviews comparable at a glance,
+  and a reader comparing months should not have to re-learn the page.
+
+  Rules this file already satisfies, and that a copy must keep:
+    - self-contained: no CDN, no webfont, no script, no remote asset
+    - light and dark via prefers-color-scheme, both readable
+    - one horizontal scroll container per table, never on the page body
+    - numbers in tabular-nums so columns line up down the page
+
+  Sections, in order. Monthly adds "goal reconciliation" after the comparison table;
+  everything else is shared with weekly.
+-->
+<style>
+  :root {
+    --bg:#fbfaf8;--panel:#fff;--ink:#1a1a1a;--muted:#666060;--line:#e3ded6;
+    --accent:#8a5a2b;--good:#2f6b3f;--bad:#a32b2b;--warn:#8a6a1a;--code:#f2efe9;
+  }
+  @media (prefers-color-scheme:dark){:root{--bg:#16151a;--panel:#1e1d23;--ink:#ece9e4;
+    --muted:#9c968e;--line:#33313a;--accent:#d2a06a;--good:#7fbf8f;--bad:#e08585;
+    --warn:#d7b45e;--code:#26252c}}
+  *{box-sizing:border-box} body{margin:0;padding:2rem 1.25rem 5rem;background:var(--bg);color:var(--ink);
+    font:15px/1.75 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Pretendard","Noto Sans KR",sans-serif}
+  main{max-width:62rem;margin:0 auto} h1{font-size:1.65rem;line-height:1.35;margin:0 0 .35rem}
+  h2{font-size:1.12rem;margin:3rem 0 .9rem;padding-bottom:.45rem;border-bottom:2px solid var(--line)}
+  h3{font-size:.98rem;margin:1.8rem 0 .5rem;color:var(--accent)} p{margin:.7rem 0}
+  .sub{color:var(--muted);font-size:.88rem;margin:0 0 2rem}
+  .lede{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--accent);
+    padding:1.1rem 1.25rem;border-radius:4px;margin:1.5rem 0}
+  .lede p:first-child{margin-top:0}.lede p:last-child{margin-bottom:0}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(8.5rem,1fr));gap:.6rem;margin:1.2rem 0}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:.8rem .9rem}
+  .stat .k{font-size:.74rem;color:var(--muted);display:block}
+  .stat .v{font-size:1.35rem;font-weight:600;font-variant-numeric:tabular-nums}
+  .stat .sm{font-size:1rem}.wrap{overflow-x:auto;margin:1rem 0}
+  table{border-collapse:collapse;width:100%;font-size:.9rem;min-width:34rem}
+  th,td{text-align:left;padding:.5rem .65rem;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-weight:600;color:var(--muted);font-size:.8rem;white-space:nowrap}
+  td.n,th.n{text-align:right;white-space:nowrap}
+  code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.86em;
+    background:var(--code);padding:.1em .35em;border-radius:3px}
+  pre{background:var(--code);border:1px solid var(--line);border-radius:4px;padding:.85rem 1rem;
+    overflow-x:auto;font-size:.82rem;line-height:1.6}
+  pre code{background:none;padding:0}
+  .good{color:var(--good);font-weight:600}.bad{color:var(--bad);font-weight:600}.warn{color:var(--warn);font-weight:600}
+  .score{font-variant-numeric:tabular-nums;font-weight:700;font-size:1.02rem}
+  .finding{background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:.95rem 1.1rem;margin:.9rem 0}
+  .finding.crit{border-left:4px solid var(--bad)}
+  .finding.high{border-left:4px solid var(--warn)}
+  .finding.med{border-left:4px solid var(--muted)}
+  .finding h4{margin:0 0 .45rem;font-size:.98rem}
+  .tag{font-size:.7rem;font-weight:700;padding:.12em .45em;border-radius:3px;background:var(--code);
+    color:var(--muted);margin-right:.5rem}
+  .finding p{margin:.45rem 0;font-size:.91rem}.ev{color:var(--muted);font-size:.84rem}
+  ol,ul{padding-left:1.4rem}li{margin:.35rem 0}
+  .q{border-left:3px solid var(--line);padding-left:1rem;margin:1.1rem 0}
+  .q .ask{font-weight:600}.q .pass{color:var(--muted);font-size:.88rem}
+  .foot{color:var(--muted);font-size:.82rem;margin-top:3rem}
+</style>
+</head>
+<body><main>
+
+<h1>{Project} — {Name} engineering review · {span}</h1>
+<!-- Say the quantitative window and why it starts there. A review that silently
+     re-counts what the last one counted doubles the month's apparent output. -->
+<p class="sub">Subject <strong>{handle} ({Name})</strong> · counted {start} – {end} ·
+HEAD <code>{sha}</code> · written {date} · requested by {requester}<br>
+{Why the window starts here — e.g. the previous review covered through {date}, so commits
+are counted from the following day. Goal reconciliation is against {baseline document}.}</p>
+
+<!-- LEDE: the honest headline first, then the volume, then the standard that actually
+     applied, then the score and what it was scored against. Never the other way round. -->
+<div class="lede">
+  <p><strong>{One sentence. The thing a reader must not miss.}</strong></p>
+  <p>{What was delivered, with the numbers that make it real.}</p>
+  <p>{The standard the period was actually judged by, and the distance from it.
+  Use the baseline's own vocabulary for risk if it defined one.}</p>
+  <p>{Anything observed live that contradicts a green signal.} Overall is
+  <strong>{n}/10</strong>, scored against {shippable outcome}, not activity.</p>
+</div>
+
+<h2>Metrics</h2>
+<div class="grid">
+  <div class="stat"><span class="k">Commits</span><span class="v">{n}</span></div>
+  <div class="stat"><span class="k">Net lines</span><span class="v">{+n}</span></div>
+  <div class="stat"><span class="k">Files touched</span><span class="v">{n}</span></div>
+  <div class="stat"><span class="k">Tasks closed</span><span class="v">{n}</span></div>
+  <div class="stat"><span class="k">Production lines</span><span class="v">{n}</span></div>
+  <div class="stat"><span class="k">Test lines</span><span class="v">{n}</span></div>
+  <div class="stat"><span class="k">AI co-authored</span><span class="v">{n} <span class="sm">/ {n}</span></span></div>
+  <div class="stat"><span class="k">Overall</span><span class="v">{n} <span class="sm">/ 10</span></span></div>
+</div>
+<p class="ev">{What these numbers include that makes them unusable as a score —
+lockfiles, repeated edits to one file — and the statement that they were not used as one.}</p>
+
+<h2>Change since the last review</h2>
+<div class="wrap"><table>
+<tr><th>Axis</th><th class="n">Last</th><th class="n">Now</th><th>Verdict</th></tr>
+<tr><td>Overall</td><td class="n score">{n}</td><td class="n score">{n}</td><td>{why it moved}</td></tr>
+<tr><td>Requirements</td><td class="n">{n}</td><td class="n">{n}</td><td>{evidence}</td></tr>
+<tr><td>Architecture</td><td class="n">{n}</td><td class="n">{n}</td><td>{evidence}</td></tr>
+<tr><td>Implementation</td><td class="n">{n}</td><td class="n">{n}</td><td>{evidence}</td></tr>
+<tr><td>Testing</td><td class="n">{n}</td><td class="n">{n}</td><td>{evidence}</td></tr>
+<tr><td>Change management</td><td class="n">{n}</td><td class="n">{n}</td><td>{evidence}</td></tr>
+<tr><td>Operations</td><td class="n">{n}</td><td class="n">{n}</td><td>{evidence}</td></tr>
+<tr><td>AI utilization</td><td class="n">{n}</td><td class="n">{n}</td><td>{evidence}</td></tr>
+<tr><td>AI supervision</td><td class="n">{n}</td><td class="n">{n}</td><td>{evidence}</td></tr>
+</table></div>
+
+<!-- MONTHLY ONLY. Delete for a weekly review.
+     Answer the baseline the previous review set, week by week. Verdicts are words:
+     met / partially met / missed / red risk / no-go, evidence needed. -->
+<h2>{Month} goals — baseline against observed</h2>
+<div class="wrap"><table>
+<tr><th>Week</th><th>Promised</th><th>Observed</th><th>Verdict</th></tr>
+<tr><td>{Www}</td><td>{what the baseline committed to}</td><td>{what the repo shows}</td><td>{verdict}</td></tr>
+<tr><td>{Www}</td><td>{…}</td><td>{…}</td><td>{verdict}</td></tr>
+</table></div>
+<p>{If no canonical record of approved goals exists, say so here and do not manufacture a
+rate. Name what does exist, review against that, and make the missing record a completion
+condition below.}</p>
+
+<h2>What went well</h2>
+<h3>1. {Claim, stated as an outcome rather than an activity}</h3>
+<p>{The artifact that proves it — paths, task ids, commits. Credit the improvement and
+name what it does not yet cover, in the same paragraph.}</p>
+<h3>2. {…}</h3>
+<p>{…}</p>
+
+<h2>What did not</h2>
+<!-- Repeat count belongs in the tag, not buried in the body. A finding in its second
+     consecutive period must not read like a new one. -->
+<div class="finding crit"><h4><span class="tag">P1 · CRITICAL · {new | Nth consecutive}</span>{What is wrong, as a fact}</h4>
+<p>{How it was observed — the command, the request, the response. Not an inference.}</p>
+<p class="ev">{Linked task or decision. What the completion condition actually is,
+which is usually wider than the single fix.}</p></div>
+
+<div class="finding high"><h4><span class="tag">P2 · HIGH · {…}</span>{…}</h4>
+<p>{…}</p><p class="ev">{…}</p></div>
+
+<h2>Completeness</h2>
+<p>{Which capabilities are done, partial, or missing against the requirements, and what
+stage the product is honestly at.}</p>
+
+<h2>Completion conditions for the next period</h2>
+<!-- MONTHLY: these are AGREED, not authored. Ask first, one question at a time, then
+     write the answers here. Weights sum to 100 — they are where you say which one you
+     would keep if you could keep only one. Write them so that starting cannot satisfy
+     them: "begin the five-day run" is met by beginning it. -->
+<ul>
+  <li><strong>{20}%</strong> — {condition, verifiable by someone who was not here}</li>
+  <li><strong>{30}%</strong> — {…}</li>
+  <li><strong>{25}%</strong> — {…}</li>
+  <li><strong>{15}%</strong> — {…}</li>
+  <li><strong>{10}%</strong> — {…}</li>
+</ul>
+<p>{Anything deferred, and the first slack it gets pulled into.}</p>
+
+<h3>How these were decided</h3>
+<!-- The record that makes next month's reconciliation answerable. Without it, the next
+     review opens with "there is no canonical record of approved goals" — and that will
+     be this document's fault, not the team's. -->
+<div class="wrap"><table>
+<tr><th>Question</th><th>Chosen</th><th>Rejected, and why</th></tr>
+<tr><td>{What is this month judged by?}</td><td>{choice}</td><td>{the other options, and the reason each lost}</td></tr>
+<tr><td>{What happens to the carried-over items?}</td><td>{close | schedule | drop on purpose}</td><td>{…}</td></tr>
+<tr><td>{What gets sacrificed if the top goal is at risk?}</td><td>{choice}</td><td>{…}</td></tr>
+</table></div>
+<p class="ev">Decided by {name} on {date}.
+{If the goals were not approved, say so here instead: these are proposed and unapproved,
+and the next review must not treat them as a baseline.}</p>
+
+<h2>Comprehension checks</h2>
+<div class="q"><div class="ask">1. {A question answerable only by someone who owns the code, without looking it up}</div>
+<div class="pass">A passing answer covers: {the specific things it must contain}.</div></div>
+<div class="q"><div class="ask">2. {…}</div>
+<div class="pass">A passing answer covers: {…}.</div></div>
+
+<h2>Verdict</h2>
+<p><strong>Can be trusted</strong> — {what runs unattended.}</p>
+<p><strong>Cannot be left unattended</strong> — {what cannot, and why.}</p>
+<p><strong>Role</strong> — {Separate capability from what actually went wrong. "The problem
+is not capability, it is {the specific failure}" is actionable. "Underperformed" is not.}</p>
+
+<h2>Evidence</h2>
+<h3>Commands run — {date} · HEAD <code>{sha}</code></h3>
+<!-- Real output, including what failed. An unrunnable check is itself a finding. -->
+<pre><code>$ {command}
+{output, verbatim}
+
+$ {command}          → {result}
+{CI run id}          → {counts}
+{HTTP call}          → {status}
+{what could not be run} → {why}</code></pre>
+
+<h3>Git, codebase and board</h3>
+<div class="wrap"><table>
+<tr><th>Commits</th><td class="n">{n}</td><td>{attribution split}</td></tr>
+<tr><th>Added / removed</th><td class="n">{+n / −n}</td><td>net {+n}</td></tr>
+<tr><th>Files touched</th><td class="n">{n}</td><td>test {n} · migration {n} · delivery {n}</td></tr>
+<tr><th>AI co-authored</th><td class="n">{n} / {n}</td><td>{pct}%</td></tr>
+<tr><th>Current code</th><td class="n">{n} / {n}</td><td>production / test, ratio {x}:1</td></tr>
+<tr><th>Board</th><td class="n">{n}</td><td>done {n} · todo {n} · in progress {n} · closed in span {n}</td></tr>
+</table></div>
+
+<h3>Observation coverage</h3>
+<p>{Which sources were observed, which were unverified, which were missing. Identity
+mapping for the subject, and who confirmed it. Unresolved identities listed as unresolved
+rather than guessed.}</p>
+
+<p class="foot">{State what this review used as evidence and what it refused to use.
+If work happened outside the repository, that evidence is missing, and missing evidence
+is not completion.}</p>
+
+</main></body></html>

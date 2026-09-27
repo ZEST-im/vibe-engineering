@@ -615,5 +615,88 @@ class SiblingModulesAreInstalledTest(unittest.TestCase):
                             "server.py 가 없는 파일을 읽으려 한다: %s" % name)
 
 
+# --------------------------------------------------------------------------
+
+REVIEW_SKILL = os.path.join(ROOT, "skills", "vibe-review", "SKILL.md")
+
+# 「N modes」 표의 행: `| **Daily** | ... |`
+_MODE_ROW = re.compile(r"^\|\s*\*\*(\w+)\*\*\s*\|", re.MULTILINE)
+# 본문 절: `## Daily mode`
+_MODE_SECTION = re.compile(r"^## (\w+) mode\s*$", re.MULTILINE)
+# 표 머리말: `## Three modes`
+_MODE_HEADING = re.compile(r"^## (\w+) modes\s*$", re.MULTILINE)
+
+_COUNT_WORDS = {"Two": 2, "Three": 3, "Four": 4, "Five": 5}
+
+
+@functools.lru_cache(maxsize=1)
+def review_skill_text():
+    with open(REVIEW_SKILL, encoding="utf-8") as fh:
+        return fh.read()
+
+
+def modes_table(text):
+    """`## N modes` 머리말부터 다음 `##` 직전까지. **표만 잘라서 본다.**
+
+    파일 전체에 정규식을 걸면 다른 표의 굵은 칸이 모드로 잡힌다 — 9축 채점표의
+    `| **Testing** |` 같은 한 단어 칸 하나면 `Testing` 이 모드 목록에 끼어들고,
+    검사는 모드 표를 가리키며 엉뚱하게 빨개진다. 오탐이 작업을 멈추면 그 검사는
+    곧 꺼진다.
+    """
+    m = _MODE_HEADING.search(text)
+    if not m:
+        return ""
+    rest = text[m.end():]
+    nxt = re.search(r"^## ", rest, re.MULTILINE)
+    return rest[:nxt.start()] if nxt else rest
+
+
+class ReviewModesAgreeTest(unittest.TestCase):
+    """`vibe-review` 의 모드 표와 본문 절이 갈라지지 않는가.
+
+    이 파일 머리말이 적어둔 두 번째 거짓말 방식 — **같은 것을 두 군데 적었다가
+    갈라진다** — 의 스킬 판이다. 모드는 표에 한 번, 본문 절에 한 번 적힌다.
+    한쪽만 고치면 문서는 여전히 그럴듯하게 읽히는데, 표에 있는 모드의 사용법이
+    어디에도 없거나 반대가 된다.
+
+    머리말의 수사(`## Three modes`)까지 같이 본다. 모드를 하나 더해도 저 단어는
+    안 고치기 쉽고, 그러면 **목차가 본문보다 적게 약속한다.**
+    """
+
+    def test_the_skill_is_where_the_test_thinks_it_is(self):
+        """검사가 조용히 건너뛰지 않게. 파일이 옮겨졌으면 여기서 멈춘다."""
+        self.assertTrue(os.path.exists(REVIEW_SKILL),
+                        "vibe-review SKILL.md 를 찾지 못했다: %s" % REVIEW_SKILL)
+
+    def test_the_table_and_the_sections_list_the_same_modes(self):
+        text = review_skill_text()
+        in_table = set(_MODE_ROW.findall(modes_table(text)))
+        in_body = set(_MODE_SECTION.findall(text))
+
+        self.assertTrue(in_table, "모드 표를 찾지 못했다 — 표 형식이 바뀌었는지 확인")
+        self.assertTrue(in_body, "`## X mode` 절을 하나도 찾지 못했다")
+
+        self.assertEqual(
+            in_table, in_body,
+            "모드 표와 본문 절이 다르다.\n"
+            "  표에만 있다(사용법 없음): %s\n"
+            "  본문에만 있다(표에 안 보임): %s"
+            % (sorted(in_table - in_body) or "없음",
+               sorted(in_body - in_table) or "없음"))
+
+    def test_the_heading_counts_the_modes_it_actually_has(self):
+        text = review_skill_text()
+        heading = _MODE_HEADING.search(text)
+        self.assertIsNotNone(heading, "`## N modes` 머리말을 찾지 못했다")
+
+        word = heading.group(1)
+        self.assertIn(word, _COUNT_WORDS,
+                      "머리말의 수사를 읽지 못했다: %r — _COUNT_WORDS 에 추가할 것" % word)
+        self.assertEqual(
+            _COUNT_WORDS[word], len(set(_MODE_ROW.findall(modes_table(text)))),
+            "머리말은 %s(%d)개라고 하는데 표에는 %d개다"
+            % (word, _COUNT_WORDS[word], len(set(_MODE_ROW.findall(modes_table(text))))))
+
+
 if __name__ == "__main__":
     unittest.main()
