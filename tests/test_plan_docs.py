@@ -76,6 +76,23 @@ def declares_closed(body):
     return "닫혔다" in body[:1200] or "종료:" in body[:1200] or "종료일" in body[:1200]
 
 
+_INLINE_CODE = re.compile(r"`[^`\n]*`")
+
+
+def open_boxes(body):
+    """열린 항목 수. **문법을 설명한 문장은 항목이 아니다.**
+
+    예전에는 `body.count("- [ ]")` 였다. 그래서 문서가 자기 표기법을 설명하려고
+    백틱 안에 그 문자열을 적으면 — "Steps use checkbox (`- [ ]`) syntax" —
+    닫힌 문서에 열린 항목이 하나 있다고 보고했다. 할 일이 아닌 것을 할 일로 셌다.
+
+    오탐이 작업을 멈추면 그 검사는 곧 꺼진다. 인라인 코드만 지운다. **펜스 블록은
+    그대로 둔다** — 거기 든 것까지 지우면 진짜 항목을 놓칠 수 있고, 덜 세는 쪽이
+    더 세는 쪽보다 위험하다.
+    """
+    return _INLINE_CODE.sub("", body).count(OPEN_BOX)
+
+
 def read(name):
     with open(os.path.join(PRIVATE, name), encoding="utf-8") as fh:
         return fh.read()
@@ -102,7 +119,7 @@ class ClosedPhasesHaveNoOpenBoxesTest(unittest.TestCase):
             if name in LIVE_DOCS or name in PRODUCT_DOCS:
                 continue
             body = read(name)
-            open_count = body.count(OPEN_BOX)
+            open_count = open_boxes(body)
             if not open_count:
                 continue
             if declares_closed(body):
@@ -140,6 +157,35 @@ class ClosedPhasesHaveNoOpenBoxesTest(unittest.TestCase):
         self.assertEqual(
             [], missing,
             "완료된 Phase 의 계획서인데 닫혔다는 표시가 첫머리에 없다: " + ", ".join(missing))
+
+
+class OpenBoxCountingTest(unittest.TestCase):
+    """열린 항목을 세는 규칙 자체. **할 일과 할 일 얘기는 다르다.**
+
+    실측(2026-09-27): 닫은 문서 하나가 자기 표기법을 설명하려고
+    "Steps use checkbox (`- [ ]`) syntax" 라고 적었는데, 검사가 그것을 열린 항목
+    하나로 세어 Phase 종료를 막았다. 덜 세면 놓치고, 더 세면 검사가 꺼진다.
+    """
+
+    def test_a_real_open_item_is_counted(self):
+        self.assertEqual(1, open_boxes("- [ ] 아직 안 한 일"))
+
+    def test_syntax_described_in_backticks_is_not_an_item(self):
+        self.assertEqual(
+            0, open_boxes("Steps use checkbox (`- [ ]`) syntax for tracking."),
+            "문법을 설명한 문장을 할 일로 셌다 — 오탐은 검사를 끄게 만든다")
+
+    def test_both_in_one_document(self):
+        """설명이 있다고 해서 진짜 항목까지 눈감으면 안 된다."""
+        body = "uses `- [ ]` syntax\n- [ ] 진짜 할 일\n- [ ] 또 하나"
+        self.assertEqual(2, open_boxes(body))
+
+    def test_a_closed_item_is_not_open(self):
+        self.assertEqual(0, open_boxes("- [x] 끝남"))
+
+    def test_fenced_blocks_are_still_counted(self):
+        """펜스는 지우지 않는다 — 덜 세는 쪽이 더 세는 쪽보다 위험하다."""
+        self.assertEqual(1, open_boxes("```\n- [ ] 펜스 안\n```"))
 
 
 class TheGuardItselfTest(unittest.TestCase):
