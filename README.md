@@ -136,8 +136,9 @@ Four steps, in this order:
 
 1. **Copies the runtime** → `~/.claude/skills/vibe-harness/` — `server.py`,
    `vibe_runtime.py`, `worker.py`, `kanban.html`, `reconcile_runs.py`, `kanban_edit.py`,
-   `search.py`, `review_sync.py`, `enroll.py`, `gh_surface.py`, `setup.py` — plus four skill
-   directories under `~/.claude/skills/`: `vibe-harness`, `vibe-planning`, `vibe-design`, `vibe-review`.
+   `search.py`, `review_sync.py`, `enroll.py`, `gh_surface.py`, `setup.py` — plus five skill
+   directories under `~/.claude/skills/`: `vibe-harness`, `vibe-planning`, `vibe-design`,
+   `vibe-review`, `vibe-debug`.
 2. **Migrates the old project registry**, if you are upgrading from a prior version.
 3. **Installs an auto-start agent** — a macOS LaunchAgent labelled
    `com.vibe-harness.server`, so the server comes up on login at port 4242.
@@ -217,7 +218,7 @@ python3 scripts/setup.py uninstall
 
 Removes the five hook entries from `~/.claude/settings.json`, the hook scripts and
 helpers from `~/.claude/hooks/`, the auto-start agent, and the `vibe-planning`,
-`vibe-design`, and `vibe-review` skill directories.
+`vibe-design`, `vibe-review`, and `vibe-debug` skill directories.
 
 **`~/.claude/skills/vibe-harness/` is left in place on purpose** — your project registry
 (`projects.json`) and the server log live there. Delete that directory yourself if you
@@ -334,6 +335,7 @@ Monthly archive files (`vibe-harness/archive/YYYY-MM.json`) are git-tracked. The
 | `/vibe-planning` | Kickoff planning — five gated stages into `docs/planning/` |
 | `/vibe-design` | Landing + key screens as HTML, checked in a browser |
 | `/vibe-review` | Weekly scored review, a short daily pass, and a monthly review in the project |
+| `/vibe-debug` | Find the root cause before changing anything — for a bug whose cause is unknown |
 | `python3 ~/.claude/skills/vibe-harness/server.py sync` | Push configured remote snapshots now |
 | `python3 scripts/enroll.py --token <t>` | Register this machine for token usage collection |
 | `python3 scripts/enroll.py --add-project <key>=<repo>` | Register a project to collect from |
