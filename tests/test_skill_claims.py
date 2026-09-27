@@ -319,8 +319,64 @@ class PublicDocScopeTest(unittest.TestCase):
         self.assertEqual([], leaked, "추적되지 않아야 할 내부 문서가 범위에 들어왔다")
 
 
+CANONICAL_PROJECT_KEY = "vibe-engineering"
+
+
+class DocumentedProjectKeyTest(unittest.TestCase):
+    """문서의 curl 예시가 **실재하는 프로젝트 key** 를 쓰는가.
+
+    실측 2026-09-27: `AGENTS.md` 의 curl 예시 5개가 옛 key(`vibe-harness`)로 남아
+    있었다. 라이브 서버에서 `/api/vibe-harness/context` → **404**,
+    `/api/vibe-engineering/context` → 200. 그게 **에이전트 세션 시작의 첫 필수
+    단계**라, phase·scope·`do_not_touch` 를 못 받은 채 작업이 시작된다.
+
+    아래 `DocumentedEndpointsAreRoutedTest` 가 이미 있었는데도 놓쳤다. 그 검사는
+    key 뒤의 **경로**만 보고 key 자체는 버린다(`first` 를 쓰지 않는다). 경로는
+    옳았고 key 가 틀렸으니 조용히 통과했다 — **검사가 있다고 그 자리가 검사되는
+    것은 아니다.**
+
+    같은 파일 안에서 갈라져 있었다는 점이 특히 나쁘다. API 표는 옳은 key 를 쓰고
+    curl 예시만 옛 key 였다.
+    """
+
+    ENDPOINT = re.compile(r"localhost:4242/api/([A-Za-z0-9{}_-]+)")
+
+    def documented_keys(self):
+        found = {}
+        for path, text in doc_text():
+            for key in self.ENDPOINT.findall(text):
+                found.setdefault(key, set()).add(path)
+        return found
+
+    def test_every_documented_key_is_real_or_a_placeholder(self):
+        allowed = set(KEY_PLACEHOLDERS) | {CANONICAL_PROJECT_KEY, "projects"}
+        bad = {k: sorted(v) for k, v in self.documented_keys().items()
+               if k not in allowed}
+        self.assertEqual(
+            {}, bad,
+            "문서가 등록되지 않은 프로젝트 key 로 curl 예시를 적었다 — 그대로 따라 하면 404 다.\n"
+            + "\n".join(f"  {k}: {', '.join(v)}" for k, v in sorted(bad.items())))
+
+    def test_the_scan_found_something(self):
+        """하나도 못 찾으면 대조할 것이 없다 — 검사가 조용히 비어버린다."""
+        self.assertIn(CANONICAL_PROJECT_KEY, self.documented_keys(),
+                      "정본 key 를 쓰는 curl 예시를 하나도 못 찾았다")
+
+    def test_it_catches_a_stale_key(self):
+        """위반을 주입해 실제로 잡는지. 항상 통과하는 검사는 검사가 아니다."""
+        allowed = set(KEY_PLACEHOLDERS) | {CANONICAL_PROJECT_KEY, "projects"}
+        stale = self.ENDPOINT.findall("curl http://localhost:4242/api/vibe-harness/context")
+        self.assertTrue([k for k in stale if k not in allowed],
+                        "옛 key 를 넣었는데 걸러내지 못했다")
+
+
 class DocumentedEndpointsAreRoutedTest(unittest.TestCase):
-    """문서의 curl 예시가 서버에 실제로 닿는가."""
+    """문서의 curl 예시가 서버에 실제로 닿는가.
+
+    **key 는 보지 않는다** — 경로만 본다. key 검증은 위
+    `DocumentedProjectKeyTest` 가 맡는다. 둘을 한 검사에 섞으면 어느 쪽이
+    실패했는지 메시지가 말해주지 못한다.
+    """
 
     ENDPOINT = re.compile(r"localhost:4242/api/([A-Za-z0-9{}_-]+)((?:/[A-Za-z0-9{}_.-]+)*)")
 
@@ -541,6 +597,24 @@ class InstallListsAgreeTest(unittest.TestCase):
             [], gap,
             "setup.py 가 설치하는데 enroll --update-skill 이 갱신하지 않는 파일: "
             + ", ".join(gap) + " — 이 머신은 그 파일만 옛 버전으로 남는다")
+
+    def test_both_installers_know_the_same_skill_roots(self):
+        """설치 **경로**도 같은 목록이다. 파일만 맞추고 경로가 갈리면 같은 사고다.
+
+        실측 2026-09-27: `setup.py` 가 `~/.codex/skills/` 에도 깔기 시작했는데
+        `enroll.py` 는 Claude 쪽만 알고 있었다. 문서화된 빠른 경로로 갱신하면
+        "N개 파일 반영" 이라고 출력되면서 **Codex 쪽만 조용히 낡는다.**
+        """
+        setup_roots = {self.setup.SKILLS_ROOT, self.setup.CODEX_SKILLS_ROOT}
+        # enroll 은 vibe-harness 한 스킬만 다루므로 그 하위까지 내려온 경로다.
+        enroll_roots = {os.path.dirname(self.enroll.SKILL_DIR),
+                        os.path.dirname(self.enroll.CODEX_SKILL_DIR)}
+        self.assertEqual(
+            setup_roots, enroll_roots,
+            "setup.py 와 enroll.py 의 스킬 루트가 다르다.\n"
+            f"  setup : {sorted(setup_roots)}\n"
+            f"  enroll: {sorted(enroll_roots)}\n"
+            "  갈린 쪽은 --update-skill 로 갱신되지 않고 조용히 낡는다")
 
     def test_excluded_file_stays_excluded(self):
         overlap = sorted(self.EXCLUDED_FROM_UPDATE & self.enroll_names)

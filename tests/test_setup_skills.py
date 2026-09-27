@@ -20,23 +20,36 @@ class CopySkillFilesTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.skills_root = os.path.join(self.tmp.name, "skills-dest")
+        self.codex_skills_root = os.path.join(self.tmp.name, "codex-skills-dest")
         self.repo_skills = os.path.join(self.tmp.name, "repo", "skills")
         self.scripts_dir = os.path.join(self.tmp.name, "repo", "scripts")
         os.makedirs(self.scripts_dir)
-        # 픽스처는 선언된 스킬 목록에서 파생한다 — 스킬이 늘어도 테스트가 따라온다
+        # 픽스처는 선언된 스킬 목록에서 파생한다 — 스킬이 늘어도 테스트가 따라온다.
+        #
+        # **frontmatter 가 있어야 한다.** 예전 픽스처는 `# name` 한 줄이었고,
+        # `make_codex_skill_compatible()` 이 `text.startswith("---\n")` 에서 즉시
+        # return 했다. 그래서 `assertNotIn("user-invocable:")` 은 **지울 것이 애초에
+        # 없어서** 통과했다 — 변환을 no-op 으로 바꿔도 초록이었다(2026-09-27 실측).
+        # 검사 대상이 없는 검사는 검사가 아니다.
         for name in setup.SKILLS:
             d = os.path.join(self.repo_skills, name)
             os.makedirs(d)
             with open(os.path.join(d, "SKILL.md"), "w", encoding="utf-8") as fh:
-                fh.write("# " + name + "\n")
+                fh.write("---\nname: " + name + "\n"
+                         "description: fixture\n"
+                         "user-invocable: true\n"
+                         "---\n\n# " + name + "\n")
 
         self.orig_root = setup.SKILLS_ROOT
+        self.orig_codex_root = setup.CODEX_SKILLS_ROOT
         self.orig_src = setup.SRC
         setup.SKILLS_ROOT = self.skills_root
+        setup.CODEX_SKILLS_ROOT = self.codex_skills_root
         setup.SRC = self.scripts_dir
 
     def tearDown(self):
         setup.SKILLS_ROOT = self.orig_root
+        setup.CODEX_SKILLS_ROOT = self.orig_codex_root
         setup.SRC = self.orig_src
         self.tmp.cleanup()
 
@@ -46,6 +59,24 @@ class CopySkillFilesTest(unittest.TestCase):
         for name in setup.SKILLS:
             path = os.path.join(self.skills_root, name, "SKILL.md")
             self.assertTrue(os.path.exists(path), name + " not installed")
+            codex_path = os.path.join(self.codex_skills_root, name, "SKILL.md")
+            self.assertTrue(os.path.exists(codex_path), name + " not installed for Codex")
+            with open(codex_path, encoding="utf-8") as fh:
+                codex = fh.read()
+            self.assertNotIn("user-invocable:", codex,
+                             name + " kept Claude-only frontmatter in Codex")
+            # **지우기만 하고 끝나면 안 된다.** 나머지 frontmatter 와 본문이 남아야
+            # Codex 가 그 스킬을 읽는다. 파일을 통째로 비워도 위 단언은 통과한다.
+            self.assertIn("name: " + name, codex,
+                          name + ": Codex 복사본에서 name 이 사라졌다")
+            self.assertIn("description:", codex,
+                          name + ": Codex 복사본에서 description 이 사라졌다")
+            self.assertTrue(codex.startswith("---\n"),
+                            name + ": Codex 복사본의 frontmatter 가 깨졌다")
+            # Claude 쪽 원본은 손대지 않는다 — `user-invocable` 이 거기서는 필요하다.
+            with open(path, encoding="utf-8") as fh:
+                self.assertIn("user-invocable: true", fh.read(),
+                              name + ": Claude 설치본에서 user-invocable 이 사라졌다")
 
     def test_every_declared_skill_exists_in_repo(self):
         """SKILLS 에 있는데 skills/ 에 없으면 설치가 조용히 건너뛴다."""
@@ -122,6 +153,8 @@ class CopySkillFilesTest(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(self.skills_root, "vibe-harness", "projects.json")))
         self.assertFalse(os.path.exists(os.path.join(self.skills_root, "vibe-planning")))
         self.assertFalse(os.path.exists(os.path.join(self.skills_root, "vibe-design")))
+        for name in setup.SKILLS:
+            self.assertFalse(os.path.exists(os.path.join(self.codex_skills_root, name)))
 
 
 
@@ -163,9 +196,11 @@ class UpgradeAlwaysSaysItFinishedTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.saved = {k: getattr(setup, k) for k in ("DEST", "SKILLS_ROOT")}
+        self.saved = {k: getattr(setup, k)
+                      for k in ("DEST", "SKILLS_ROOT", "CODEX_SKILLS_ROOT")}
         setup.DEST = os.path.join(self.tmp.name, "dest")
         setup.SKILLS_ROOT = os.path.join(self.tmp.name, "skills")
+        setup.CODEX_SKILLS_ROOT = os.path.join(self.tmp.name, "codex-skills")
 
         def restore():
             for k, v in self.saved.items():

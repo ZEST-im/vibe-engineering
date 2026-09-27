@@ -31,6 +31,7 @@ HOOKS_DIR = os.path.expanduser("~/.claude/hooks")
 REPO_URL = "https://raw.githubusercontent.com/ZEST-im/vibe-engineering/main"
 
 SKILLS_ROOT = os.path.expanduser("~/.claude/skills")
+CODEX_SKILLS_ROOT = os.path.expanduser("~/.codex/skills")
 
 # 설치본이 갖춰야 할 런타임 파일. **이 목록이 정본이다.**
 # 같은 목록이 세 군데(로컬 복사·원격 업그레이드·enroll --update-skill)에 흩어져 있었고
@@ -151,8 +152,36 @@ def force_rmtree(path):
     shutil.rmtree(path)
 
 
+def make_codex_skill_compatible(skill_md):
+    """Codex 가 거부하는 Claude 전용 frontmatter 를 복사본에서 걷어낸다.
+
+    **못 걷어내면 말한다.** 예전에는 frontmatter 를 못 찾으면 조용히 return 했다.
+    그러면 `user-invocable:` 이 남은 채로 복사가 끝나고, 설치는 "COPIED" 라고
+    출력하는데 Codex 는 그 스킬을 거부한다 — 사용자에게는 성공으로 보이고
+    스킬만 없다. 이 함수가 존재하는 이유가 바로 그 상태를 막는 것이다.
+
+    BOM 이 붙었거나 닫는 fence 가 개행 없이 끝나면 실제로 여기 걸린다.
+    """
+    with open(skill_md, encoding="utf-8") as fh:
+        text = fh.read()
+    if not text.startswith("---\n"):
+        print(f"  WARN {skill_md}: frontmatter 를 찾지 못했다 — "
+              "Codex 복사본을 손대지 않았다. Codex 가 이 스킬을 거부할 수 있다")
+        return
+    end = text.find("\n---\n", 4)
+    if end == -1:
+        print(f"  WARN {skill_md}: frontmatter 가 닫히지 않았다 — "
+              "Codex 복사본을 손대지 않았다. Codex 가 이 스킬을 거부할 수 있다")
+        return
+    header = text[4:end].splitlines()
+    portable = [line for line in header if not line.startswith("user-invocable:")]
+    updated = "---\n" + "\n".join(portable) + text[end:]
+    with open(skill_md, "w", encoding="utf-8") as fh:
+        fh.write(updated)
+
+
 def copy_skill_files():
-    """skills/<name>/ 전체를 ~/.claude/skills/<name>/ 로 복사.
+    """skills/<name>/ 전체를 Claude Code와 Codex 스킬 경로로 복사.
 
     스킬은 SKILL.md 외에 references/ 같은 부속 파일을 가질 수 있으므로
     디렉토리째 옮긴다. 단 빌드 찌꺼기와 백업은 제외한다.
@@ -162,34 +191,43 @@ def copy_skill_files():
         if not os.path.exists(os.path.join(src_dir, "SKILL.md")):
             print(f"  SKIP {name} (SKILL.md not found)")
             continue
-        dest_dir = os.path.join(SKILLS_ROOT, name)
-        os.makedirs(dest_dir, exist_ok=True)
+        for skills_root in (SKILLS_ROOT, CODEX_SKILLS_ROOT):
+            dest_dir = os.path.join(skills_root, name)
+            os.makedirs(dest_dir, exist_ok=True)
 
-        # 부속 파일은 레포와 동기화한다. copytree 는 덮어쓰기만 하므로,
-        # 레포에서 지운 문서가 설치본에 남아 "레포에 없는 지침"이 되는 것을 막는다.
-        # 스킬 디렉토리 최상위는 지우지 않는다 — vibe-harness 는 server.py·
-        # projects.json·로그가 같은 자리에 살기 때문이다.
-        for sub in os.listdir(src_dir):
-            src_sub = os.path.join(src_dir, sub)
-            if not os.path.isdir(src_sub) or sub in ("__pycache__",):
-                continue
-            stale = os.path.join(dest_dir, sub)
-            if os.path.isdir(stale):
-                force_rmtree(stale)
+            # 부속 파일은 레포와 동기화한다. copytree 는 덮어쓰기만 하므로,
+            # 레포에서 지운 문서가 설치본에 남아 "레포에 없는 지침"이 되는 것을 막는다.
+            # 스킬 디렉토리 최상위는 지우지 않는다 — Claude 설치본의 vibe-harness 는
+            # server.py·projects.json·로그가 같은 자리에 살기 때문이다.
+            for sub in os.listdir(src_dir):
+                src_sub = os.path.join(src_dir, sub)
+                if not os.path.isdir(src_sub) or sub in ("__pycache__",):
+                    continue
+                stale = os.path.join(dest_dir, sub)
+                if os.path.isdir(stale):
+                    force_rmtree(stale)
 
-        shutil.copytree(src_dir, dest_dir, dirs_exist_ok=True,
-                        ignore=SKILL_COPY_IGNORE)
-        # 원본 기준으로 센다. 대상 기준으로 세면 vibe-harness 처럼
-        # server.py·로그가 함께 사는 디렉토리에서 숫자가 거짓말을 한다.
-        copied = sum(len(files) for _, _, files in os.walk(src_dir))
-        suffix = f" (+{copied - 1} support files)" if copied > 1 else ""
-        print(f"  COPIED {name}/SKILL.md{suffix} → {dest_dir}")
+            shutil.copytree(src_dir, dest_dir, dirs_exist_ok=True,
+                            ignore=SKILL_COPY_IGNORE)
+            if skills_root == CODEX_SKILLS_ROOT:
+                make_codex_skill_compatible(os.path.join(dest_dir, "SKILL.md"))
+            # 원본 기준으로 센다. 대상 기준으로 세면 vibe-harness 처럼
+            # server.py·로그가 함께 사는 디렉토리에서 숫자가 거짓말을 한다.
+            copied = sum(len(files) for _, _, files in os.walk(src_dir))
+            suffix = f" (+{copied - 1} support files)" if copied > 1 else ""
+            print(f"  COPIED {name}/SKILL.md{suffix} → {dest_dir}")
 
 
 def remove_added_skills():
     """PHASE_PMF06 에서 추가된 스킬 디렉토리만 제거 (vibe-harness 는 보존)"""
     for name in REMOVABLE_SKILLS:
         d = os.path.join(SKILLS_ROOT, name)
+        if os.path.isdir(d):
+            force_rmtree(d)
+            print(f"  REMOVED {d}")
+    # Codex 설치본은 런타임 상태를 함께 보관하지 않으므로 네 스킬 모두 제거한다.
+    for name in SKILLS:
+        d = os.path.join(CODEX_SKILLS_ROOT, name)
         if os.path.isdir(d):
             force_rmtree(d)
             print(f"  REMOVED {d}")
@@ -533,23 +571,26 @@ def upgrade():
         except Exception as e:
             print(f"  FAIL {fname}: {e}")
 
-    # 스킬은 각자 ~/.claude/skills/<name>/SKILL.md 로 내려받는다 (DEST 하위가 아님)
+    # 스킬은 Claude Code와 Codex가 각각 발견하는 경로로 내려받는다.
     for name in SKILLS:
-        dest_dir = os.path.join(SKILLS_ROOT, name)
-        dst = os.path.join(dest_dir, "SKILL.md")
         try:
             print(f"  Downloading {name}/SKILL.md...")
             req = urllib.request.Request(f"{REPO_URL}/skills/{name}/SKILL.md",
                                          headers={"User-Agent": "Vibe-Engineering-Setup"})
             with urllib.request.urlopen(req, timeout=15) as resp:
                 content = resp.read()
-            os.makedirs(dest_dir, exist_ok=True)
-            if os.path.exists(dst):
-                shutil.copy2(dst, dst + ".bak")
-            with open(dst, "wb") as f:
-                f.write(content)
+            for skills_root in (SKILLS_ROOT, CODEX_SKILLS_ROOT):
+                dest_dir = os.path.join(skills_root, name)
+                dst = os.path.join(dest_dir, "SKILL.md")
+                os.makedirs(dest_dir, exist_ok=True)
+                if os.path.exists(dst):
+                    shutil.copy2(dst, dst + ".bak")
+                with open(dst, "wb") as f:
+                    f.write(content)
+                if skills_root == CODEX_SKILLS_ROOT:
+                    make_codex_skill_compatible(dst)
+                print(f"  OK {name}/SKILL.md ({len(content)} bytes) → {dest_dir}")
             downloaded += 1
-            print(f"  OK {name}/SKILL.md ({len(content)} bytes)")
         except Exception as e:
             print(f"  FAIL {name}/SKILL.md: {e}")
 

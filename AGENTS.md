@@ -10,7 +10,7 @@ This file provides the same rules for Codex CLI and other agents that read AGENT
 Before writing any code, fetch the current mission context:
 
 ```bash
-curl http://localhost:4242/api/vibe-harness/context
+curl http://localhost:4242/api/vibe-engineering/context
 ```
 
 From the response, extract and respect:
@@ -27,7 +27,7 @@ python3 ~/.claude/skills/vibe-harness/server.py serve 4242 &
 
 If this project is not yet registered:
 ```bash
-python3 ~/.claude/skills/vibe-harness/server.py register vibe-harness "Vibe Engineering" "$(pwd)/vibe-harness"
+python3 ~/.claude/skills/vibe-harness/server.py register vibe-engineering "Vibe Engineering" "$(pwd)/vibe-harness"
 ```
 
 When the user types `ss` (sync & status):
@@ -50,12 +50,12 @@ When the user types `ss` (sync & status):
 ### Before starting work
 Check if a task for this work already exists:
 ```bash
-curl http://localhost:4242/api/vibe-harness/tasks
+curl http://localhost:4242/api/vibe-engineering/tasks
 ```
 
 If it doesn't exist, create it:
 ```bash
-curl -X POST http://localhost:4242/api/vibe-harness/tasks \
+curl -X POST http://localhost:4242/api/vibe-engineering/tasks \
   -H 'Content-Type: application/json' \
   -d '{"title":"<task title>","status":"todo","category":"backend","phase":"PHASE_MVP01"}'
 ```
@@ -63,7 +63,7 @@ curl -X POST http://localhost:4242/api/vibe-harness/tasks \
 ### When starting a task
 Move it to `in_progress` (only ONE task in_progress at a time):
 ```bash
-curl -X PUT http://localhost:4242/api/vibe-harness/tasks/<id> \
+curl -X PUT http://localhost:4242/api/vibe-engineering/tasks/<id> \
   -H 'Content-Type: application/json' \
   -d '{"status":"in_progress"}'
 ```
@@ -77,7 +77,7 @@ Measure code changes, write a work report, move to `done`:
 git diff --numstat HEAD
 
 # Update task
-curl -X PUT http://localhost:4242/api/vibe-harness/tasks/<id> \
+curl -X PUT http://localhost:4242/api/vibe-engineering/tasks/<id> \
   -H 'Content-Type: application/json' \
   -d '{
     "status": "done",
@@ -156,19 +156,21 @@ from the file list alone.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/vibe-harness/context` | Current phase, scope, do_not_touch |
-| GET | `/api/vibe-harness/tasks` | All tasks |
-| POST | `/api/vibe-harness/tasks` | Create task |
-| PUT | `/api/vibe-harness/tasks/<id>` | Update task |
-| GET | `/api/vibe-harness/velocity` | Phase burndown + stats |
+| GET | `/api/vibe-engineering/context` | Current phase, scope, do_not_touch |
+| GET | `/api/vibe-engineering/tasks` | All tasks |
+| POST | `/api/vibe-engineering/tasks` | Create task |
+| PUT | `/api/vibe-engineering/tasks/<id>` | Update task |
+| GET | `/api/vibe-engineering/velocity` | Phase burndown + stats |
 
 Board UI: [http://localhost:4242/kanban](http://localhost:4242/kanban)
 
 ---
 
-## What Codex cannot do (Claude-only)
+## Codex hook limitation in this installer
 
-These are enforced automatically for Claude Code but are **best-effort** for Codex:
+Setup installs the skills into `~/.codex/skills/`, so Codex can discover the workflow and
+the `ss` / `qq` / `cc` shorthands. The existing hook installer still targets Claude Code,
+so these four enforcement points remain **best-effort** in Codex:
 
 - `scope-guard` hook — blocks edits to `do_not_touch` files at the tool level
 - `stop-gate` hook — warns when stopping with `in_progress` tasks

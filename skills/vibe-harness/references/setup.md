@@ -11,7 +11,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/setup.py
 ```
 
 This will:
-1. Copy `server.py`, `vibe_runtime.py`, `worker.py`, `kanban.html`, `reconcile_runs.py`, `kanban_edit.py`, `search.py`, `review_sync.py`, `enroll.py`, `gh_surface.py`, `setup.py` to `~/.claude/skills/vibe-harness/` (plus `SKILL.md` and the other skill directories)
+1. Copy `server.py`, `vibe_runtime.py`, `worker.py`, `kanban.html`, `reconcile_runs.py`, `kanban_edit.py`, `search.py`, `review_sync.py`, `enroll.py`, `gh_surface.py`, `setup.py` to `~/.claude/skills/vibe-harness/`, and copy all four skill directories to both `~/.claude/skills/` and `~/.codex/skills/`
 2. Install a macOS LaunchAgent (`com.vibe-harness.server`) that auto-starts the server on login
 3. Register five hooks in `~/.claude/settings.json` and copy two helper scripts to `~/.claude/hooks/`
 
