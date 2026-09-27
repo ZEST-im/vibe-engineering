@@ -53,15 +53,22 @@ Four rules keep the review honest:
 |---|---|---|---|
 | **Daily** | First session of the day | Screen only, no file | No |
 | **Weekly** | End of an ISO week | `docs/developer-reviews/<handle>/YYYY-Www.html` + `history.json` | Yes |
-| **Monthly** | End of a calendar month | `docs/team/<handle>-YYYY-MM.md` — markdown, in the project | No new ones |
+| **Monthly** | End of a multi-week span | Same series: `.../YYYY-Www~Www.html` + `history.json`, plus a baseline document | Yes, same nine |
 
 Scope is **the current repo**. Do not widen it without being asked.
 
-The three are not the same review at three sizes. **Daily** compares claims to artifacts.
-**Weekly** scores. **Monthly** does not score again — it reads the weeks that are already
-scored and asks what a month of them adds up to, then sets what the next month has to
-show. A second scoring system competing with the weekly axes would only produce two
-numbers for the same work and an argument about which one counts.
+**Daily** compares claims to artifacts. **Weekly** scores a week. **Monthly** is the same
+apparatus over a longer span — the same nine axes, the same `history.json`, the same
+self-contained HTML in the same directory — plus the one thing a week cannot do:
+**reconcile what was delivered against the baseline the previous review set.**
+
+Do not invent a second format or a second scoring system for it. The value of the monthly
+review is that its score sits in the same series as the ones before it, so `6 → 4` is
+legible at a glance. A parallel document with its own scale would break exactly that.
+
+In practice a team that reviews monthly does not also review every week; the span label
+carries whatever the cadence actually was (`2026-W34~W37`). Label the span you reviewed,
+not the span you wish you had.
 
 Daily mode is wired into the `ss` (sync & status) ritual in the `vibe-harness` skill, so
 it runs at session start without being asked for. **If nothing has landed since the last
@@ -248,7 +255,10 @@ verdict.
 
 ### `history.json`
 
-Append to `docs/developer-reviews/<handle>/history.json`:
+Append to `docs/developer-reviews/<handle>/history.json`. **Monthly reviews append here
+too** — one series, so the score trend stays readable across whatever cadence the team
+actually ran. A span entry carries the span in its label (`"2026-W34~W37"`) and the real
+dates in `start`/`end`; nothing else about the entry changes.
 
 ```json
 {
@@ -308,64 +318,93 @@ should dominate the lede, whatever else happened.
 
 ### The HTML
 
-Self-contained: no CDN, no external fonts, no remote assets. It sits in git and gets
-opened months later. Light and dark via `prefers-color-scheme`, readable on a phone.
-Keep the layout stable across weeks — the reader is comparing, and a redesign every week
-destroys that.
+**Start from `references/review-template.html`.** It carries the section order, the markup
+classes, and a palette that works in both themes — copy it, replace the placeholders, and
+delete the sections this review does not have. Writing the page from scratch each time is
+how the layout drifts, and a layout that drifts destroys the comparison the series exists
+for.
+
+Self-contained: no CDN, no external fonts, no remote assets, no script. It sits in git and
+gets opened months later. Light and dark via `prefers-color-scheme`, readable on a phone —
+tables get their own `overflow-x` container so the page body never scrolls sideways.
+Keep the layout stable across reviews; the reader is comparing.
+
+Two details in the template are load-bearing rather than decorative. Numbers use
+`tabular-nums`, so a column of scores lines up and a changed digit is visible. And the
+severity colour lives on the finding's left border, not in its text, so a page of findings
+shows its own shape before any of it is read.
 
 ---
 
 ## Monthly mode
 
-A month is the first window where a *pattern* is distinguishable from a bad week. The
-weekly review says what happened; the monthly one says what it adds up to, and what the
-next month has to show for the answer to change.
+Everything in **Weekly mode** applies — the same evidence-first gathering, the same nine
+axes, the same anchors, the same `history.json`, the same self-contained HTML. What
+follows is only what changes when the window is a month instead of a week.
 
-### It is markdown, and it stays in the project
+### Count the span, not the calendar
 
-The weekly HTML is read once, by a person. **The monthly document is read again** — by
-the next session, by whoever picks the project up, by an agent that needs to know what
-this repo already decided about its own work. So it is markdown, at a stable path, in the
-project's own docs.
+The label is the span you actually reviewed (`2026-W34~W37`), with the real dates beside
+it. And **the quantitative window starts where the last review stopped counting.** If the
+previous review covered through the 11th, commits and line counts start on the 12th — say
+so in the subtitle. Two reviews that both count the same fortnight produce a month that
+looks twice as productive as it was, and the second one is the easier place to notice.
 
-Write it where the project already keeps team documents if it has such a place; otherwise
-`docs/team/<handle>-YYYY-MM.md`. Then add one line pointing at it wherever the project
-keeps its agent-facing instructions (`CLAUDE.md`, `AGENTS.md`, or the docs index). **A
-document nothing points at is not a document an agent will find**, and "an agent could
-read it" is not the same as an agent reading it.
+The narrative window is wider than the quantitative one. Something opened six weeks ago
+and still open is this review's problem even though its commits belong to the last one.
 
-The public-repository rule above applies unchanged, and harder: a monthly review names a
-person, over a month, in a file that is easy to find. Check visibility before choosing the
-path. If the repo is public, it goes somewhere the repo does not track.
+### Reconcile against the baseline the last review set
 
-### It does not write `history.json`
+This is the section a week cannot have, and it is the reason to write a monthly review at
+all. The previous review ended by setting what this month had to show. Go get that
+document and answer it, **week by week**, in a table: what was promised, what is observed,
+and a verdict.
 
-Monthly reads the weekly series; it does not append to it. `history.json` is the weekly
-score series, and the period labels in it are what `review_sync.py` parses — a `2026-08`
-entry sitting among `2026-W33` entries breaks the thing that reads them. Monthly
-continuity lives in the monthly documents themselves: each one ends by naming what the
-next one will check.
+Write verdicts in words, not percentages — `met`, `partially met`, `missed`,
+`red risk`, `no-go, evidence needed`. A percentage implies a denominator you usually do
+not have, and it flattens the difference between four small things done and one large
+thing not done.
 
-### Gather
+**Judge by the standard the plan set for itself.** If the baseline defined what counts as
+red risk, and the state matches that definition, the review says red risk — in the
+baseline's own words. Importing a fresh standard at review time lets the plan off its own
+hook.
 
-Start from the weeks, not from git. The weekly reviews already did the measuring, and
-redoing it from raw commits produces a second set of numbers that disagrees with the first.
+**If there is no canonical record of what was approved, do not manufacture a rate.** A
+draft proposal is not an approved goal. Say the record does not exist, review against what
+does, and make the missing record a completion condition. An invented denominator is worse
+than an admitted gap, because it survives into the next review as a number.
 
-- **`history.json`** — every entry whose period falls in the month. Scores per axis,
-  `priorities` with `consecutive_weeks`, what resolved and what did not.
-- **Task records** — the month's archive (`vibe-harness/archive/YYYY-MM.json` where that
-  is the project's system) and anything still open that was opened this month.
-- **Project state documents** — `PROGRESS.md`, the current phase file, decision logs.
-- **Git, for attribution and shape only** — who committed under which identity, what
-  merged versus what is still on a branch. Not for scoring.
-- **Whatever recorded the month's goals** — approved weekly goals, a plan document, a
-  milestone list. If the project has no such record, that absence is a finding, and it is
-  the first thing the next month has to fix.
+**If a goal became physically unreachable inside the window, do not roll it over as
+though it were still on track.** Prove the no-go, name what blocked it, and set the
+shortest honest re-verification schedule.
 
-If the month has fewer weekly reviews than it has weeks, say which weeks are missing and
-**do not average over the gap**. Two reviewed weeks out of four is a two-week sample with
-a month's label on it, and treating it as a month is the exact error the review exists to
-catch elsewhere.
+### Weight the completion conditions
+
+Weekly mode asks for numbered, verifiable conditions. Monthly asks for the same list with
+a **percentage weight on each, summing to 100**. A month has room for five things and not
+fifteen, and the weights are where you say which one you would keep if you could only keep
+one. Unweighted lists get worked top to bottom, which is not the same as being worked in
+priority order.
+
+Write the conditions so that **starting does not count as finishing** — "begin five days
+of continuous operation" is met by beginning it, and that is usually not what was meant.
+
+### The baseline document is the part agents read
+
+The HTML belongs to the series; a person opens it, compares it to the last one, and moves
+on. The forward half — next month's milestones, the completion judgment, the go/no-go
+conditions — also belongs somewhere an agent will find it **while doing the work**, not at
+the next review.
+
+So write that half as markdown in the project's own documents (`docs/team/` or wherever
+the project already keeps team documents), and **put one line pointing at it wherever the
+project keeps its agent-facing instructions** — `CLAUDE.md`, `AGENTS.md`, or the docs
+index. A document nothing points at is not a document an agent will find, and "an agent
+could read it" is not the same as an agent reading it.
+
+The next monthly review opens by reading that file. That is the loop, and it only closes
+if the file is somewhere both a person and an agent will actually land on.
 
 ### Settle attribution before writing a word
 
@@ -375,61 +414,34 @@ which identities are this person's, **say so in the document**, and say who conf
 
 Getting this wrong in either direction ruins the review: split identities undercount the
 work, and merging someone else's identity in credits or blames the wrong person. If you
-cannot confirm an identity, list it as unresolved rather than guessing.
+cannot confirm an identity, list it as unresolved rather than guessing. Over a month the
+error compounds — a whole machine's output can go missing.
 
-### Structure
+### Extra sections, in the weekly order
 
-1. **Period and evidence basis** — the month, which records exist for it, which do not,
-   and the identity mapping from above. State the limits here, at the top, not in a
-   footnote: a repo initialized mid-month has no evidence for the first half, and the
-   review must say so before it says anything else.
-2. **Purpose** — what this review is for, and what it is not deciding. A monthly review
-   that reads as a verdict on a person, rather than on a month of engineering, stops being
-   answerable.
-3. **Overall assessment** — the honest headline, and the one or two things that must
-   change. Not a list of everything.
-4. **The month's weekly goals, on four axes** — this is the section that makes it a month
-   rather than four weeks stapled together:
-   - **Delivery** — per week, approved against planned, with carried-over items and why.
-   - **Evidence of completion** — each goal tied to the artifact that closed it: a PR, a
-     test count, a migration, a deployment, an observed production signal. A goal whose
-     only evidence is a commit did not close.
-   - **Quality of completion** — what review found *after* approval. Rework, CI failures,
-     follow-up fixes. Approval and completeness are different questions, and the gap
-     between them is the most useful number in the review.
-   - **Learning and prevention** — whether findings became shared contracts, automated
-     checks, or procedure, or stopped at a single fix. A fix that did not become a check
-     will be needed again.
-5. **Strengths, numbered, each with the artifact that proves it.** No strength without a
-   named artifact — that is what separates this from encouragement.
-6. **What must improve, numbered, each with evidence.** Mark anything the weekly series
-   already flagged, with the week count from `consecutive_weeks`. A finding in its fourth
-   week is a different finding from a new one and must not read the same.
-7. **Role expectation versus current judgment** — what the role requires, what the month
-   demonstrated, and the gap stated plainly.
-8. **Checks until the next month**, grouped by when they apply: before starting work,
-   during implementation and review, before submitting, and at month end. Each one
-   verifiable by someone who was not there.
-9. **Questions back to the person** — two or three that ask them to account for a specific
-   decision or a specific gap. The monthly review is a conversation, and the answers
-   belong in the next one.
-10. **Next month's baseline** — the milestones, broken down by week, with a completion
-    judgment: what must all be true for the month to count as met, and what turns it into
-    a conditional pass. Write the conditions as numbers and state transitions, not as
-    feature names.
-11. **Evidence appendix** — the records and figures the review rests on, and one line on
-    what you deliberately did not use.
+Keep the weekly structure and insert two things:
 
-### Do not rank by volume
+- **Goal reconciliation** — the table above, right after "change vs last review", because
+  every score below it is read in light of whether the month did what it said it would.
+- **Board and codebase shape** in the evidence section — tasks done in the span against
+  the board total, production versus test lines and their ratio, migrations, delivery
+  config. A month is long enough for these to have moved.
 
-Commit counts, line counts and PR counts describe the shape of a month, not its quality.
-They mix a migration with a lockfile, and in an AI-heavy workflow they mostly measure how
-much was generated. Say the numbers, say they are context, and score nothing on them —
-the weekly axes already scored what matters.
+Two habits from the weekly review matter more here, not less:
 
-The same discipline applies to a clean approval rate. A month at 100% approved with four
-post-approval hotfixes is not a better month than one at 80% that closed cleanly, and a
-review that reports only the first number has hidden the second.
+- **Credit an improvement without over-crediting it.** "The 52 cards closed in this span
+  all have completion records; the 24 older empty ones remain" is the true sentence. Drop
+  the second clause and the finding disappears from the next review.
+- **Put the repeat count in the finding's title**, not in its body. A baseline missed for
+  the second consecutive month is a different finding from a new one and must not read the
+  same.
+
+### The role verdict
+
+A month is long enough to say something about the role, and short enough that the sentence
+must be precise. Separate capability from what actually went wrong: "the problem is not
+capability, it is that substitute output was prioritized over the agreed product outcome"
+is a judgment someone can act on. "Underperformed" is not.
 
 ---
 
@@ -448,8 +460,11 @@ review that reports only the first number has hidden the second.
 | "I couldn't check CI, so operations is a 1" | Unverified is not zero. Say `unverified` and score what you saw. |
 | "I'll start at 5 and adjust" | Pick the highest anchor the artifacts satisfy. Nudging from the middle hides the reasoning. |
 | "A daily score would show the trend" | One day is noise. Daily mode finds claim-versus-reality gaps, not trends. |
-| "Two of the four weeks were reviewed, close enough to a month" | It is a two-week sample with a month's label. Name the missing weeks. |
 | "Every goal was approved, so it was a strong month" | Approval says what shipped. Count what review found after approval. |
-| "The monthly review should score too, for consistency" | Two scores for one month is an argument, not a signal. Monthly reads the weekly scores. |
+| "No record of approved goals, so call it 4 of 5" | An invented denominator outlives the gap it hid. Say the record is missing. |
+| "The month's numbers should cover the whole month" | The last review already counted half of it. Start where it stopped. |
+| "Carry the unfinished milestone into next month" | If it became unreachable, prove the no-go. Rolling it over hides when it died. |
+| "The monthly needs its own format, it's a bigger review" | Then `6 → 4` stops being legible. Same axes, same series, wider span. |
 | "It's in `docs/`, so agents will find it" | Nothing points at it. Add the pointer where the project's instructions live. |
+| "Starting the five-day run counts as meeting it" | Write conditions that starting cannot satisfy. |
 | "This is harsh for a self-review" | Being readable is not the goal. Being true is. |

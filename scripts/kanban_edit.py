@@ -262,8 +262,14 @@ def main(argv=None):
     s = sub.add_parser("set", help="태스크 수정")
     s.add_argument("task_id")
     for f in ("title", "category", "status", "phase", "details",
-              "assigned_to", "priority", "lines_added", "lines_removed"):
+              "assigned_to", "priority"):
         s.add_argument("--" + f.replace("_", "-"), dest=f)
+    # **숫자로 받는다.** argparse 기본은 문자열이라 `--lines-added 198` 이 `"198"` 로
+    # 들어갔고, 보드의 변경량 막대는 `a + r` 로 폭을 구한다 — 문자열이면 그게
+    # 덧셈이 아니라 이어붙이기(`"198"+"2" = "1982"`)가 되어 막대가 10배 작게 그려진다.
+    # 보드에서 티가 안 나는 종류의 고장이라 데이터가 조용히 섞인다.
+    for f in ("lines_added", "lines_removed"):
+        s.add_argument("--" + f.replace("_", "-"), dest=f, type=int)
 
     sh = sub.add_parser("show", help="태스크 출력")
     sh.add_argument("task_id")

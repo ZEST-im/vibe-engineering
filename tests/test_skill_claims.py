@@ -635,6 +635,22 @@ def review_skill_text():
         return fh.read()
 
 
+def modes_table(text):
+    """`## N modes` 머리말부터 다음 `##` 직전까지. **표만 잘라서 본다.**
+
+    파일 전체에 정규식을 걸면 다른 표의 굵은 칸이 모드로 잡힌다 — 9축 채점표의
+    `| **Testing** |` 같은 한 단어 칸 하나면 `Testing` 이 모드 목록에 끼어들고,
+    검사는 모드 표를 가리키며 엉뚱하게 빨개진다. 오탐이 작업을 멈추면 그 검사는
+    곧 꺼진다.
+    """
+    m = _MODE_HEADING.search(text)
+    if not m:
+        return ""
+    rest = text[m.end():]
+    nxt = re.search(r"^## ", rest, re.MULTILINE)
+    return rest[:nxt.start()] if nxt else rest
+
+
 class ReviewModesAgreeTest(unittest.TestCase):
     """`vibe-review` 의 모드 표와 본문 절이 갈라지지 않는가.
 
@@ -654,7 +670,7 @@ class ReviewModesAgreeTest(unittest.TestCase):
 
     def test_the_table_and_the_sections_list_the_same_modes(self):
         text = review_skill_text()
-        in_table = set(_MODE_ROW.findall(text))
+        in_table = set(_MODE_ROW.findall(modes_table(text)))
         in_body = set(_MODE_SECTION.findall(text))
 
         self.assertTrue(in_table, "모드 표를 찾지 못했다 — 표 형식이 바뀌었는지 확인")
@@ -677,9 +693,9 @@ class ReviewModesAgreeTest(unittest.TestCase):
         self.assertIn(word, _COUNT_WORDS,
                       "머리말의 수사를 읽지 못했다: %r — _COUNT_WORDS 에 추가할 것" % word)
         self.assertEqual(
-            _COUNT_WORDS[word], len(set(_MODE_ROW.findall(text))),
+            _COUNT_WORDS[word], len(set(_MODE_ROW.findall(modes_table(text)))),
             "머리말은 %s(%d)개라고 하는데 표에는 %d개다"
-            % (word, _COUNT_WORDS[word], len(set(_MODE_ROW.findall(text)))))
+            % (word, _COUNT_WORDS[word], len(set(_MODE_ROW.findall(modes_table(text))))))
 
 
 if __name__ == "__main__":

@@ -226,6 +226,32 @@ class CliTest(unittest.TestCase):
         kdir = fresh_board()
         self.assertNotEqual(0, self.run_cli(kdir, "set", "999", "--status", "done").returncode)
 
+    def test_line_counts_are_stored_as_numbers(self):
+        """변경량은 숫자로 들어가야 한다. 문자열이면 보드가 조용히 틀린 그림을 그린다.
+
+        argparse 기본이 문자열이라 `--lines-added 198` 이 `"198"` 로 저장됐다.
+        `kanban.html` 의 막대는 `a + r` 로 전체 폭을 구하는데, 문자열이면 그것이
+        덧셈이 아니라 이어붙이기가 된다 — `"198" + "2"` 는 `"1982"` 이고, 막대는
+        제 폭의 10분의 1로 그려진다. **에러가 없어서 아무도 모른다.**
+        """
+        kdir = fresh_board()
+        added = json.loads(self.run_cli(kdir, "add", "변경량").stdout)
+        self.run_cli(kdir, "set", str(added["id"]),
+                     "--lines-added", "198", "--lines-removed", "2")
+
+        task = json.loads(self.run_cli(kdir, "show", str(added["id"])).stdout)
+        self.assertIsInstance(task["lines_added"], int)
+        self.assertIsInstance(task["lines_removed"], int)
+        self.assertEqual(200, task["lines_added"] + task["lines_removed"])
+
+    def test_non_numeric_line_counts_are_refused(self):
+        """숫자가 아니면 **멈춘다.** 조용히 0 으로 떨어지면 기록이 거짓이 된다."""
+        kdir = fresh_board()
+        added = json.loads(self.run_cli(kdir, "add", "변경량").stdout)
+
+        self.assertNotEqual(0, self.run_cli(kdir, "set", str(added["id"]),
+                                            "--lines-added", "많음").returncode)
+
     def test_id_allocation_matches_server_implementation(self):
         """id 발급을 여기서 다시 구현하면 두 경로가 조용히 갈라진다."""
         with open(CLI, encoding="utf-8") as fh:
