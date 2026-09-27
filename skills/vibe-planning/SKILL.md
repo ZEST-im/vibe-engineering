@@ -15,8 +15,11 @@ English headings; mirror them in the user's language when that is what they writ
 
 ## Non-negotiables
 
-- **One question per message.** Use the environment's structured user-input tool when
-  available; otherwise ask one concise question directly. Every option carries a short
+- **One question per message.** In Claude Code use `AskUserQuestion`; where that tool does
+  not exist, ask one concise question directly and wait for the answer — never batch them.
+  Naming the tool is the point: "the environment's structured input tool, if available" is
+  an escape hatch, and the rules below assume the question actually got asked. Every option
+  carries a short
   description saying *why the question matters* — the user may not think like a planner.
 - **Options are capped at four.** When there are more candidates, group them and label
   the last option `(계속)` / `(more)` so the user knows the list was compressed. Never

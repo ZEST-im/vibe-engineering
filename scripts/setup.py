@@ -153,13 +153,25 @@ def force_rmtree(path):
 
 
 def make_codex_skill_compatible(skill_md):
-    """Remove Claude-only frontmatter fields from a copied Codex skill."""
+    """Codex 가 거부하는 Claude 전용 frontmatter 를 복사본에서 걷어낸다.
+
+    **못 걷어내면 말한다.** 예전에는 frontmatter 를 못 찾으면 조용히 return 했다.
+    그러면 `user-invocable:` 이 남은 채로 복사가 끝나고, 설치는 "COPIED" 라고
+    출력하는데 Codex 는 그 스킬을 거부한다 — 사용자에게는 성공으로 보이고
+    스킬만 없다. 이 함수가 존재하는 이유가 바로 그 상태를 막는 것이다.
+
+    BOM 이 붙었거나 닫는 fence 가 개행 없이 끝나면 실제로 여기 걸린다.
+    """
     with open(skill_md, encoding="utf-8") as fh:
         text = fh.read()
     if not text.startswith("---\n"):
+        print(f"  WARN {skill_md}: frontmatter 를 찾지 못했다 — "
+              "Codex 복사본을 손대지 않았다. Codex 가 이 스킬을 거부할 수 있다")
         return
     end = text.find("\n---\n", 4)
     if end == -1:
+        print(f"  WARN {skill_md}: frontmatter 가 닫히지 않았다 — "
+              "Codex 복사본을 손대지 않았다. Codex 가 이 스킬을 거부할 수 있다")
         return
     header = text[4:end].splitlines()
     portable = [line for line in header if not line.startswith("user-invocable:")]

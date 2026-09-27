@@ -10,7 +10,7 @@ This file provides the same rules for Codex CLI and other agents that read AGENT
 Before writing any code, fetch the current mission context:
 
 ```bash
-curl http://localhost:4242/api/vibe-harness/context
+curl http://localhost:4242/api/vibe-engineering/context
 ```
 
 From the response, extract and respect:
@@ -50,12 +50,12 @@ When the user types `ss` (sync & status):
 ### Before starting work
 Check if a task for this work already exists:
 ```bash
-curl http://localhost:4242/api/vibe-harness/tasks
+curl http://localhost:4242/api/vibe-engineering/tasks
 ```
 
 If it doesn't exist, create it:
 ```bash
-curl -X POST http://localhost:4242/api/vibe-harness/tasks \
+curl -X POST http://localhost:4242/api/vibe-engineering/tasks \
   -H 'Content-Type: application/json' \
   -d '{"title":"<task title>","status":"todo","category":"backend","phase":"PHASE_MVP01"}'
 ```
@@ -63,7 +63,7 @@ curl -X POST http://localhost:4242/api/vibe-harness/tasks \
 ### When starting a task
 Move it to `in_progress` (only ONE task in_progress at a time):
 ```bash
-curl -X PUT http://localhost:4242/api/vibe-harness/tasks/<id> \
+curl -X PUT http://localhost:4242/api/vibe-engineering/tasks/<id> \
   -H 'Content-Type: application/json' \
   -d '{"status":"in_progress"}'
 ```
@@ -77,7 +77,7 @@ Measure code changes, write a work report, move to `done`:
 git diff --numstat HEAD
 
 # Update task
-curl -X PUT http://localhost:4242/api/vibe-harness/tasks/<id> \
+curl -X PUT http://localhost:4242/api/vibe-engineering/tasks/<id> \
   -H 'Content-Type: application/json' \
   -d '{
     "status": "done",

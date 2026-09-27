@@ -35,6 +35,12 @@ for _stream in (sys.stdout, sys.stderr):
         pass
 
 SKILL_DIR = os.path.expanduser("~/.claude/skills/vibe-harness")
+# **설치 경로는 둘이다.** `setup.py` 가 `~/.claude/skills/` 와 `~/.codex/skills/`
+# 양쪽에 깔기 시작했는데 여기는 Claude 쪽만 알고 있었다. 그래서 문서화된 빠른 경로
+# (`--update-skill`)로 갱신하면 "N개 파일 반영" 이라고 출력되면서 **Codex 쪽은 조용히
+# 낡는다.** `setup.py:36` 주석이 "같은 목록이 세 군데에 흩어져 서로 달랐다" 고 적어둔
+# 바로 그 분기이며, `tests/test_skill_claims.py` 가 두 파일의 루트가 어긋나면 잡는다.
+CODEX_SKILL_DIR = os.path.expanduser("~/.codex/skills/vibe-harness")
 SYNC_CONFIG = os.path.join(SKILL_DIR, "sync.json")
 PROJECTS_CONFIG = os.path.join(SKILL_DIR, "projects.json")
 RECONCILE_LOG = os.path.join(SKILL_DIR, "reconcile.log")
@@ -597,6 +603,11 @@ def main(argv=None):
         else:
             copied = install_skill_files(repo)
             print("skill     : %d개 파일 반영 → %s" % (len(copied), SKILL_DIR))
+            # Codex 설치본이 있으면 같이 갱신한다. **없으면 만들지 않는다** —
+            # Codex 를 안 쓰는 머신에 디렉토리를 만들어 두면 그것이 죽은 설치가 된다.
+            if os.path.isdir(CODEX_SKILL_DIR):
+                codex = install_skill_files(repo, dest=CODEX_SKILL_DIR)
+                print("            %d개 파일 반영 → %s" % (len(codex), CODEX_SKILL_DIR))
             print("            머신 로컬(sync.json·projects.json·users.json)은 보존됐다")
             # 반영한 것만 말하고 끝내면 빠진 것을 알 방법이 없다.
             missing = missing_installed_references(repo)
