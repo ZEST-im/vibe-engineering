@@ -131,6 +131,30 @@ def duplicate_phases(body):
     return {name: n for name, n in counts.items() if n > 1}
 
 
+def unparsed_done_headings(body):
+    """`✅` 라고 적혀 있는데 `DONE_PHASE` 가 못 읽은 헤딩. `[(이름, 줄)]`.
+
+    실측 2026-09-27: 종료일 괄호를 `(2026-09-27, 개시 2026-09-12)` 로 적었더니
+    날짜 그룹 `[0-9-]+` 에 걸려 매치가 실패했다. 그리고 그 실패가 **"완료가 아니다"**
+    로 조용히 번역됐다 — 그 Phase 는 출력에도, 총계 분모에도 나타나지 않았다.
+    사람은 「태그가 왜 안 생기지」가 아니라 「아, 6개구나」 하고 넘어간다.
+
+    `ANY_PHASE` 가 이 파일에 이미 있었다. 도구는 그 헤딩의 존재를 **볼 수 있는데도**
+    두 목록을 비교하지 않았다. 못 보는 것과 보고도 말하지 않는 것은 다르다.
+
+    **막지 않고 알리기만 한다.** 형식이 틀렸다고 태깅을 멈추면 그 검사는 곧 꺼진다.
+    """
+    parsed = {m.group(1) for m in _real_phase_hits(DONE_PHASE, body)}
+    out = []
+    for m in _real_phase_hits(ANY_PHASE, body):
+        line = body[m.start():body.find("\n", m.start()) if "\n" in body[m.start():]
+                    else len(body)]
+        # 완료 표시가 없으면 형식 오류가 아니다 — 진행 중까지 신고하면 매번 시끄럽다.
+        if "✅" in line and m.group(1) not in parsed:
+            out.append((m.group(1), line.strip()))
+    return out
+
+
 def phase_sections(body):
     """`PHASES.md` 본문에서 완료 Phase 절을 뽑는다. **파일이 아니라 텍스트를 받는다.**"""
     out = {}
@@ -1102,6 +1126,14 @@ def main(argv=None, root=None):
             + ", ".join(f"{k}×{v}" for k, v in sorted(dupes.items()))
             + f"\n  {phases_path}\n"
             "  두 머신이 같은 번호를 각자 열면 이렇게 된다. 번호를 갈라 적고 다시 돌린다.")
+
+    # **막지 않고 알린다.** 형식이 틀린 `✅` 헤딩은 파서가 못 읽고, 그 실패가
+    # 조용히 "완료가 아니다" 로 번역된다. 세지 않으면 사람은 총계를 보고 넘어간다.
+    # 여기서 멈추지 않는 것은 의도다 — 오탐이 태깅을 멈추면 그 검사는 곧 꺼진다.
+    for name, line in unparsed_done_headings(phases_body):
+        print(f"  ⚠ {name}: ✅ 인데 형식이 달라 읽지 못했다 — 아래 총계에서 빠진다")
+        print(f"      {line}")
+        print(f"      종료일 괄호는 숫자와 하이픈만 받는다: `(YYYY-MM-DD)`")
 
     plan = tag_plan(phases_body, _log_lines(base))
     return _run_tag(plan, base, apply=a.apply)
