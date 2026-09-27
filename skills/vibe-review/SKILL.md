@@ -445,10 +445,17 @@ conditions — also belongs somewhere an agent will find it **while doing the wo
 the next review.
 
 So write that half as markdown in the project's own documents (`docs/team/` or wherever
-the project already keeps team documents), and **put one line pointing at it wherever the
-project keeps its agent-facing instructions** — `CLAUDE.md`, `AGENTS.md`, or the docs
-index. A document nothing points at is not a document an agent will find, and "an agent
-could read it" is not the same as an agent reading it.
+the project already keeps team documents), and **put one line pointing at it at the top of
+`CURRENT_PHASE.md`** — then again wherever the project keeps its agent-facing instructions
+(`CLAUDE.md`, `AGENTS.md`, or the docs index). `CURRENT_PHASE.md` comes first because it
+is what the session-start hook prints and what `vibe-harness` reads as the scope signal; an
+agent that starts from it and finds no pointer does not know the baseline exists, however
+well `CLAUDE.md` describes it. A document nothing points at is not a document an agent will
+find, and "an agent could read it" is not the same as an agent reading it.
+
+The pointer names the file and nothing more — `This month's goals: docs/team/<PROJECT>_YYYY-MM_BASELINE.md`.
+It does not change scope, so it is not a phase transition and does not wait for one; add it
+in the same push as the baseline. Update it when next month's baseline lands.
 
 The next monthly review opens by reading that file. That is the loop, and it only closes
 if the file is somewhere both a person and an agent will actually land on.
@@ -472,6 +479,11 @@ So the name and the one table are fixed, and everything else in the document is 
   |---|---|---:|---|---|
   | G1 | Energy — sample check + on-site install | 30% | 10-25 | 66 · 76 |
   ```
+
+  In a Korean document the headers are exactly `| # | 목표 | 가중치 | 마감 | 카드 |` —
+  translate the heading and the columns with these words, not synonyms. A reader keyed on
+  `마감` does not find `기한`; that is how one project's deadlines vanished from the
+  channel while its goals came through.
 
   One row per goal, weights summing to 100, and **the goal cell is one line** — what a
   person scanning a channel needs to recognise the goal. The checkable completion
