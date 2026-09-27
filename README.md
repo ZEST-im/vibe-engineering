@@ -333,7 +333,7 @@ Monthly archive files (`vibe-harness/archive/YYYY-MM.json`) are git-tracked. The
 | `cc` | Full close: docs + kanban + commit + push + deploy |
 | `/vibe-planning` | Kickoff planning — five gated stages into `docs/planning/` |
 | `/vibe-design` | Landing + key screens as HTML, checked in a browser |
-| `/vibe-review` | Weekly scored review + short daily pass on yesterday's output |
+| `/vibe-review` | Weekly scored review, a short daily pass, and a monthly review in the project |
 | `python3 ~/.claude/skills/vibe-harness/server.py sync` | Push configured remote snapshots now |
 | `python3 scripts/enroll.py --token <t>` | Register this machine for token usage collection |
 | `python3 scripts/enroll.py --add-project <key>=<repo>` | Register a project to collect from |
