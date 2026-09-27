@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "next_id": 131,
+  "next_id": 132,
   "tasks": [
     {
       "id": "hg98",
@@ -861,6 +861,21 @@
       "lines_added": 29,
       "lines_removed": 0,
       "details": "skills/vibe-review/SKILL.md 월간 모드에 「Name and shape the baseline the same way in every project」 절 추가.\n- 경로 docs/team/<PROJECT>_YYYY-MM_BASELINE.md (YYYY-MM=목표 대상 월, 매월 새 파일)\n- `## Goals and weights`(`## 목표와 가중치`) 표: # | Goal | Weight | Due | Cards, 목표 칸 한 줄, 완료 조건은 별도 절\n- 리뷰 HTML·history.json·기준선을 기본 브랜치에 한 push\n\n계기: 2026-09 salpim-maru(목표 표)와 pante_capture(2026-10-BASELINE.md, 완료 조건 표만)가 다른 형식 → zesty-os 조직 웹훅 알림이 pante_capture 목표를 못 읽음. 알림 쪽은 파일명 변형 허용으로 완화(zesty-os).\n테스트 979 통과. 후속: 설치본(~/.claude/skills) 반영은 setup upgrade."
+    },
+    {
+      "id": 131,
+      "title": "vibe-review 기준선 — 한국어 열 이름 고정 + CURRENT_PHASE 포인터",
+      "status": "review",
+      "category": "docs",
+      "phase": null,
+      "assigned_to": "zest.hogun",
+      "created_at": "2026-09-27T14:00:00+09:00",
+      "started_at": "2026-09-27T14:00:00+09:00",
+      "updated_at": "2026-09-27T14:00:00+09:00",
+      "completed_at": "2026-09-27T14:00:00+09:00",
+      "lines_added": 16,
+      "lines_removed": 4,
+      "details": "#130 후속, pante_capture 실사용에서 나온 두 가지.\n- 한국어 표 열을 `| # | 목표 | 가중치 | 마감 | 카드 |` 로 고정(동의어 금지). pante_capture 가 `기한` 을 써서 Discord 알림에서 마감일이 빠졌다.\n- 포인터 한 줄을 CURRENT_PHASE.md 맨 위에 먼저(그다음 CLAUDE.md/AGENTS.md). 세션 시작 hook 과 vibe-harness 가 CURRENT_PHASE 를 1순위 스코프 신호로 읽는데 pante_capture 포인터는 CLAUDE.md §10 에만 있어 CURRENT_PHASE 만 읽은 에이전트가 기준선을 몰랐다. 포인터는 스코프 변경이 아니라 Phase 전환을 기다리지 않는다.\n테스트 983 통과."
     }
   ]
 }
