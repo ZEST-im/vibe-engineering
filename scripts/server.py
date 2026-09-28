@@ -2359,6 +2359,69 @@ def _read_pending_sync():
         return {}
 
 
+# 한 요청에 담을 목표 크기. **수신 쪽 임계값을 이쪽에서 읽을 수 없으므로 추측이다.**
+# 잘못된 토큰으로 재보면 16MB 까지 전송 계층은 통과한다 — 413 은 인증 이후 애플리케이션이
+# 낸다. 그래서 숫자를 맞히려 하지 않고, 막히면 줄이는 쪽으로 푼다(_budget_ladder).
+SNAPSHOT_BUDGET = 1_000_000
+
+# 이 아래로 줄여도 source 하나가 안 들어가면 더 줄이는 의미가 없다.
+SNAPSHOT_BUDGET_FLOOR = 50_000
+
+
+def _budget_ladder(start=SNAPSHOT_BUDGET, floor=SNAPSHOT_BUDGET_FLOOR):
+    """413 을 만날 때마다 써 볼 예산. 반씩 줄이고 하한에서 멈춘다.
+
+    상수를 박아두면 그 상수가 다음 사고가 된다 — 수신 쪽이 조용히 바뀌어도 이쪽은
+    모른다. 413 은 "예산이 틀렸다" 는 유일한 신호이므로 그것으로 배운다.
+    """
+    budget = int(start)
+    yield budget
+    while budget > floor:
+        budget = max(int(budget // 2), 1)
+        yield budget
+        if budget <= 1:
+            break
+
+
+def _snapshot_chunks(payload, budget=SNAPSHOT_BUDGET):
+    """번들을 source 단위로 나눈다. 각 덩어리는 그 자체로 온전한 번들이다.
+
+    수신 머지가 **key 단위 upsert** 라 나눠 보내는 것이 한 번에 보내는 것과 의미가 같다.
+    봉투(dashboard·schema_version·generated_at)는 그대로 물려주고 **revision 만 그 덩어리
+    내용으로 다시 계산한다** — 원본 revision 을 물려주면 내용이 다른데 같은 값이 된다.
+
+    한 source 혼자 예산을 넘으면 더 쪼갤 수 없다. 그때도 **버리지 않고 혼자 담는다** —
+    막히더라도 무엇이 막혔는지 이름이 남아야 한다.
+    """
+    envelope = {k: v for k, v in payload.items() if k not in ("sources", "revision")}
+    sources = list(payload.get("sources") or [])
+
+    def finish(group):
+        body = dict(envelope)
+        body["sources"] = group
+        canonical = json.dumps(body, sort_keys=True, ensure_ascii=False,
+                               separators=(",", ":"))
+        body["revision"] = hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
+        return body
+
+    if not sources:
+        # 보낼 것이 없다는 사실도 수신이 알아야 한다 — 침묵과 구분되지 않는다.
+        return [finish([])]
+
+    chunks, group, used = [], [], 0
+    overhead = len(json.dumps(finish([]), ensure_ascii=False).encode("utf-8"))
+    for source in sources:
+        cost = len(json.dumps(source, ensure_ascii=False).encode("utf-8")) + 1
+        if group and used + cost + overhead > budget:
+            chunks.append(finish(group))
+            group, used = [], 0
+        group.append(source)
+        used += cost
+    if group:
+        chunks.append(finish(group))
+    return chunks
+
+
 def _post_snapshot(cfg, payload):
     raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     req = urllib_request.Request(
@@ -2374,6 +2437,51 @@ def _post_snapshot(cfg, payload):
     with urllib_request.urlopen(req, timeout=10) as resp:
         if not 200 <= resp.status < 300:
             raise RuntimeError("sync HTTP " + str(resp.status))
+
+
+def _oversized_sources(payload, budget=SNAPSHOT_BUDGET_FLOOR):
+    """혼자서 예산을 넘는 source 의 키. 더 쪼갤 수 없는 것들이다.
+
+    막혔을 때 "동기화가 안 된다" 까지만 알면 손을 쓸 수 없다. **어느 보드가 원인인지**
+    알아야 아카이브를 덜지 그 보드를 줄일지 판단할 수 있다.
+    """
+    stuck = []
+    for source in payload.get("sources") or []:
+        if len(json.dumps(source, ensure_ascii=False).encode("utf-8")) > budget:
+            stuck.append(source.get("key"))
+    return stuck
+
+
+def _send_snapshot(cfg, payload, post=None):
+    """번들을 보낸다. 413 이면 예산을 줄여 다시 쪼갠다. 보낸 덩어리 수를 돌려준다.
+
+    수신 임계값을 이쪽에서 읽을 수 없으므로 **413 이 유일한 신호다.** 줄여서 다시
+    시도하고, 하한까지 가도 막히면 그 오류를 그대로 올린다 — 조용히 포기하면
+    대시보드가 낡은 채로 남고 아무도 모른다.
+
+    이미 보낸 덩어리를 다시 보내게 되지만 수신이 key 단위 upsert 라 같은 결과다.
+    """
+    post = post or _post_snapshot
+    last = None
+    last_budget = SNAPSHOT_BUDGET_FLOOR
+    for budget in _budget_ladder():
+        chunks = _snapshot_chunks(payload, budget)
+        try:
+            for chunk in chunks:
+                post(cfg, chunk)
+            return len(chunks)
+        except urllib_error.HTTPError as exc:
+            if exc.code != 413:
+                raise
+            last = exc
+            print(f"  Sync 413 — 예산 {budget:,} 로는 막힌다. 줄여서 다시 시도",
+                  file=sys.stderr)
+            last_budget = budget
+    stuck = _oversized_sources(payload, budget=last_budget)
+    if stuck:
+        print("  Sync 413 — 혼자서도 예산을 넘는 보드: " + ", ".join(stuck)
+              + " (아카이브를 덜거나 그 보드를 줄여야 한다)", file=sys.stderr)
+    raise last
 
 
 def _remote_request(cfg, method, query=None, payload=None):
@@ -2474,7 +2582,9 @@ def _sync_worker(dirty_dirs):
     completed = []
     for dashboard, payload in list(pending.items()):
         try:
-            _post_snapshot(cfg, payload)
+            parts = _send_snapshot(cfg, payload)
+            if parts > 1:
+                print(f"  Sync ({dashboard}): {parts}개로 나눠 보냈다", file=sys.stderr)
             completed.append(dashboard)
         except (OSError, urllib_error.URLError, urllib_error.HTTPError, RuntimeError) as exc:
             print(f"  Sync pending ({dashboard}): {type(exc).__name__}", file=sys.stderr)

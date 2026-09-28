@@ -640,6 +640,22 @@ class SetupAutoStartTest(unittest.TestCase):
         cleanup.assert_called_once_with()
 
 
+def _dict_pairs(dct):
+    """`ast.Dict` 의 (키, 값) 쌍. 길이가 어긋나면 멈춘다.
+
+    `zip(strict=)` 를 쓰지 않는다 — **3.10 에서 생긴 문법이라 3.9 에서 TypeError 다.**
+    이 레포는 실제로 3.9 로 서버를 띄우므로(LaunchAgent), 테스트가 그 버전에서 못 도는
+    것은 "검사가 제품이 도는 자리를 보지 않는다" 는 뜻이 된다.
+
+    zip 의 strict 가 하던 일(조용히 잘리지 않게)은 길이를 직접 확인해 대신한다.
+    `**expansion` 이 있으면 키가 None 이지만 길이는 맞는다.
+    """
+    if len(dct.keys) != len(dct.values):
+        raise AssertionError(
+            "ast.Dict 의 keys/values 길이가 다르다: %d != %d" % (len(dct.keys), len(dct.values)))
+    return [(dct.keys[i], dct.values[i]) for i in range(len(dct.keys))]
+
+
 class HookCommandPathTest(unittest.TestCase):
     """훅 명령에 역슬래시가 들어가면 Windows 에서 훅이 전부 죽는다.
 
@@ -684,7 +700,7 @@ class HookCommandPathTest(unittest.TestCase):
 
         commands = [kv for entry in hooks.elts
                     for dct in ast.walk(entry) if isinstance(dct, ast.Dict)
-                    for key, kv in zip(dct.keys, dct.values, strict=True)
+                    for key, kv in _dict_pairs(dct)
                     if isinstance(key, ast.Constant) and key.value == "command"]
         self.assertEqual(len(setup.HOOKS), len(commands), "훅 명령을 다 찾지 못했다")
 
