@@ -2297,13 +2297,38 @@ def _snapshot_source(key, info):
     }
 
 
+def _source_is_unused(source):
+    """이 보드에 사람이 남긴 것이 있는가. 태스크도 결정도 없으면 없다.
+
+    `context` 와 `schema` 로는 가를 수 없다 — 그것들은 보드가 아니라 **레포 파일**에서
+    나오므로 클론만 해두면 값이 생기고, 빈 보드에서도 구조는 채워진 dict 다.
+    아카이브는 `_snapshot_source` 에서 이미 tasks 에 합쳐진 뒤라 함께 센다.
+    """
+    return not source.get("tasks") and not source.get("decisions")
+
+
 def _build_dashboard_snapshot(dashboard, project_keys):
+    """등록된 키를 번들로 만든다. **한 번도 쓰이지 않은 보드는 싣지 않는다.**
+
+    서버는 시작할 때 등록된 모든 프로젝트에 `init_kanban` 을 돌려 빈 보드를 만든다.
+    그래서 레포만 클론돼 있고 한 번도 안 쓴 키도 디렉토리가 생기고, 디렉토리 존재만
+    보던 예전 판정으로는 **0건짜리 source 가 실려 나갔다.** 수신 쪽 머지는 key 단위
+    upsert 라 마지막에 민 쪽이 이긴다 — 2026-09-14 에 그렇게 남의 17건·15건짜리
+    보드가 0건으로 덮였다.
+
+    데이터가 사라진 것은 아니었다(원 보드는 각 머신에 남아 있다). 그래서 더 나빴다 —
+    아무도 오류를 보지 못한 채 화면이 빈 보드를 사실로 보여줬다.
+    """
     projects = load_projects()
     sources = []
     for key in project_keys:
         info = projects.get(key)
-        if info and os.path.isdir(info.get("kanban_dir", "")):
-            sources.append(_snapshot_source(key, info))
+        if not (info and os.path.isdir(info.get("kanban_dir", ""))):
+            continue
+        source = _snapshot_source(key, info)
+        if _source_is_unused(source):
+            continue
+        sources.append(source)
     body = {
         "schema_version": 1,
         "dashboard": dashboard,
