@@ -1,7 +1,7 @@
 # Vibe Engineering
 
 [![tests](https://github.com/ZEST-im/vibe-engineering/actions/workflows/tests.yml/badge.svg)](https://github.com/ZEST-im/vibe-engineering/actions/workflows/tests.yml)
-![python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue)
+![python](https://img.shields.io/badge/python-3.9%20%E2%80%93%203.13-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 **Session harness for Claude Code.**  
@@ -538,9 +538,9 @@ python3 ~/.claude/skills/vibe-harness/server.py configure-sync \
 
 ## Requirements
 
-- Python 3.11+ — the versions CI actually runs (3.11, 3.12, 3.13). Older ones are
-  untested. The code needs 3.8 at minimum (`shutil.copytree(dirs_exist_ok=…)`), so
-  3.8–3.10 will probably work; nothing verifies that, so it is not claimed here.
+- Python 3.9+ — the versions CI actually runs (3.9, 3.10, 3.11, 3.12, 3.13). The floor
+  is 3.9 because that is where the product runs: the macOS auto-start agent launches the
+  server with the system `/usr/bin/python3`. 3.8 is untested and not claimed.
 - Claude Code CLI
 - macOS for the auto-start agent. The server itself runs anywhere Python does, and
   Windows has its own path (Scheduled Task) — see [docs/vibe-harness-windows.md](docs/vibe-harness-windows.md).
