@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "next_id": 132,
+  "next_id": 134,
   "tasks": [
     {
       "id": "hg98",
@@ -876,6 +876,50 @@
       "lines_added": 16,
       "lines_removed": 4,
       "details": "#130 후속, pante_capture 실사용에서 나온 두 가지.\n- 한국어 표 열을 `| # | 목표 | 가중치 | 마감 | 카드 |` 로 고정(동의어 금지). pante_capture 가 `기한` 을 써서 Discord 알림에서 마감일이 빠졌다.\n- 포인터 한 줄을 CURRENT_PHASE.md 맨 위에 먼저(그다음 CLAUDE.md/AGENTS.md). 세션 시작 hook 과 vibe-harness 가 CURRENT_PHASE 를 1순위 스코프 신호로 읽는데 pante_capture 포인터는 CLAUDE.md §10 에만 있어 CURRENT_PHASE 만 읽은 에이전트가 기준선을 몰랐다. 포인터는 스코프 변경이 아니라 Phase 전환을 기다리지 않는다.\n테스트 983 통과."
+    },
+    {
+      "id": "hgA132",
+      "title": "빈 보드가 남의 source 를 덮는 것 차단",
+      "description": "",
+      "details": "🔴 09-14 15:00 실측 회귀. 한 머신이 재시작하면서 자기 것이 아닌 키 두 개를 0건으로 밀어, 다른 머신이 올려둔 17건·15건짜리 보드를 덮었다.\n\n원인: _build_dashboard_snapshot 은 kanban_dir 이 **디렉토리로 존재하면** 싣는다(2211행). 그런데 서버는 시작 시 등록된 모든 프로젝트에 init_kanban 을 돌려 빈 보드를 만든다 — 즉 레포만 클론돼 있고 한 번도 안 쓴 키도 디렉토리가 생기고, 0건짜리 source 로 실려 나간다. 수신 쪽 머지는 key 단위 upsert 라 마지막에 민 쪽이 이긴다.\n\n기존 가드는 디렉토리 부재만 막는다 — 빈 보드는 못 막는다.\n\n검토안:\n1) 클라이언트: 태스크·결정이 모두 0 인 source 는 번들에서 제외(가장 싸다)\n2) 수신: 들어온 source 가 0 건이고 기존 행이 비어있지 않으면 무시\n3) source 소유자 검증(근본. 별도 과제로 이미 기록)\n\n데이터 유실은 아니다 — 원 보드는 각 머신에 그대로 있고 다시 밀면 복구된다. 그러나 그 사이 화면은 빈 보드를 사실로 보여준다.\n\n---\n원 기록: 2026-09-14 15:00 hgA108 (hogun). 09-28 ss 에서 pull 전 보존해 재등록했다 — 그 사이 원격 11커밋이 들어왔지만 이 결함은 고쳐지지 않았다(_build_dashboard_snapshot 은 여전히 os.path.isdir 만 본다).\n\n09-28 실측: 이 머신이 ax-project 로 발행하는 14개 중 agent-tips-rnd 가 태스크 0·결정 0 이다. 디렉토리는 있으니 다음 전송에 그대로 실린다.\n\n---\n## 고친 방식 (09-28)\n\n`_source_is_unused()` 를 두고 `_build_dashboard_snapshot` 이 그런 source 를 싣지 않는다.\n\n**판정 기준을 정하는 데 실측이 필요했다.** 처음엔 context 도 보려 했는데, context 는 빈 보드에서도 채워진 dict 다(phase: \"\", scope: \"\"). 레포 파일에서 나오지 보드에서 나오는 게 아니라 \"이 보드가 쓰였는가\" 를 가를 수 없다. 사람이 이 보드에 남긴 증거는 **태스크와 결정 둘뿐**이다. 아카이브는 _snapshot_source 에서 이미 tasks 에 합쳐진 뒤라 함께 센다 — 전부 아카이브한 보드는 빈 보드가 아니다.\n\n**TDD.** 테스트 11개 중 3개 RED(빈 보드가 실림) → GREEN. 나머지 8개는 지켜야 할 가드다: 태스크/결정/아카이브가 있으면 실린다, 디렉토리 부재는 기존대로 빠진다, 요청 순서가 유지된다, 전부 비어도 revision 은 계산된다, 빈 보드가 채워지면 revision 이 바뀐다.\n\n**실사례 확인.** 발행 14개 → 13개. 빠진 키는 agent-tips-rnd 하나이고, 이 머신에서 실제로 태스크 0·결정 0 이던 그 키다.\n\n**413 은 이 수정으로 안 풀린다.** 번들이 여전히 5,349,344 bytes 다 — agent-tips-rnd 가 원래 작아서 크기에 거의 영향이 없다. 별건으로 hgA133 에 등록했다.",
+      "status": "done",
+      "priority": "high",
+      "category": "backend",
+      "target_date": "",
+      "started_at": "",
+      "completed_at": "",
+      "lines_added": 0,
+      "lines_removed": 0,
+      "tokens_used": 0,
+      "created_at": "2026-09-28T09:00:36+09:00",
+      "updated_at": "2026-09-28T09:10:25+09:00",
+      "position": 0,
+      "phase": "",
+      "review": "",
+      "created_by": "hogun",
+      "assigned_to": ""
+    },
+    {
+      "id": "hgA133",
+      "title": "스냅샷 번들이 프로젝트 수에 비례해 자라 413 으로 막힌다",
+      "description": "",
+      "details": "09-28 실측: ax-project 번들이 **5,349,344 bytes** (13 source). 전송이 413 으로 거부된다.\n\n한계선은 106KB ~ 3.9MB 사이 어딘가다. 우회로 source 를 1건(106KB)으로 줄여 revision 을 같은 방식으로 재계산해 보내면 통과한다 — 수신 머지가 key 단위 upsert 라 다른 프로젝트 행은 건드리지 않는다. 다만 **정확한 한계선은 재보지 않았다.** 재려면 실제로 남의 데이터를 밀어야 해서 그만뒀다.\n\n구조적 결함이다. 번들이 프로젝트 수에 비례해 자라는 한 다른 머신도 곧 같은 데서 막힌다. 이 머신은 13개인데 회사 전체는 더 많다.\n\n무게 분포(태스크 수): codebook_vibe 541 · impactbook_ai 492 · agent_ceo_staff 314 · solarbook 177 · vibe-engineering 140. 상위 3개가 대부분을 차지한다.\n\n검토 방향:\n1) key 단위로 쪼개 전송 — 수신이 이미 key upsert 라 의미상 동등하다. 가장 작은 변경\n2) 아카이브를 번들에서 빼기 — tasks 에 아카이브를 합쳐 싣는 것이 크기의 큰 몫이다. 다만 대시보드가 그걸 쓰는지 확인 필요\n3) 변경분만 전송 — revision 비교가 이미 있으니 delta 로 갈 수 있으나 수신 쪽 변경이 크다\n\n주의: 1) 로 가면 키별로 밀게 되는데, **이 머신 사본이 낡은 키는 남의 최신 보드를 덮는다**(hgA132 와 같은 사고 유형). 전송 전에 중앙과 비교하는 장치가 함께 필요하다.",
+      "status": "todo",
+      "priority": "high",
+      "category": "backend",
+      "target_date": "",
+      "started_at": "",
+      "completed_at": "",
+      "lines_added": 0,
+      "lines_removed": 0,
+      "tokens_used": 0,
+      "created_at": "2026-09-28T09:05:09+09:00",
+      "updated_at": "2026-09-28T09:05:09+09:00",
+      "position": 0,
+      "phase": "",
+      "review": "",
+      "created_by": "hogun",
+      "assigned_to": ""
     }
   ]
 }
