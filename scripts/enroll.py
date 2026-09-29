@@ -35,6 +35,7 @@ for _stream in (sys.stdout, sys.stderr):
         pass
 
 SKILL_DIR = os.path.expanduser("~/.claude/skills/vibe-harness")
+SKILL_DIR_ROOT = os.path.dirname(SKILL_DIR)
 # **설치 경로는 둘이다.** `setup.py` 가 `~/.claude/skills/` 와 `~/.codex/skills/`
 # 양쪽에 깔기 시작했는데 여기는 Claude 쪽만 알고 있었다. 그래서 문서화된 빠른 경로
 # (`--update-skill`)로 갱신하면 "N개 파일 반영" 이라고 출력되면서 **Codex 쪽은 조용히
@@ -357,6 +358,63 @@ def skill_reference_files(repo_root):
                          if ".." not in rel.split("/")}))
 
 
+def _setup_module():
+    """`setup.py` 를 **import 만** 한다. 실행하지 않는다.
+
+    무엇을 설치할지는 거기 `SKILLS` 하나가 정한다. 여기 두 번째 목록을 두면 스킬을
+    추가했을 때 **설치는 되는데 갱신은 안 되는** 상태가 조용히 생긴다 — 2026-09-29 에
+    실제로 그랬다. 새 스킬 4종과 `vibe-debug` 가 설치본에 없는 채로 "16개 파일 반영"
+    이라고만 나왔다.
+
+    `setup.py` 는 최상위에 인코딩 설정 한 줄뿐이고 `main()` 은 `__main__` 에서만 돈다.
+    그래서 import 는 훅도 자동시작도 건드리지 않는다 — 그 파일을 **실행**하면 훅이
+    중복 등록된다(같은 날 실제로 그렇게 됐다).
+    """
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "vh_setup_for_enroll", os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                            "setup.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def skill_dirs_to_install(setup_mod=None):
+    """갱신 대상 스킬 디렉토리 이름. `setup.SKILLS` 가 정본이다."""
+    try:
+        return list((setup_mod or _setup_module()).SKILLS)
+    except Exception:
+        # 읽지 못하면 최소한 자기 자신은 갱신한다 — 아무것도 안 하는 것보다 낫다.
+        return ["vibe-harness"]
+
+
+def install_skill_dirs(repo_root, setup_mod=None):
+    """스킬 디렉토리 전체를 Claude·Codex 양쪽에 반영한다.
+
+    **`setup.py` 의 복사 함수를 그대로 쓴다.** 그것이 이미 두 가지를 정확히 한다 —
+    양쪽 루트에 깔고, Codex 사본에서 `user-invocable:` 을 걷어낸다. 그게 남으면
+    **Codex 가 그 스킬을 거부하는데 복사는 성공으로 출력된다.** 여기서 다시 구현하면
+    그 두 가지가 조용히 빠진다.
+    """
+    mod = setup_mod or _setup_module()
+    try:
+        mod.copy_skill_files()
+        return list(mod.SKILLS)
+    except Exception as exc:
+        print(f"  WARN 스킬 디렉토리 반영 실패: {exc}", file=sys.stderr)
+        return []
+
+
+def missing_installed_skills(skills_root=None, setup_mod=None):
+    """설치본에 없는 스킬. "N개 반영" 만 말하고 빠진 것을 안 말하던 것이 사고의 근본이다."""
+    root = skills_root or SKILL_DIR_ROOT
+    out = []
+    for name in skill_dirs_to_install(setup_mod):
+        if not os.path.isfile(os.path.join(root, name, "SKILL.md")):
+            out.append(name)
+    return out
+
+
 def skill_install_plan(repo_root, dest=SKILL_DIR):
     """(원본, 대상) 목록. 존재하는 것만 담는다."""
     plan = []
@@ -600,6 +658,8 @@ def main(argv=None):
                 # basename 만 찍으면 references/ 하위가 평평해 보인다 — 그래서
                 # 설치본에 그 디렉토리가 없는 것을 아무도 눈치채지 못했다.
                 print("            %s" % os.path.relpath(dest, SKILL_DIR))
+            print("            스킬 %d종: %s"
+                  % (len(skill_dirs_to_install()), ", ".join(skill_dirs_to_install())))
         else:
             copied = install_skill_files(repo)
             print("skill     : %d개 파일 반영 → %s" % (len(copied), SKILL_DIR))
@@ -609,11 +669,23 @@ def main(argv=None):
                 codex = install_skill_files(repo, dest=CODEX_SKILL_DIR)
                 print("            %d개 파일 반영 → %s" % (len(codex), CODEX_SKILL_DIR))
             print("            머신 로컬(sync.json·projects.json·users.json)은 보존됐다")
+
+            # **스킬 디렉토리도 반영한다.** 예전에는 `vibe-harness` 하나만 갱신해서,
+            # 새로 머지한 스킬이 설치본에 없는 채로 "N개 파일 반영" 만 나왔다.
+            # 그것들을 깔던 것은 `setup.py` 뿐인데 그 파일을 실행하면 훅이 중복 등록된다.
+            names = install_skill_dirs(repo)
+            if names:
+                print("            스킬 %d종 반영 (Claude·Codex): %s"
+                      % (len(names), ", ".join(names)))
+
             # 반영한 것만 말하고 끝내면 빠진 것을 알 방법이 없다.
             missing = missing_installed_references(repo)
             if missing:
                 print("            ⚠ SKILL.md 가 가리키는데 설치본에 없다: %s"
                       % ", ".join(missing))
+            absent = missing_installed_skills()
+            if absent:
+                print("            ⚠ 설치되지 않은 스킬: %s" % ", ".join(absent))
 
     if a.update_skill and not a.token and not a.repair and not a.add_project:
         print("\n확인:  python3 %s --all --dry-run" % resolve_script_path())
