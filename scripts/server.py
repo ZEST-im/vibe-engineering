@@ -896,7 +896,11 @@ def _new_task(data, fields):
         "priority": fields.get("priority", "medium"),
         "category": fields.get("category", ""),
         "target_date": fields.get("target_date", ""),
-        "started_at": fields.get("started_at", ""),
+        # `in_progress` 로 **바로 생성**하는 경로에도 시작 시각을 찍는다. 전이로
+        # 들어올 때만 찍히던 탓에, 만들자마자 작업을 시작하는 흔한 흐름에서는 구간을
+        # 알 수 없었다 — 그러면 `models` 기록이 늘 비고 아무도 눈치채지 못한다.
+        "started_at": fields.get("started_at")
+                      or (now if fields.get("status") == "in_progress" else ""),
         "completed_at": fields.get("completed_at", ""),
         "lines_added": fields.get("lines_added", 0),
         "lines_removed": fields.get("lines_removed", 0),
@@ -916,10 +920,52 @@ def _new_task(data, fields):
 TASK_FIELDS = ("title", "description", "details", "status", "priority", "category",
                "target_date", "started_at", "completed_at", "lines_added", "lines_removed",
                "tokens_used", "position", "phase", "review", "created_by", "assigned_to",
-               "execution_managed", "active_run_id", "last_run_id", "execution_attempts")
+               "execution_managed", "active_run_id", "last_run_id", "execution_attempts",
+               "models")
 
-def _update_task(task, fields):
-    """Update task fields in place."""
+def _transcript_dir_for(kanban_dir):
+    """이 보드가 속한 프로젝트의 transcript 디렉토리. 모르면 None.
+
+    `reconcile_runs` 가 이미 cwd → transcript 경로 규칙을 안다. 여기서 다시 구현하면
+    갈라진다 — 이 레포는 설치 파일 목록이 세 곳에서 갈렸던 사고를 이미 겪었다.
+    """
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import reconcile_runs
+        return reconcile_runs._transcript_dir(os.path.dirname(os.path.abspath(kanban_dir)))
+    except Exception:
+        return None
+
+
+def _models_for_task(task, kanban_dir):
+    """이 태스크를 한 모델들. 알 수 없으면 빈 목록.
+
+    **읽기 실패가 전이를 막으면 안 된다.** 기록은 부산물이지 본업이 아니다.
+    """
+    started = task.get("started_at")
+    if not (started and kanban_dir):
+        # 구간을 모르면 아무 모델이나 집어오게 된다. 비워두는 것이 맞다.
+        return []
+    # 끝은 이 태스크의 완료 시각이다. `_now()` 를 쓰면 같은 값인 보통의 경우에는
+    # 맞지만, 완료 시각을 명시해 넘긴 경우(소급 기록·테스트)에는 구간이 어긋난다.
+    ended = task.get("completed_at") or _now()
+    tdir = _transcript_dir_for(kanban_dir)
+    if not tdir:
+        return []
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import reconcile_runs
+        return reconcile_runs.models_between(tdir, started, ended)
+    except Exception:
+        return []
+
+
+def _update_task(task, fields, kanban_dir=None):
+    """Update task fields in place.
+
+    `kanban_dir` 를 주면 `done` 으로 전이할 때 **어느 모델이 했는지** 를 함께 적는다.
+    모르는 호출부(import 경로 등)는 안 줘도 되고, 그때는 기록만 비고 전이는 그대로다.
+    """
     now = _now()
     for k in TASK_FIELDS:
         if k in fields:
@@ -936,6 +982,9 @@ def _update_task(task, fields):
                 task["assigned_to"] = _git_user()
         if fields["status"] == "done" and "completed_at" not in fields:
             task["completed_at"] = now
+        if fields["status"] == "done" and "models" not in fields:
+            # 사람이 적어 넣은 값은 추정으로 덮지 않는다.
+            task["models"] = _models_for_task(task, kanban_dir)
     task["updated_at"] = now
     return task
 
@@ -2148,7 +2197,7 @@ def _runtime_action(kanban_dir, data):
             execution["status"] = "approved"
             execution["approval"] = "approved"
             execution["approved_at"] = utc_now()
-            _update_task(task, {"status": "done", "review": ""})
+            _update_task(task, {"status": "done", "review": ""}, kanban_dir=kanban_dir)
         elif action in ("reject", "retry"):
             if task.get("status") not in ("review", "todo"):
                 return None, "task is not reviewable", 409
@@ -3102,7 +3151,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json({"error": "not found"}, 404)
                 if d.get("status") == "done" and not _managed_done_allowed(kanban_dir, task):
                     return self._json({"error": "managed task requires a passed test gate and approval"}, 409)
-                _update_task(task, d)
+                _update_task(task, d, kanban_dir=kanban_dir)
                 _write_kanban(kanban_dir, data)
                 return self._json(task)
 

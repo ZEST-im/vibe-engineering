@@ -197,10 +197,17 @@ def set_task(kanban_dir, task_id, fields, require_lock=False):
                 break
         if target is None:
             raise SystemExit(f"태스크 {task_id} 없음")
-        for k, v in fields.items():
-            if v is not None:
+        given = {k: v for k, v in fields.items() if v is not None}
+        # **전이는 서버와 같은 경로로.** 예전에는 필드를 직접 대입해서, `--status done`
+        # 으로 닫으면 `completed_at` 이 비고 어느 모델이 했는지도 남지 않았다.
+        # 규칙을 두 곳에 두면 갈라진다 — 실제로 갈라져 있었다.
+        srv._update_task(target, given, kanban_dir=kanban_dir)
+        # **모르는 필드는 그대로 받는다.** `_update_task` 는 화이트리스트라 버리는데,
+        # `gh_surface` 가 이슈 번호를 여기로 적어 중복 생성을 막는다. 전이 처리를
+        # 합치면서 이 성질을 잃으면 같은 이슈가 계속 다시 만들어진다 — 한 번 깨뜨렸다.
+        for k, v in given.items():
+            if k not in srv.TASK_FIELDS:
                 target[k] = v
-        target["updated_at"] = srv._now()
         srv._write_kanban(kanban_dir, data)
     return target
 
