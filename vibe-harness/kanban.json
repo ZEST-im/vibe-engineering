@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "next_id": 140,
+  "next_id": 141,
   "tasks": [
     {
       "id": "hg98",
@@ -984,6 +984,31 @@
       "tokens_used": 0,
       "created_at": "2026-09-29T20:40:35+09:00",
       "updated_at": "2026-09-29T20:50:15+09:00",
+      "position": 0,
+      "phase": "",
+      "review": "",
+      "created_by": "hogun",
+      "assigned_to": "",
+      "models": [
+        "claude-opus-5"
+      ]
+    },
+    {
+      "id": "hgA140",
+      "title": "--update-skill 이 스킬 하나만 갱신하고 있었다",
+      "description": "",
+      "details": "새 스킬 4종을 머지하고 --update-skill 을 돌렸는데 **하나도 안 깔렸다.** 확인해 보니 vibe-debug 도 없었다 — 이틀 전에 머지된 것이다.\n\n원인은 버그가 아니라 범위였다. 복사 목록에 vibe-harness 자신의 파일만 있고 **다른 스킬 디렉토리는 애초에 대상이 아니었다.** 갱신이 실패한 것이 아니라 할 생각이 없었고, 그 사실을 아무도 말해주지 않았다 — \"N개 파일 반영\" 만 출력했다.\n\n그것들을 설치하는 것은 setup.py 뿐인데, 그 파일은 훅과 자동시작까지 건드린다.\n\n## 고친 방식\n\n**setup.py 의 copy_skill_files() 를 그대로 부른다.** 다시 구현하지 않았다 — 그 함수가 이미 두 가지를 정확히 한다.\n\n- Claude 와 Codex **양쪽**에 깐다\n- Codex 사본에서 user-invocable: 을 걷어낸다. **남아 있으면 Codex 가 그 스킬을 거부하는데 복사는 성공으로 출력된다**\n\n목록도 손으로 적지 않았다. setup.SKILLS 하나가 정본이라 앞으로 스킬을 추가하면 자동으로 따라온다 — 두 번째 목록을 두면 '설치는 되는데 갱신은 안 되는' 상태가 다시 생긴다.\n\n**setup.py 를 import 만 하고 실행하지 않는다.** 그래서 훅을 안 건드린다. 실측으로 확인했다 — 실행 전후 settings.json 해시가 같다(2f108881bbb20851), 훅 중복 0.\n\n## 곁가지 사고 — 내가 냈다\n\n옵션을 확인하려고 setup.py 에 --help 를 넘겼는데 그 스크립트는 --help 를 지원하지 않는다. 인자를 무시하고 그냥 실행됐고 **훅이 5개 이벤트에 중복 등록**됐다. CURRENT_PHASE 에 \"setup.py 재실행은 훅을 중복 등록한 이력이 있다\" 고 적혀 있던 그 사고를, 그 문서를 읽고도 냈다. 확인하려던 방법 자체가 실행이었다.\n\n백업을 뜨고 복구했다. 구조는 명확했다 — 옛 항목은 _id 가 없고 새 항목은 _id: vibe-harness-* 를 단다. setup.py 는 _id 로 자기 항목을 지우고 다시 다는데(431행), _id 없는 옛 항목만 못 지운다. 그 5건을 제거해 이제부터는 재실행해도 안 겹친다.\n\n## 검증\n\n- 테스트 10개 신규. 전체 1076 OK · check.py 7게이트 초록\n- 실제 결과: Claude·Codex 양쪽에 스킬 9종, references 5개 따라옴, 머신 로컬(id_prefix·runs_token·프로젝트 21개) 보존\n- Codex 사본의 user-invocable 제거를 3개 표본으로 확인\n\n## 검증 중 잡힌 것\n\n내 테스트 코드가 open() 에 encoding 을 안 적어 **Windows 에서 cp949 로 열리는** 규율 위반이 났다. test_windows_compat 가 잡았다.",
+      "status": "done",
+      "priority": "high",
+      "category": "infra",
+      "target_date": "",
+      "started_at": "2026-09-29T21:18:04+09:00",
+      "completed_at": "2026-09-29T21:18:38+09:00",
+      "lines_added": 262,
+      "lines_removed": 3,
+      "tokens_used": 0,
+      "created_at": "2026-09-29T21:18:04+09:00",
+      "updated_at": "2026-09-29T21:18:38+09:00",
       "position": 0,
       "phase": "",
       "review": "",
