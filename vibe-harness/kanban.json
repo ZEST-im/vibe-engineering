@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "next_id": 139,
+  "next_id": 140,
   "tasks": [
     {
       "id": "hg98",
@@ -959,6 +959,31 @@
       "tokens_used": 0,
       "created_at": "2026-09-29T19:37:00+09:00",
       "updated_at": "2026-09-29T19:40:40+09:00",
+      "position": 0,
+      "phase": "",
+      "review": "",
+      "created_by": "hogun",
+      "assigned_to": "",
+      "models": [
+        "claude-opus-5"
+      ]
+    },
+    {
+      "id": "hgA139",
+      "title": "AX-architect 승격 — SA/AA/DA/TA 스킬 4종 등록",
+      "description": "",
+      "details": "사용자가 기획해 docs/vibe_architect/ 에 넣어둔 것을 정식 스킬로 등록한다.\n\n## 검토 결과 (등록 전)\n\n**등록 요건은 그대로 통과한다.** name↔디렉토리 일치 · description · user-invocable · references 미참조(설치본 누락 문제를 안 만든다) — 4개 전부. frontmatter 가 기존 스킬과 같은 형태다. setup.py 는 예전 SCOPE_LOCK 에 있었으나 현재 잠금은 websocket·task_history 둘뿐이라 풀려 있다.\n\n**체인이 실물로 성립한다.** vibe-sa 가 읽겠다는 01_philosophy.md · 02_requirements.md · 05_tech_decisions.md 는 vibe-planning 이 실제로 쓰는 파일이고 salpim-maru 에 실물이 있다.\n\n**레포의 결과 맞는다.** vibe-aa 의 '위반을 주입해 검사가 실제로 잡는지 확인한다' 는 이 레포가 PMF11 에서 세운 채택 기준 그대로다. [assumption] 표기는 '확인하지 못한 것은 확인한 것처럼 적지 않는다', '마이그레이션이 진실이고 SCHEMA.md 는 주장이다' 는 '밖에서 확인한다' 와 같다.\n\n**비용은 PMF16 이 걷어낸 것과 성격이 다르다.** 항상 주입되는 것은 description 4개 ≈ 457 토큰이고 본문 6,560 토큰은 발동 시에만 든다. PMF16 이 제거한 using-superpowers 는 912 토큰이 항상 주입되면서 **모든 응답 앞에 게이트를 세웠다.** 이건 게이트가 없다.\n\n## 내가 제기했고 사용자가 판단한 것\n\n세 가지를 짚었다.\n\n1. 레포의 첫 판단 기준은 '문서로 대응한 것은 대응이 아니다 — 산출물은 실행되는 검사여야 한다' 인데 **넷 중 셋(sa·da·ta)의 산출물이 문서**다. 실행되는 검사를 만드는 것은 vibe-aa 하나다\n2. 실측: docs/planning 보유 **21개 중 1개**, docs/architecture **0개**. vibe-sa 는 planning 이 없으면 먼저 하라고 스스로 말하므로, 대부분의 프로젝트에서 '먼저 planning 하세요' 로 끝난다\n3. 그래서 vibe-aa 하나만 먼저 넣기를 권했다 — 선행 문서 없이 코드 import 그래프에서 as-is 를 뽑으므로 지금 값을 낸다\n\n**사용자 판단: 넷을 묶어 설계한 의도가 있고, 다른 프로젝트 적용은 직접 써 보며 판단한다.** 넷 다 등록한다.\n\n---\n## 등록 결과 (09-29)\n\n`skills/vibe-sa` · `vibe-aa` · `vibe-da` · `vibe-ta` 네 디렉토리. 원본과 **바이트 동일**하게 들어갔다.\n\n**패치는 부분만 썼다.** 스킬 파일은 깨끗하게 붙었지만 `setup.py`·`README.md` 는 그 사이 움직여 충돌했다.\n\n- `setup.py` 에 `vibe-debug` 가 추가돼 있었다\n- **`REMOVABLE_SKILLS` 가 이미 `SKILLS` 에서 파생하도록 고쳐져 있었다.** 패치는 그것을 손으로 또 나열하려 했는데, 그대로 받았으면 '설치 파일 목록이 세 군데로 갈렸던 사고' 를 되살리는 것이 된다. 그 부분은 버리고 `SKILLS` 만 고쳤다\n- README 는 설치 목록(five→nine) · 제거 목록 · 'What it engineers' 표의 Architecture 행 세 곳. **문체는 건드리지 않았다**\n\n`docs/vibe_architect/` 는 지웠다 — 등재본과 동일함을 확인한 뒤다. 남겨두면 다음에 어느 쪽을 고쳐야 할지 갈린다.\n\n## 검증\n\n- 등록 요건 22개 통과 (`test_skills`·`test_setup_skills`) — 설치·제거 경로 양쪽에 잡힌다\n- **1066 tests OK**\n- `check.py` 7게이트 전부 초록\n\n## 앞으로 대조할 것\n\n써 보면서 판단하기로 한 것이 둘이다.\n\n1. **문서 산출물 셋(sa·da·ta)이 실제로 열리는가.** 레포의 첫 판단 기준이 '문서로 대응한 것은 대응이 아니다' 인데, 그 기준을 충족하는 것은 `vibe-aa` 하나다\n2. **`docs/planning` 이 없는 20개 프로젝트에서 `vibe-sa` 가 무엇을 하는가.** 스스로 '먼저 planning 하라' 고 말하게 설계돼 있다\n\n둘 다 몇 번 써 보면 답이 나온다. 그때 이 기록이 대조 기준이다.",
+      "status": "done",
+      "priority": "high",
+      "category": "infra",
+      "target_date": "",
+      "started_at": "2026-09-29T20:40:35+09:00",
+      "completed_at": "2026-09-29T20:50:15+09:00",
+      "lines_added": 524,
+      "lines_removed": 8,
+      "tokens_used": 0,
+      "created_at": "2026-09-29T20:40:35+09:00",
+      "updated_at": "2026-09-29T20:50:15+09:00",
       "position": 0,
       "phase": "",
       "review": "",
