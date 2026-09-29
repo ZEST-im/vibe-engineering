@@ -54,7 +54,7 @@ SKILL_RUNTIME_FILES = (
 
 # 설치 대상 스킬 디렉토리 — repo skills/<name>/SKILL.md 가 원본
 SKILLS = ["vibe-harness", "vibe-planning", "vibe-design", "vibe-review", "vibe-debug",
-          "vibe-sa", "vibe-aa", "vibe-da", "vibe-ta"]
+          "vibe-architect", "vibe-sa", "vibe-aa", "vibe-da", "vibe-ta"]
 # 언인스톨 시 디렉토리째 지워도 되는 스킬
 # (vibe-harness 는 projects.json/server.log 가 함께 살아서 제외)
 # **`SKILLS` 에서 파생한다.** 손으로 적힌 두 번째 목록이었고, 스킬을 하나 더하면

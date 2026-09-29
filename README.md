@@ -28,7 +28,7 @@ Each line below is a question the agent cannot answer on its own, and the machin
 | **Planning** | What are we building, and for whom | `/vibe-planning` — six gated stages, north star first |
 | **Design** | What does it look like before it is built | `/vibe-design` — screens as HTML, reviewed before code |
 | **Review** | Is the work as good as I think it is | `/vibe-review` — the assessment you would give someone else |
-| **Architecture** | What shape is the system, and which decisions are expensive to undo | `/vibe-sa` fixes the shape, then hands off to `/vibe-da`, `/vibe-aa`, `/vibe-ta` — boundaries enforced by a check, numbers shown with their arithmetic |
+| **Architecture** | What shape is the system, and which decisions are expensive to undo | `/vibe-architect` runs all four — `/vibe-sa` fixes the shape, `/vibe-da`, `/vibe-aa`, `/vibe-ta` go deep — then scores which of `vibe-sa`'s handoff calls held. Boundaries enforced by a check, numbers shown with their arithmetic |
 | **Loop** | When do I go again, when do I give up | Backoff, error budgets, idle distinguished from broken |
 | **Graph** | What is blocked, what can start now | `depends_on`, cycle and dangling-reference detection |
 | **Retrieval** | What does it cost to know something | Search over tasks, archives, decisions, docs and commit messages — snippets with locators, ranked and explained, no server needed |
@@ -137,10 +137,10 @@ Four steps, in this order:
 
 1. **Copies the runtime** → `~/.claude/skills/vibe-harness/` — `server.py`,
    `vibe_runtime.py`, `worker.py`, `kanban.html`, `reconcile_runs.py`, `kanban_edit.py`,
-   `search.py`, `review_sync.py`, `enroll.py`, `gh_surface.py`, `setup.py` — plus nine skill
+   `search.py`, `review_sync.py`, `enroll.py`, `gh_surface.py`, `setup.py` — plus ten skill
    directories under both `~/.claude/skills/` and `~/.codex/skills/`: `vibe-harness`,
-   `vibe-planning`, `vibe-design`, `vibe-review`, `vibe-debug`, `vibe-sa`, `vibe-aa`,
-   `vibe-da`, `vibe-ta`. The `vibe-harness` skill
+   `vibe-planning`, `vibe-design`, `vibe-review`, `vibe-debug`, `vibe-architect`,
+   `vibe-sa`, `vibe-aa`, `vibe-da`, `vibe-ta`. The `vibe-harness` skill
    explicitly recognizes the bare `ss`, `qq`, and `cc` commands in Codex.
 2. **Migrates the old project registry**, if you are upgrading from a prior version.
 3. **Installs an auto-start agent** — a macOS LaunchAgent labelled
@@ -221,8 +221,9 @@ python3 scripts/setup.py uninstall
 
 Removes the five hook entries from `~/.claude/settings.json`, the hook scripts and
 helpers from `~/.claude/hooks/`, the auto-start agent, and the `vibe-planning`,
-`vibe-design`, `vibe-review`, `vibe-debug`, `vibe-sa`, `vibe-aa`, `vibe-da`, and `vibe-ta`
-Claude skill directories. It also removes the same eight directories installed under
+`vibe-design`, `vibe-review`, `vibe-debug`, `vibe-architect`, `vibe-sa`, `vibe-aa`,
+`vibe-da`, and `vibe-ta` Claude skill directories. It also removes the same nine
+directories installed under
 `~/.codex/skills/`.
 
 **`~/.claude/skills/vibe-harness/` is left in place on purpose** — your project registry
@@ -341,6 +342,7 @@ Monthly archive files (`vibe-harness/archive/YYYY-MM.json`) are git-tracked. The
 | `/vibe-design` | Landing + key screens as HTML, checked in a browser |
 | `/vibe-review` | Weekly scored review, a short daily pass, and a monthly review in the project |
 | `/vibe-debug` | Find the root cause before changing anything — for a bug whose cause is unknown |
+| `/vibe-architect` | All four architecture passes in order, then scores what the first one predicted |
 | `python3 ~/.claude/skills/vibe-harness/server.py sync` | Push configured remote snapshots now |
 | `python3 scripts/enroll.py --token <t>` | Register this machine for token usage collection |
 | `python3 scripts/enroll.py --add-project <key>=<repo>` | Register a project to collect from |
