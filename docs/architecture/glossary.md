@@ -54,12 +54,12 @@
 
 | 쓰지 않는다 | 대신 | 지금 어디에 |
 |---|---|---|
-| `createdAt` · `updatedAt` · `startedAt` | `created_at` · `updated_at` · `started_at` | impactbook_ai · derev_ai |
-| `detail` · `note` · `notes` · `result` | `details` | zeb-eco2 · derev_ai |
-| `goal` | `description` | codebook_vibe |
-| `agent_usage` | `runs.json` 의 run | derev_ai |
-| `date_label` | `target_date` | impactbook_ai |
-| `tags` | `category` · `phase` | impactbook_ai |
+| `createdAt` · `updatedAt` · `startedAt` | `created_at` · `updated_at` · `started_at` | 프로젝트 A · 프로젝트 B |
+| `detail` · `note` · `notes` · `result` | `details` | 프로젝트 C · 프로젝트 B |
+| `goal` | `description` | 프로젝트 D |
+| `agent_usage` | `runs.json` 의 run | 프로젝트 B |
+| `date_label` | `target_date` | 프로젝트 A |
+| `tags` | `category` · `phase` | 프로젝트 A |
 
 ## 코드 집합
 
@@ -105,10 +105,8 @@
 
 | 사람 | 정본 이름 | 같은 사람의 다른 표기 |
 |---|---|---|
-| 본인 | `hogun` | `zest.hogun` · `hoarchi` |
-| — | `jina` | |
-| — | `dh-kim` | |
-| — | `정영은` | |
+| 레포 작성자 | `hogun` | `zest.hogun` · `hoarchi` — **한 사람이 세 이름으로 기록돼 있다** |
+| 동료 3인 | 각자 하나씩 | (실명이라 공개 문서에 적지 않는다) |
 
 | 에이전트 | `runs.json` 의 `agent` |
 |---|---|
@@ -116,7 +114,7 @@
 | Codex | `codex` |
 | Gemini | `gemini` |
 
-⚠️ `salpim-maru` · `salpim-maru-web-shell` 처럼 **프로젝트 이름이 소유자 필드에 들어간 것**이
+⚠️ `프로젝트 E` · `프로젝트 E-web` 처럼 **프로젝트 이름이 소유자 필드에 들어간 것**이
 55건 있다. 사람도 에이전트도 아니다.
 
 ## id 접두어 — 사람 + 머신

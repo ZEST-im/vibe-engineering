@@ -20,7 +20,7 @@
 | 데몬 | 무엇을 실행하나 | 주기 |
 |---|---|---|
 | `com.vibe-harness.server` | `~/.claude/skills/vibe-harness/server.py` — **설치본** | 상주 (`KeepAlive`, `ThrottleInterval` 5초) |
-| `com.vibe-harness.reconcile` | `~/dev-hoarchi/vibe-engineering/scripts/reconcile_runs.py` — **작업트리** | 3시간 (`StartInterval` 10800) |
+| `com.vibe-harness.reconcile` | 클론의 `scripts/reconcile_runs.py` — **작업트리** | 3시간 (`StartInterval` 10800) |
 
 🟡 **수집기는 체크아웃된 브랜치를 돈다.** 지금 이 트리는 `fix/update-skill-covers-all-skills`
 브랜치이고, 3시간마다 launchd 가 그 브랜치의 코드로 토큰을 수집한다. 오늘은 설치본과
@@ -83,7 +83,7 @@
 │   │              server.log  39MB ⚠️ 회전 없음                    │
 │   │                                                              │
 │   └─ com.vibe-harness.reconcile  3시간마다 ⚠️ 작업트리를 돈다     │
-│        └─▶ ~/dev-hoarchi/vibe-engineering/scripts/               │
+│        └─▶ 클론한 레포의 scripts/         │
 │                                                                  │
 │  Claude Code 훅 5종 ──▶ 세션 수명주기                             │
 │  ~/.claude/projects/**/*.jsonl   478 MB  (읽기 전용 입력)         │
@@ -111,7 +111,7 @@
 
 ```
 kanban.json 26개 합계          2,562 KB   [실측]
-최대 보드 (codebook_vibe)        354 KB   [실측]
+최대 보드 (프로젝트 D)        354 KB   [실측]
 세션마다 읽히는 것 = 그 프로젝트의 kanban.json 1개
   354 KB ÷ 약 3.5 bytes/token  ≈ 101K 토큰   [가정: 한글 혼재 JSON 의 대략치]
 ```
@@ -254,11 +254,12 @@ transcript 원본        478 MB   [실측]  ← 우리가 안 지운다 (Claude 
 | | 누적 [실측] |
 |---|---|
 | run | 840건 |
-| claude | 27,566,922,009 토큰 |
-| codex | 482,167,992 토큰 |
-| 합계 | **28,049,090,001 토큰** |
+| claude : codex 비율 | **약 57 : 1** |
 
-⚠️ **이 합계를 비용으로 환산하면 안 된다.** Claude 는 캐시 읽기가 지배적이고
+절대 토큰량은 공개 문서에 적지 않는다 — 공개 단가표로 지출이 역산된다.
+숫자는 보드의 📊 Stats 탭에서 본다.
+
+⚠️ **이 종류의 합계를 그대로 비용으로 환산하면 안 된다.** Claude 는 캐시 읽기가 지배적이고
 캐시 읽기는 입력의 약 10% 가격이라, **평탄 합산은 비용을 약 7배 부풀린다**
 (`task-schema.md:198`). 구성요소별 요율(`COMPONENT_RATES`)이 있을 때만 그것으로 계산한다.
 

@@ -9,7 +9,7 @@
 > 어긋난 곳을 보고하는 것이 산출물이라서다. 이 문서 자체가 승인 대상이다.
 >
 > **`SCHEMA.md` 는 주장이고 데이터가 사실이다** 는 스킬의 기본을 그대로 적용했다.
-> 아래 숫자는 전부 `~/dev-hoarchi` 의 보드 26개를 실제로 읽어 센 것이다.
+> 아래 숫자는 전부 `~/dev` 의 보드 26개를 실제로 읽어 센 것이다.
 
 측정 대상: **보드 26 · task 2,671 (live 1,344 + archive 1,327) · run 840 · decision 253**
 
@@ -53,11 +53,11 @@ task 는 `kanban.json` 과 `vibe-harness/archive/YYYY-MM.json` 에 나뉘어 있
 
 | 정본 이름 | 갈라진 이름 | 쓰는 곳 |
 |---|---|---|
-| `created_at` / `updated_at` | `createdAt` / `updatedAt` | impactbook_ai |
-| `started_at` | `startedAt` | derev_ai |
-| `details` | `detail` · `note` · `result` | zeb-eco2 |
-| `description` | `goal` | codebook_vibe |
-| — | `agent_usage` (76) · `date_label` (69) · `tags` | derev_ai · impactbook_ai |
+| `created_at` / `updated_at` | `createdAt` / `updatedAt` | 프로젝트 A |
+| `started_at` | `startedAt` | 프로젝트 B |
+| `details` | `detail` · `note` · `result` | 프로젝트 C |
+| `description` | `goal` | 프로젝트 D |
+| — | `agent_usage` (76) · `date_label` (69) · `tags` | 프로젝트 B · 프로젝트 A |
 
 건수는 작지만(각 1~76건) **원인이 나쁘다** — `add_task` 가 모르는 필드를 조용히 버리고
 `set_task` 는 받는다. 오타든 새 개념이든 **똑같이 조용히 통과한다.**
@@ -216,7 +216,7 @@ task 는 `kanban.json` 과 `vibe-harness/archive/YYYY-MM.json` 에 나뉘어 있
 
 | 분류 | 무엇 | 지금 |
 |---|---|---|
-| **개인 식별** | `created_by`·`assigned_to` 의 사람 이름 (본인 외 `jina`·`dh-kim`·`정영은` 등) | **공개 레포에 들어가면 안 된다.** `tests/test_public_hygiene.py` 가 막는다 |
+| **개인 식별** | `created_by`·`assigned_to` 의 사람 이름 (본인 외 동료 3인) | **공개 레포에 들어가면 안 된다.** `tests/test_public_hygiene.py` 가 막는다 |
 | **내부** | task 제목·`details`·`review` — 사내 프로젝트 내용이 그대로 들어간다 | 보드 파일은 각 레포에 산다. 이 레포의 `private/` 는 gitignore |
 | **내부** | 토큰·비용 | 중앙으로만 |
 | **시크릿** | `sync.json` 의 `secret`·`runs_token` | `Do NOT touch` — 보드 파일과 분리돼 있다 |
