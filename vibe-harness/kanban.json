@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "next_id": 141,
+  "next_id": 143,
   "tasks": [
     {
       "id": "hg98",
@@ -1017,6 +1017,50 @@
       "models": [
         "claude-opus-5"
       ]
+    },
+    {
+      "id": "hgA141",
+      "title": "아키텍처 4패스 전부 적용 — 이 레포에 SA/DA/AA/TA",
+      "description": "",
+      "details": "docs/architecture/ 5문서 1,009줄 신설.\n\n00_solution: 조용한 실패 7건 중 검사가 잡은 것 0건. 되돌리기 비싼 결정 6개 중 결정 로그에 1개.\n01_application: 정적 import 그래프가 거짓말한다(importlib 동적 로드 7곳). tests/test_module_boundaries.py 11테스트로 고정 — 동적 위반을 주입해 잡히는 것 확인.\n02_data + glossary: 보드 26·task 2,671·run 840·decision 253 실측. 정본 문서가 금지한 소유자-에이전트 기록이 455건(17.0%). 문서가 '기록 버그'라 규정한 소유자 없는 done 이 840건(31.4%). 이름 드리프트 6종. depends_on 0%. runs.task_id 4.9%.\n03_technical: server.log 에 UnboundLocalError 95,251건 — throttle 5초 기준 약 5.5일 크래시 루프. 버그는 이미 고쳐졌으나 아무도 몰랐다. 39MB 무회전 로그, 알림 장치 0건. reconcile launchd 가 설치본이 아니라 작업트리를 돈다.\n\n첫 집계에서 archive/ 하위를 놓쳐 2,671을 1,344로 셌다 — 그 자체를 02_data §1① 소견으로 적었다.\n\n후속: 검사로 옮길 것 4종(02_data §9)·알림 4종(03_technical §8)·로그 회전·복구 시험. 전부 사용자 판단 대기.",
+      "status": "done",
+      "priority": "high",
+      "category": "docs",
+      "target_date": "",
+      "started_at": "",
+      "completed_at": "",
+      "lines_added": 0,
+      "lines_removed": 0,
+      "tokens_used": 0,
+      "created_at": "2026-09-29T22:06:24+09:00",
+      "updated_at": "2026-09-29T22:06:24+09:00",
+      "position": 0,
+      "phase": "",
+      "review": "",
+      "created_by": "hogun",
+      "assigned_to": "hogun"
+    },
+    {
+      "id": "hgA142",
+      "title": "vibe-architect 라우터 신설 — 합치지 않고 순서만 관리",
+      "description": "",
+      "details": "사용자가 4종 병합을 제안했으나 측정 후 라우터로 결론.\n\n근거: 4종에 걸쳐 완전히 같은 문장이 1개뿐 — 중복 제거라는 병합의 명분이 없다. 합본은 8,747토큰이라 vibe-harness(9,151)와 비슷해 '길다'는 기우였으나, 합치면 da 하나만 쓸 때도 8,747을 낸다(지금 2,186). 오늘 실제로 vibe-sa 하나만 먼저 돌린 사용법이 4배 비싸진다. 4패스를 한 호출에 넣으면 컨텍스트가 한 덩어리가 된다 — 이 세션이 compaction 을 한 번 겪었다.\n\nskills/vibe-architect/SKILL.md 92줄 ≈1,687토큰. 핵심은 순서가 아니라 채점이다 — vibe-sa 의 핸드오프를 예측으로 취급하고 각 패스가 끝날 때 00_solution.md 에 맞았는지 적는다. 오늘 sa 가 3건 중 2건을 틀렸고(da·ta 를 건너뛰라고 했는데 ta 에 최대 소견이 있었다), 틀린 이유가 전부 '대상이 작다'였다 — 이 시스템의 사고는 규모가 아니라 조용함에서 난다.\n\nsetup.py SKILLS 에 등록. 설치 정직성 게이트 3건이 README 미기재로 실패 → README 4곳(설치 9→10, 제거 8→9, 커맨드 표, Architecture 행) 수정 후 통과.",
+      "status": "done",
+      "priority": "medium",
+      "category": "docs",
+      "target_date": "",
+      "started_at": "",
+      "completed_at": "",
+      "lines_added": 0,
+      "lines_removed": 0,
+      "tokens_used": 0,
+      "created_at": "2026-09-29T22:06:25+09:00",
+      "updated_at": "2026-09-29T22:06:25+09:00",
+      "position": 0,
+      "phase": "",
+      "review": "",
+      "created_by": "hogun",
+      "assigned_to": "hogun"
     }
   ]
 }
