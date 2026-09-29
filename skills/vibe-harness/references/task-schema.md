@@ -54,6 +54,15 @@ The default path for an agent is to read and edit `vibe-harness/kanban.json` and
   - `lines_added`, `lines_removed` — from `git diff --numstat` for files changed in this task.
   - `details` — work report: changed files, key decisions, follow-ups.
   - `tokens_used` — sum of this task's runs in `runs.json` if logged, else a rough integer estimate (see Token Estimation below).
+  - `models` — which models did the work, recorded automatically when the task moves to
+    `done`. Read from the session transcripts for the window between `started_at` and
+    `completed_at`; empty when that window is unknown or no transcript is readable.
+    Set it yourself and the automatic value will not overwrite it.
+
+    This exists to answer a question the board could not: *which model was this task done
+    with, and how did it go.* `runs.json` carries `model` but its `task_id` is populated
+    on about 5% of rows, and its `ts` is a file mtime rather than a span, so a session
+    that ran for hours leaves one point — joining after the fact recovers almost nothing.
   - **Append a run to `runs.json`** — `{agent, model, tokens, time_seconds, commit, ts}` for the agent that did the work (see runs.json section). Agent-agnostic: record it whether the work was done by Codex, Claude, Gemini, or any other agent.
   - Any verification notes (tests run, manual checks) belong in `details`.
 - **Atomic writes**: Write to `kanban.json.tmp` first, then rename over `kanban.json`. The server does this; agents editing directly should do the same to avoid leaving the file half-written.

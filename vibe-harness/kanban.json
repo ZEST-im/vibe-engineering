@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "next_id": 135,
+  "next_id": 139,
   "tasks": [
     {
       "id": "hg98",
@@ -942,6 +942,31 @@
       "review": "",
       "created_by": "hogun",
       "assigned_to": ""
+    },
+    {
+      "id": "hgA138",
+      "title": "어느 모델이 이 태스크를 했는지 기록한다",
+      "description": "",
+      "details": "TypeSafe(JEV) 를 이용한 모델 선택 최적화의 1단계. **매핑을 만들기 전에 라벨부터 모은다.**\n\n## 왜 이것부터인가\n\nJEV spike 로 알아낸 것: 제목+description 만으로 실제 코드 변경량을 예측한다(Spearman ρ=+0.614, 프로젝트 교란 제거 후 +0.563, 부트스트랩 95% [+0.477, +0.720]). 기준선은 카테고리 +0.277 · 제목 길이 -0.278 · 설명 길이 -0.005 로 확실히 이긴다.\n\n그런데 그것은 **작업 규모**를 예측하는 것이지 **어느 모델이 맞는지**가 아니다. 복잡도 → 모델 매핑은 우리 판단인데 그걸 검증할 데이터가 없다.\n\n## 과거 데이터로는 못 센다 (실측)\n\nruns.json 에 model 은 잘 채워져 있다(778건, 실제 모델 6종). 그런데 task_id 는 **5.3%** 만 채워져 있다.\n\n시간으로 이어붙이는 것도 해봤다가 접었다. runs 의 ts 가 세션 구간이 아니라 **transcript 파일 mtime 한 점**이라, 몇 시간짜리 세션이 끝 시각 하나로만 남는다. done 1972건 → 구간 있음 766 → run 이 겹침 77 → **모델 하나로 특정 50건**, 그나마 한 모델에 31건 쏠려 비교가 성립하지 않는다.\n\n앞으로 쌓는 수밖에 없다.\n\n---\n## 만든 것 (09-29)\n\n- `reconcile_runs.models_between(transcripts, start, end)` — 구간 안에 나타난 모델들. 나이브 타임스탬프는 KST 로 본다(보드가 KST aware 로 쓰므로 UTC 로 읽으면 9시간 어긋난다)\n- `server._models_for_task()` + `_update_task(kanban_dir=)` — `done` 전이에 기록\n- `done` 으로 가는 **세 경로 전부**: 서버 PUT · 워커 · `kanban_edit` CLI\n- `task-schema.md` 에 `models` 필드 문서화\n\n전량 스캔 비용을 재고 갔다 — 24.8MB 활성 transcript 에서 **0.10초**. 뒤에서 읽으면 13배 빠르지만 잘린 줄 처리 복잡도를 더할 값이 없어 그냥 읽는다.\n\n## 곁가지로 닫힌 것\n\n`set_task` 가 `_update_task` 를 **통째로 우회**하고 필드를 직접 대입하고 있었다. 그래서 CLI 로 닫으면 `completed_at` 이 비었다 — Known Issues 에 몇 주 있던 함정이고 hgA132 에서 내가 실제로 밟았다. 경로를 합치니 같이 닫혔다.\n\n`in_progress` 로 **바로 생성**할 때 `started_at` 이 안 찍히던 것도 고쳤다. 안 고쳤으면 구간을 몰라 기록이 늘 비었을 것이다.\n\n## 실측이 세 번 세웠다\n\n1. **테스트 23개 GREEN 직후 실동작은 `models: []`** 였다 — 위의 `started_at` 경로. 단위 테스트만 봤으면 못 봤다\n2. 구간의 끝을 `_now()` 로 잡아 **오전 11시 이전에 돌리면 깨지는** 테스트였다. `completed_at` 기준으로 바꿔 결정적으로 만들었다\n3. 전체 스위트가 `gh_surface` 회귀 2건을 잡았다 — 경로를 합치면서 **모르는 필드를 버리게** 됐고, 그러면 이슈 번호가 안 남아 같은 이슈가 계속 다시 만들어진다. 전이는 합치되 모르는 필드는 그대로 받도록 복원하고 RED 2개로 못 박았다\n\n최종 실동작 확인: 구간 19:14:20~19:34:20 → `['claude-opus-5']`.\n\n**1066 tests OK** (1061 → 1066, 신규 25).\n\n## 다음 (아직 안 함)\n\n라벨이 쌓이면 `JEV 복잡도 × 실제 모델 × 결과` 를 대조한다. 그때까지 JEV 는 부르지 않는다 — 지금은 모으는 단계다.",
+      "status": "done",
+      "priority": "high",
+      "category": "backend",
+      "target_date": "",
+      "started_at": "2026-09-29T19:37:00+09:00",
+      "completed_at": "2026-09-29T19:40:40+09:00",
+      "lines_added": 466,
+      "lines_removed": 9,
+      "tokens_used": 0,
+      "created_at": "2026-09-29T19:37:00+09:00",
+      "updated_at": "2026-09-29T19:40:40+09:00",
+      "position": 0,
+      "phase": "",
+      "review": "",
+      "created_by": "hogun",
+      "assigned_to": "",
+      "models": [
+        "claude-opus-5"
+      ]
     }
   ]
 }

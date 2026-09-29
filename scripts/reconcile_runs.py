@@ -222,6 +222,70 @@ def _summarize(path):
     return tot, inp, out, cr, cw, model
 
 
+def _as_kst(value):
+    """ISO 문자열 → KST aware datetime. 읽을 수 없으면 None.
+
+    나이브 값은 KST 로 본다. 보드가 KST aware 로 쓰는데(`_now()`) 읽는 쪽이 UTC 로
+    보면 9시간이 어긋나 구간이 통째로 빗나간다.
+    """
+    if not value:
+        return None
+    try:
+        when = datetime.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    return when.replace(tzinfo=KST) if when.tzinfo is None else when
+
+
+def models_between(transcripts, start, end):
+    """구간 안에 나타난 모델들. 정렬해서 돌려준다. 못 읽으면 빈 목록.
+
+    태스크가 `in_progress` 였던 구간에 transcript 에 찍힌 모델이 그 작업을 한 모델이다.
+    `runs.json` 의 `ts` 로는 이것을 못 한다 — 그건 파일 mtime 한 점이라 몇 시간짜리
+    세션이 끝 시각 하나로만 남는다(실측: done 1972건 중 모델이 특정되는 것 50건).
+
+    **읽기 실패가 전이를 막으면 안 된다.** 이 기록은 부산물이지 본업이 아니라서,
+    무엇이 잘못되든 빈 목록으로 비켜선다.
+
+    나이브 타임스탬프는 KST 로 본다 — 이 레포의 다른 시각 처리와 같은 규칙이다.
+    """
+    lo, hi = _as_kst(start), _as_kst(end)
+    if not (lo and hi):
+        return []
+    found = set()
+    try:
+        files = sorted(set(glob.glob(transcripts + "/*.jsonl")
+                           + glob.glob(transcripts + "/**/*.jsonl", recursive=True)))
+    except Exception:
+        return []
+    for path in files:
+        try:
+            fh = open(path, encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        with fh:
+            for line in fh:
+                try:
+                    m = json.loads(line)
+                except json.JSONDecodeError:
+                    # 쓰이고 있는 transcript 는 마지막 줄이 잘려 있다. 정상이다.
+                    continue
+                try:
+                    msg = m.get("message") or m
+                    if not isinstance(msg, dict):
+                        continue
+                    model = msg.get("model")
+                    if not model:
+                        continue
+                    when = _as_kst(m.get("timestamp") or msg.get("timestamp") or "")
+                    if when and lo <= when <= hi:
+                        found.add(model)
+                except Exception:
+                    # 모양이 다른 줄 하나가 나머지를 버리게 두지 않는다.
+                    continue
+    return sorted(found)
+
+
 def build_runs(transcripts):
     files = sorted(set(glob.glob(transcripts + "/*.jsonl")
                        + glob.glob(transcripts + "/**/*.jsonl", recursive=True)))
