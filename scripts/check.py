@@ -88,6 +88,73 @@ def ci_environment():
     return versions, runners
 
 
+def _deny_module():
+    """`scripts/deny_terms.py` 를 로드한다. 없으면 None — 게이트가 터지지 않는다."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "deny_terms.py")
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("deny_terms", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+    except (OSError, ImportError, SyntaxError):
+        return None
+
+
+REGISTRY_PATH = os.path.expanduser("~/.claude/skills/vibe-harness/projects.json")
+
+
+def deny_coverage(registry_path=REGISTRY_PATH):
+    """등록된 프로젝트명·사람 이름이 추적 파일에 있는지 본다.
+
+    **테스트가 아니라 여기서 하는 이유**: 테스트는 실제 `~/.claude/` 를 건드리지
+    않는 것이 이 레포의 규칙이라 레지스트리를 읽을 수 없다. 읽는 쪽은 로컬 게이트가
+    맡는다. CI 에는 레지스트리가 없으므로 저기서는 돌지 않고, 그 사실을
+    「여기서 확인하지 못한 것」이 말한다.
+
+    2026-10-02 에 이 경로가 없어서 아키텍처 문서에 사내 프로젝트명 5종과 동료 실명
+    3인이 들어갔고 게이트는 초록이었다.
+
+    반환: (돌았나, 통과했나, 보고할 줄 목록)
+    """
+    mod = _deny_module()
+    if mod is None:
+        return False, True, ["deny_terms.py 를 로드할 수 없다"]
+    try:
+        remote = subprocess.run(["git", "remote", "get-url", "origin"], cwd=ROOT,
+                                capture_output=True, text=True,
+                                encoding="utf-8").stdout.strip()
+    except OSError:
+        remote = ""
+    terms = mod.derived_terms(registry_path, root=ROOT, remote_url=remote)
+    if not terms:
+        return False, True, ["등록 레지스트리가 없다 — 금칙어를 뽑을 재료가 없다"]
+
+    try:
+        out = subprocess.run(["git", "ls-files", "-z"], cwd=ROOT,
+                             capture_output=True, text=True,
+                             encoding="utf-8", check=True).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return False, True, ["git ls-files 실패"]
+
+    files = {}
+    for rel in (p for p in out.split("\0") if p):
+        if rel.lower().endswith((".png", ".jpg", ".jpeg", ".gif", ".ico",
+                                 ".pdf", ".zip", ".woff", ".woff2")):
+            continue
+        try:
+            with open(os.path.join(ROOT, rel), encoding="utf-8") as fh:
+                files[rel] = fh.read().splitlines()
+        except (OSError, UnicodeDecodeError):
+            continue
+
+    hits = mod.offenders(terms, files)
+    lines = ["  %s:%d  (%s)\n      %s" % h for h in hits[:20]]
+    if len(hits) > 20:
+        lines.append("  … 외 %d 건" % (len(hits) - 20))
+    return True, not hits, lines
+
+
 def unverified_here(clone=None):
     """이 실행이 **확인하지 못한 것**. 통과했을 때도 말한다.
 
@@ -377,6 +444,23 @@ def main(argv=None):
             results.append(("private-free", nopriv_ok))
         else:
             print("   SKIP  private/ 가 없다 — 평소 실행이 이미 그 환경이다")
+
+        # **감지는 하되 막지 않는다.** 지금 기존 유출이 100건 넘게 있고, 그 숫자로
+        # 게이트를 빨갛게 만들면 사람이 규칙을 고치는 대신 게이트를 끈다 — 이 레포가
+        # 이미 적어 둔 실패 양식이다. `results` 에 넣지 않는 이유가 그것이다.
+        # 청소는 Phase 작업이고, 그때 이 단계를 차단형으로 올린다.
+        print("\n── 공개 레포에 사내 이름")
+        deny_ran, deny_ok, deny_lines = deny_coverage()
+        if not deny_ran:
+            print("   SKIP  " + (deny_lines[0] if deny_lines else "돌지 않았다"))
+        elif deny_ok:
+            print("   PASS  등록된 프로젝트명·사람 이름이 추적 파일에 없다")
+        else:
+            print("   ⚠ 막지 않음 — %d 건 (아래는 일부)" % len(deny_lines))
+            for line in deny_lines[:8]:
+                print(line)
+            if len(deny_lines) > 8:
+                print("   … 나머지는 `python3 -c \"import check; print(check.deny_coverage())\"`")
 
         tools, floor = ci_pins()
         py = ensure_venv(tools)

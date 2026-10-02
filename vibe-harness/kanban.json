@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "next_id": 143,
+  "next_id": 144,
   "tasks": [
     {
       "id": "hg98",
@@ -1058,6 +1058,28 @@
       "updated_at": "2026-09-29T22:06:25+09:00",
       "position": 0,
       "phase": "",
+      "review": "",
+      "created_by": "hogun",
+      "assigned_to": "hogun"
+    },
+    {
+      "id": "hgA143",
+      "title": "공개 위생 게이트의 구멍 — 금칙어를 손이 아니라 사실에서 파생",
+      "description": "",
+      "details": "아키텍처 문서에 사내 프로젝트명 5종·동료 실명 3인을 적었는데 게이트가 초록이었다.\n\n원인은 '규칙이 없다'가 아니었다. test_public_hygiene 는 이미 2층(구조 규칙=CI 상시, 정확 문자열=private/DENY.txt 로컬)이고 DENY.txt 도 17항목 있었다. 깨진 것은 그 목록을 사람이 손으로 채운다는 점 — 등록 프로젝트 21개가 빠져 있었다.\n\nscripts/deny_terms.py 신설: 레지스트리(~/.claude/.../projects.json)와 보드에서 금칙어를 파생. 값은 전부 레포 밖이라 '금칙어 목록이 곧 유출'이라는 원래 설계가 유지된다 — 이 파일에 값은 0개.\n\n자기 신원 제외도 파생이다. 없을 때 425건이 떴고 대부분 작성자 본인·조직 이름(LICENSE·plugin.json 에 이미 공개)이었다. 그 숫자를 보면 사람은 규칙이 아니라 게이트를 끈다. LICENSE·plugin.json·README·원격 URL 에서 뽑아 빼니 106건, 실제 신호는 다른 프로젝트 이름 약 50건.\n\ncheck.py 에 deny-coverage 단계(비차단). 테스트가 아니라 게이트가 레지스트리를 읽는다 — 테스트는 실제 ~/.claude 를 건드리지 않는 것이 규칙이라서. CI 에는 레지스트리가 없어 거기선 안 돈다.\n\n위반 주입 확인: 실제로 샜던 모양 그대로 주입하니 잡힌다. 테스트 18개.\n\n곁다리로 test_windows_compat 의 LIBRARIES 손 목록도 파생(__main__ 블록 유무)으로 교체 — 그 테스트 docstring 이 '나열하면 또 빠진다'고 적어놓고 정작 예외 쪽이 그 함정이었다.\n\n후속(PMF17): 적발 50건 청소 후 차단형으로 올린다.",
+      "status": "done",
+      "priority": "high",
+      "category": "qa",
+      "target_date": "",
+      "started_at": "",
+      "completed_at": "",
+      "lines_added": 0,
+      "lines_removed": 0,
+      "tokens_used": 0,
+      "created_at": "2026-10-02T19:19:07+09:00",
+      "updated_at": "2026-10-02T19:19:07+09:00",
+      "position": 0,
+      "phase": "PHASE_PMF17",
       "review": "",
       "created_by": "hogun",
       "assigned_to": "hogun"

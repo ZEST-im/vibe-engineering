@@ -15,6 +15,7 @@ import importlib.util
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -924,12 +925,32 @@ class EveryEntrypointSurvivesCp949Test(unittest.TestCase):
     엔트리포인트가 또 빠진다. 이 테스트가 이미 그렇게 새어나간 자리다.
     """
 
-    # 라이브러리 모듈. 직접 실행되지 않으므로 콘솔을 건드릴 이유가 없다.
-    LIBRARIES = {"vibe_runtime.py"}
+    # **라이브러리인지를 이름이 아니라 파일에서 판정한다.**
+    #
+    # 원래 `LIBRARIES = {"vibe_runtime.py"}` 라는 손 목록이었다. 그런데 이 테스트의
+    # 요지가 *"나열하면 다음에 추가되는 것이 또 빠진다"* 이고, 그 함정에 **예외 쪽이**
+    # 걸려 있었다 — 새 라이브러리 모듈을 더하면 엔트리포인트로 오인돼 빨개진다.
+    # 실제로 `deny_terms.py` 를 더했을 때 그렇게 됐다(2026-10-02).
+    #
+    # `if __name__ == "__main__":` 이 없으면 직접 실행되지 않는다. 그것이 사실이고,
+    # 목록은 그 사실의 사본일 뿐이다.
+    MAIN_BLOCK = re.compile(r"""^if\s+__name__\s*==\s*["']__main__["']""", re.M)
+
+    def _is_entrypoint(self, name):
+        with open(os.path.join(SCRIPTS, name), encoding="utf-8") as fh:
+            return bool(self.MAIN_BLOCK.search(fh.read()))
 
     def entrypoints(self):
         return [n for n in sorted(os.listdir(SCRIPTS))
-                if n.endswith(".py") and n not in self.LIBRARIES]
+                if n.endswith(".py") and self._is_entrypoint(n)]
+
+    def test_a_library_module_is_not_treated_as_an_entrypoint(self):
+        """전제 확인 — 전부 엔트리포인트로 판정되면 위 판정은 아무 일도 안 한 것이다."""
+        every = [n for n in sorted(os.listdir(SCRIPTS)) if n.endswith(".py")]
+        libraries = [n for n in every if not self._is_entrypoint(n)]
+
+        self.assertTrue(libraries, "라이브러리 모듈이 하나도 없다 — 판정이 헛돌고 있다")
+        self.assertLess(len(libraries), len(every), "전부 라이브러리로 판정됐다")
 
     def test_every_entrypoint_prints_korean_under_a_cp949_console(self):
         body = (
