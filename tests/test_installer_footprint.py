@@ -82,6 +82,13 @@ class HooksAreDisclosedTest(unittest.TestCase):
             "설치되는데 README 가 말하지 않는 훅: " + ", ".join(missing)
             + " — 사용자의 settings.json 에 동의한 것보다 많이 쓴다")
 
+    def test_every_legacy_hook_removal_is_documented(self):
+        """설치가 **지우는** 파일도 말해야 한다. 사용자가 모르는 파일이 사라지면 안 된다."""
+        missing = [h for h in self.setup.LEGACY_HOOK_SCRIPTS if h not in self.text]
+        self.assertEqual(
+            [], missing,
+            "설치·제거가 지우는데 README 가 말하지 않는 구 훅: " + ", ".join(missing))
+
     def test_every_hook_event_is_documented(self):
         events = sorted({event for _src, event, _entry in self.setup.HOOKS})
         missing = [e for e in events if e not in self.text]

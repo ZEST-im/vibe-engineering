@@ -3,6 +3,7 @@
 Vibe Engineering Setup — Copy server files to ~/.claude/skills/vibe-harness/ and install launchd agent
 """
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -120,7 +121,71 @@ HOOKS = [
     ),
 ]
 
+# `_id` 는 여전히 적지만 **그것에 기대지 않는다** — 아래 `is_owned_command` 참고.
+# 적는 이유는 이 키로만 알아보는 예전 setup.py 가 다른 머신에 남아 있어서다.
 HOOK_IDS = {entry["_id"] for _, _, entry in HOOKS}
+
+# 예전 버전이 설치했고 지금은 안 쓰는 훅. 재설치·제거가 등록과 파일을 함께 걷어낸다.
+# `vibekanban-review.sh` 는 2026-03 첫 리뷰 훅이다. 리네이밍 뒤에도 등록이 남아
+# push 할 때마다 `vibe-harness-review.sh` 와 함께 리뷰 지시가 두 번 나왔다.
+LEGACY_HOOK_SCRIPTS = ("vibekanban-review.sh",)
+
+OWNED_HOOK_SCRIPTS = tuple(name for name, _, _ in HOOKS) + LEGACY_HOOK_SCRIPTS
+_OWNED_COMMAND = re.compile(
+    r"(?:^|/)(?:%s)(?=$|[\s\"'])" % "|".join(re.escape(n) for n in OWNED_HOOK_SCRIPTS))
+
+
+def is_owned_command(command):
+    """이 훅 명령이 우리 스크립트를 부르는가.
+
+    **`_id` 로 알아보지 않는다.** `settings.json` 은 공유 파일이라 다른 도구도 다시
+    쓰고, 그중 무언가가 모르는 키 `_id` 를 버렸다. 그 뒤 재설치는 옛 항목을 못 알아봐
+    **덧붙였고** 제거는 아무것도 못 지웠다 — 훅 5종이 각각 3번 등록된 채로 발견됐다.
+    명령은 훅이 돌려면 살아 있어야 하므로 그것으로 알아본다.
+
+    경로 구분자(또는 시작) 바로 뒤에 정확한 파일 이름이 오고 그 뒤가 끝·공백·따옴표일
+    때만 우리 것이다. `not-vibe-harness-review.sh` 나 `...review.sh.disabled` 는 남의 것이다.
+    역슬래시 경로(예전 Windows 설치)도 같은 규칙으로 본다.
+    """
+    if not isinstance(command, str):
+        return False
+    return bool(_OWNED_COMMAND.search(command.replace("\\", "/")))
+
+
+def strip_owned_hooks(groups):
+    """훅 그룹 목록에서 우리 것만 걷어낸다.
+
+    지우는 단위는 **그룹이 아니라 명령**이다. 사람이 손으로 합친 그룹에 남의 훅이
+    같이 있으면, 그룹째 지울 때 그 도구가 조용히 멈춘다. 우리 명령만 있던 그룹은
+    통째로 빠진다.
+    """
+    if not isinstance(groups, list):
+        return groups
+    kept = []
+    for group in groups:
+        if not isinstance(group, dict):
+            kept.append(group)
+            continue
+        if group.get("_id") in HOOK_IDS:
+            continue
+        hooks = group.get("hooks")
+        if isinstance(hooks, list) and hooks:
+            rest = [h for h in hooks
+                    if not (isinstance(h, dict) and is_owned_command(h.get("command")))]
+            if not rest:
+                continue
+            if len(rest) != len(hooks):
+                group = dict(group, hooks=rest)
+        kept.append(group)
+    return kept
+
+
+def remove_legacy_hook_files():
+    for name in LEGACY_HOOK_SCRIPTS:
+        path = os.path.join(HOOKS_DIR, name)
+        if os.path.exists(path):
+            os.remove(path)
+            print(f"  REMOVED legacy {path}")
 
 # Helper scripts copied alongside hooks (not registered as hooks themselves).
 HOOK_HELPERS = ["vibe-harness-record-run.py", "vibe-harness-worktree-guard.py"]
@@ -425,10 +490,11 @@ def install_hooks():
 
     hooks_cfg = settings.setdefault("hooks", {})
 
-    # Remove any existing vibe-harness entries across all event types
-    for event in ("PreToolUse", "PostToolUse", "SessionStart", "Stop", "SessionEnd"):
-        existing = hooks_cfg.get(event, [])
-        hooks_cfg[event] = [h for h in existing if h.get("_id") not in HOOK_IDS]
+    # 우리 항목을 **모든 이벤트에서** 걷어낸다 — 이벤트 다섯 개만 보면 다른 자리에
+    # 등록된 옛 항목(예: 이벤트가 바뀐 훅)이 영영 남는다.
+    for event in list(hooks_cfg):
+        hooks_cfg[event] = strip_owned_hooks(hooks_cfg[event])
+    remove_legacy_hook_files()
 
     # Insert new entries
     for _, event, entry in HOOKS:
@@ -459,6 +525,7 @@ def uninstall_hooks():
         if os.path.exists(dst):
             os.remove(dst)
             print(f"  REMOVED {dst}")
+    remove_legacy_hook_files()
 
     # Remove from settings.json
     if not os.path.exists(SETTINGS_PATH):
@@ -470,10 +537,11 @@ def uninstall_hooks():
 
     hooks_cfg = settings.get("hooks", {})
     changed = False
-    for event in ("PreToolUse", "PostToolUse", "SessionStart", "Stop", "SessionEnd"):
-        before = hooks_cfg.get(event, [])
-        after = [h for h in before if h.get("_id") not in HOOK_IDS]
-        if len(after) < len(before):
+    for event in list(hooks_cfg):
+        before = hooks_cfg[event]
+        after = strip_owned_hooks(before)
+        # 개수가 아니라 내용으로 본다 — 남의 훅과 섞인 그룹은 개수가 그대로다.
+        if after != before:
             changed = True
             if after:
                 hooks_cfg[event] = after

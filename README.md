@@ -162,6 +162,11 @@ Two helper scripts are copied to `~/.claude/hooks/` without being registered as 
 `vibe-harness-record-run.py` (used by the collector) and `vibe-harness-worktree-guard.py`
 (used at session start).
 
+Setup finds its own entries by the script each one runs, not by the hook id — other tools
+that rewrite `settings.json` can drop keys they don't know, and reinstalling then stacked
+duplicates. Reinstalling or uninstalling also removes `vibekanban-review.sh` (its entry and
+its script), a review hook from before the project was renamed, if an older version left it.
+
 Everything written lives under your home directory: `~/.claude/settings.json`,
 `~/.claude/hooks/`, `~/.claude/skills/`, `~/.codex/skills/`, and one LaunchAgent plist. Nothing else is
 touched, and no data leaves the machine unless you opt into

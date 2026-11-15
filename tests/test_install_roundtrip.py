@@ -423,5 +423,162 @@ class MigrateProjectsTest(unittest.TestCase):
         self.mod.migrate_projects_json()
 
 
+# 2026-03 의 첫 훅. 제품 이름이 vibekanban 이던 시절 것이고 지금 설치기는 모른다.
+LEGACY_REVIEW_HOOK = "vibekanban-review.sh"
+
+
+class HookIdentityTest(unittest.TestCase):
+    """설치기는 `settings.json` 안의 자기 항목을 **무엇으로** 알아보는가.
+
+    `_id` 로 알아봤다. 그런데 `settings.json` 은 공유 파일이라 다른 도구도 다시 쓰고,
+    그중 무언가가 모르는 키 `_id` 를 버렸다(이 머신, 2026-11-12 이전 — 누군지는 미확인).
+    그 뒤로 재설치는 옛 항목을 못 알아보고 **덧붙였고**, 제거는 **아무것도 못 지웠다.**
+    실측 상태: 훅 5종이 각각 3번 등록, 2026-03 의 `vibekanban-review.sh` 도 살아 있어
+    push 할 때마다 리뷰 지시가 두 번 나왔다.
+
+    위 왕복 테스트들은 이것을 못 잡았다. 설치와 설치 사이에 `_id` 가 **살아 있다고**
+    가정했기 때문이다. 여기서는 그 가정을 깬다.
+
+    **단언은 설치기의 판별 함수를 쓰지 않는다.** 검사 대상이 쓰는 판별로 검사하면
+    그 판별이 틀렸을 때 둘이 같이 틀린다. 스크립트 파일 이름을 그대로 센다.
+    """
+
+    FOREIGN = {"type": "command", "command": "/opt/other-tool/hook.sh"}
+
+    def setUp(self):
+        self.home = tempfile.mkdtemp(prefix="vh-hookid-")
+        self.addCleanup(shutil.rmtree, self.home, ignore_errors=True)
+        os.makedirs(os.path.join(self.home, ".claude"))
+        self.mod, self.mod_name = load_setup(self.home)
+        self.addCleanup(sys.modules.pop, self.mod_name, None)
+        self.scripts = [name for name, _event, _entry in self.mod.HOOKS]
+
+    # ── 도우미 ──────────────────────────────────────────────────────────
+    def write_settings(self, data):
+        with open(self.mod.SETTINGS_PATH, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, indent=2)
+
+    def read_settings(self):
+        with open(self.mod.SETTINGS_PATH, encoding="utf-8") as fh:
+            return json.load(fh)
+
+    def commands(self):
+        return [hook.get("command", "")
+                for groups in self.read_settings().get("hooks", {}).values()
+                for group in groups
+                for hook in group.get("hooks", [])]
+
+    def count(self, script):
+        return sum(1 for cmd in self.commands()
+                   if cmd.replace("\\", "/").endswith("/" + script))
+
+    def entry(self, script, path=None):
+        """`_id` 가 버려진 뒤의 모양 — 실제 머신의 항목 그대로."""
+        return {"hooks": [{"type": "command",
+                           "command": path or self.mod.hook_cmd(script)}]}
+
+    def strip_ids(self):
+        """누군가 settings.json 을 다시 쓰면서 우리 `_id` 를 버린다."""
+        data = self.read_settings()
+        for groups in data.get("hooks", {}).values():
+            for group in groups:
+                if group.get("_id") in self.mod.HOOK_IDS:
+                    del group["_id"]
+        self.write_settings(data)
+
+    def install(self):
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.mod.install_hooks()
+
+    def uninstall(self):
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.mod.uninstall_hooks()
+
+    # ── 성질 ────────────────────────────────────────────────────────────
+    def test_reinstall_after_ids_were_dropped_does_not_duplicate(self):
+        self.write_settings({})
+        self.install()
+        self.strip_ids()
+        self.install()
+        dup = {s: self.count(s) for s in self.scripts if self.count(s) != 1}
+        self.assertEqual({}, dup, "`_id` 가 사라진 뒤 재설치가 훅을 덧붙였다")
+
+    def test_uninstall_after_ids_were_dropped_removes_every_hook(self):
+        original = {"model": "opus",
+                    "hooks": {"PreToolUse": [{"matcher": "Edit", "hooks": [self.FOREIGN]}]}}
+        self.write_settings(original)
+        self.install()
+        self.strip_ids()
+        self.uninstall()
+        self.assertEqual(original, self.read_settings(),
+                         "`_id` 가 사라진 뒤 제거가 우리 훅을 못 지웠다")
+
+    def test_the_tripled_state_collapses_to_one(self):
+        """이 머신이 실제로 있던 상태 — 3중 등록 + 구 훅 + Windows 역슬래시 경로."""
+        hooks = {}
+        for _ in range(3):
+            for script, event, _entry in self.mod.HOOKS:
+                hooks.setdefault(event, []).append(self.entry(script))
+        # 예전 Windows 설치가 남긴 역슬래시 경로
+        hooks["Stop"].append(self.entry(
+            "vibe-harness-stop-gate.sh",
+            "C:\\Users\\me\\.claude\\hooks\\vibe-harness-stop-gate.sh"))
+        hooks["PostToolUse"].append({"matcher": "Bash", "hooks": [
+            {"type": "command", "command": self.mod.hook_cmd(LEGACY_REVIEW_HOOK)}]})
+        hooks["PreToolUse"].append({"matcher": "Edit", "hooks": [self.FOREIGN]})
+        self.write_settings({"hooks": hooks})
+        os.makedirs(self.mod.HOOKS_DIR, exist_ok=True)
+        legacy_file = os.path.join(self.mod.HOOKS_DIR, LEGACY_REVIEW_HOOK)
+        with open(legacy_file, "w", encoding="utf-8") as fh:
+            fh.write("#!/bin/bash\nexit 0\n")
+
+        self.install()
+
+        dup = {s: self.count(s) for s in self.scripts if self.count(s) != 1}
+        self.assertEqual({}, dup, "3중 등록이 하나로 줄지 않았다")
+        self.assertEqual(0, self.count(LEGACY_REVIEW_HOOK),
+                         "구 vibekanban 리뷰 훅이 여전히 등록돼 있다 — push 마다 두 번 돈다")
+        self.assertFalse(os.path.exists(legacy_file), "구 훅 스크립트가 남았다")
+        self.assertIn(self.FOREIGN["command"], self.commands(), "남의 훅을 지웠다")
+
+    def test_a_foreign_hook_sharing_our_group_survives(self):
+        """사람이 손으로 합친 그룹 — 그룹째 지우면 남의 훅이 같이 사라진다."""
+        mixed = {"matcher": "Bash", "hooks": [
+            self.FOREIGN,
+            {"type": "command", "command": self.mod.hook_cmd("vibe-harness-review.sh")}]}
+        self.write_settings({"hooks": {"PostToolUse": [mixed]}})
+
+        self.install()
+        self.assertIn(self.FOREIGN["command"], self.commands(), "설치가 남의 훅을 지웠다")
+        self.assertEqual(1, self.count("vibe-harness-review.sh"))
+
+        self.uninstall()
+        self.assertIn(self.FOREIGN["command"], self.commands(), "제거가 남의 훅을 지웠다")
+        self.assertEqual(0, self.count("vibe-harness-review.sh"))
+
+    def test_an_entry_under_an_unexpected_event_is_found(self):
+        """예전엔 이벤트 다섯 개만 훑었다. 다른 자리에 등록된 옛 항목은 영영 남는다."""
+        self.write_settings({"hooks": {"UserPromptSubmit": [
+            self.entry("vibe-harness-session-start.sh")]}})
+        self.install()
+        self.assertEqual(1, self.count("vibe-harness-session-start.sh"))
+        self.uninstall()
+        self.assertEqual(0, self.count("vibe-harness-session-start.sh"),
+                         "다섯 이벤트 밖에 있던 우리 항목이 제거 후에도 남았다")
+
+    def test_a_lookalike_name_is_not_ours(self):
+        """이름이 비슷하다고 남의 훅을 우리 것으로 보면 안 된다."""
+        lookalikes = ["/opt/x/not-vibe-harness-review.sh",
+                      "/opt/x/vibe-harness-review.sh.disabled",
+                      "echo vibe-harness-stop-gate.shell"]
+        self.write_settings({"hooks": {"PostToolUse": [
+            {"matcher": "Bash", "hooks": [{"type": "command", "command": c}
+                                          for c in lookalikes]}]}})
+        self.install()
+        self.uninstall()
+        self.assertEqual(sorted(lookalikes), sorted(self.commands()),
+                         "이름이 비슷한 남의 훅을 지웠다")
+
+
 if __name__ == "__main__":
     unittest.main()
